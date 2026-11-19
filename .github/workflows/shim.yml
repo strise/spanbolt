@@ -1,4 +1,4 @@
-# Draft: not run yet. Builds the GoogleSQL shim per platform with Bazel and, on a tag
+# Builds the GoogleSQL shim per platform with Bazel and, on a tag
 # shim-<GOOGLESQL_VERSION>-s<SHIM_VERSION>, publishes the archives as that release's assets.
 # Afterwards pin them: download the *.sha256 assets, `scripts/package-shim.sh --pin-sums DIR`,
 # and commit native/googlesql-shim.env (docs/building.md).
@@ -27,9 +27,28 @@ jobs:
           - { platform: linux-arm64, runner: ubuntu-24.04-arm, protoc: linux-aarch_64 }
           - { platform: darwin-arm64, runner: macos-15, protoc: osx-aarch_64 }
     runs-on: ${{ matrix.runner }}
-    # Cold: ~25 min on a 12-core Mac; a 4-core 16 GB runner at 2 jobs takes a few hours.
+    # Cold: ~25 min on a 12-core Mac, about an hour on a 4-core 16 GB Linux runner at 2 jobs.
     timeout-minutes: 360
     steps:
+      # A standard Linux runner has 16 GB of RAM, and two of googlesql's generated sources compiling
+      # at once (resolved_ast*.cc, 5+ GB each) ran it out of memory: the runner shut down without an
+      # error from Bazel. Make room on disk, then add swap so a peak spills instead of killing it.
+      - name: Free disk and add swap (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /usr/local/share/boost /opt/hostedtoolcache/CodeQL "$AGENT_TOOLSDIRECTORY/CodeQL" || true
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile
+          # /mnt (the x86_64 runners' scratch disk) when it has room, else the root disk.
+          dir=/
+          if [ -d /mnt ] && [ "$(df -BG --output=avail /mnt | tail -1 | tr -dc 0-9)" -gt 40 ]; then dir=/mnt; fi
+          sudo fallocate -l 24G "$dir/spanbolt-swap"
+          sudo chmod 600 "$dir/spanbolt-swap"
+          sudo mkswap "$dir/spanbolt-swap"
+          sudo swapon "$dir/spanbolt-swap"
+          free -h
+          df -h / /mnt
       - uses: actions/checkout@v4
       - name: Check the tag matches native/googlesql-shim.env
         if: github.ref_type == 'tag'
@@ -54,8 +73,11 @@ jobs:
         with:
           bazelisk-cache: true
           repository-cache: true
+      # Restore and save separately: the cache is saved even when the build fails or is cancelled,
+      # so a rerun resumes where the last one stopped.
       - name: Restore the Bazel disk cache
-        uses: actions/cache@v4
+        id: disk-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.cache/spanbolt-bazel-disk
           key: bazel-disk-${{ matrix.platform }}-${{ hashFiles('native/googlesql/**') }}
@@ -71,7 +93,20 @@ jobs:
           else
             jobs=3
           fi
+          # Memory and disk every minute, for the log, so the next failure says what ran out.
+          if [ "$RUNNER_OS" = Linux ]; then
+            (while sleep 60; do
+               free -m | awk '/Mem:/{m="mem avail " $7 "M"} /Swap:/{s="swap used " $3 "M"} END{printf "resources: %s, %s, ", m, s}'
+               df -m / | awk 'NR==2{print "disk free " $4 "M"}'
+             done) &
+          fi
           bazel build --jobs="$jobs" "${extra[@]}" //:libgooglesql_shim.so
+      - name: Save the Bazel disk cache
+        if: always() && steps.disk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/spanbolt-bazel-disk
+          key: bazel-disk-${{ matrix.platform }}-${{ hashFiles('native/googlesql/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Package
         run: scripts/package-shim.sh --platform ${{ matrix.platform }} --out dist
       - name: Compare with the pinned checksum

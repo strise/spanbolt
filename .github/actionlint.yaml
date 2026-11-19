@@ -1,0 +1,5 @@
+# ubuntu-24.04-arm is a GitHub-hosted runner (free for public repositories) that older actionlint
+# releases don't know.
+self-hosted-runner:
+  labels:
+    - ubuntu-24.04-arm

@@ -1,0 +1,107 @@
+tags: values int64
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case zero
+insert V cols=K,I:
+  [1, 0]
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+  ["1","0"]
+
+case max
+insert V cols=K,I:
+  [1, 9223372036854775807]
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+  ["1","9223372036854775807"]
+
+case min
+insert V cols=K,I:
+  [1, -9223372036854775808]
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+  ["1","-9223372036854775808"]
+
+case overflow
+insert V cols=K,I:
+  [1, "9223372036854775808"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 9223372036854775808 as an integer
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+
+case not_a_number
+insert V cols=K,I:
+  [1, "abc"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse abc as an integer
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+
+case null
+insert V cols=K,I:
+  [1, null]
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+  ["1",null]
+
+case float_into_int
+insert V cols=K,I:
+  [1, 1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as INT64
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+
+case bool_into_int
+insert V cols=K,I:
+  [1, true]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse bool_value: true as INT64
+read V cols=K,I:
+  [1]
+expect:
+  columns: K INT64, I INT64
+

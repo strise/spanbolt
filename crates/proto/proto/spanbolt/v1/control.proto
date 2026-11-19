@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package spanbolt.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Test controls that the official emulator does not have.
+service Control {
+  // Copy-on-write clone of a database. O(1); the target must not exist.
+  rpc CloneDatabase(CloneDatabaseRequest) returns (CloneDatabaseResponse);
+  // Write every instance and database to a snapshot file on the server's filesystem.
+  rpc SaveSnapshot(SaveSnapshotRequest) returns (SaveSnapshotResponse);
+  // Replace all instances and databases with the contents of a snapshot file.
+  rpc LoadSnapshot(LoadSnapshotRequest) returns (LoadSnapshotResponse);
+  // Freeze the clock at a timestamp, or reset it to the system clock.
+  rpc SetClock(SetClockRequest) returns (SetClockResponse);
+  // Make the next `count` commits on a database fail with ABORTED.
+  rpc InjectAbort(InjectAbortRequest) returns (InjectAbortResponse);
+}
+
+message CloneDatabaseRequest {
+  // projects/<p>/instances/<i>/databases/<d>
+  string source = 1;
+  // projects/<p>/instances/<i>/databases/<d>; the instance must exist.
+  string target = 2;
+}
+
+message CloneDatabaseResponse {}
+
+message SaveSnapshotRequest {
+  string path = 1;
+}
+
+message SaveSnapshotResponse {
+  uint64 bytes = 1;
+}
+
+message LoadSnapshotRequest {
+  string path = 1;
+}
+
+message LoadSnapshotResponse {
+  uint32 instances = 1;
+  uint32 databases = 2;
+}
+
+message SetClockRequest {
+  oneof clock {
+    google.protobuf.Timestamp timestamp = 1;
+    bool reset = 2;
+  }
+}
+
+message SetClockResponse {}
+
+message InjectAbortRequest {
+  string database = 1;
+  uint32 count = 2;
+}
+
+message InjectAbortResponse {}

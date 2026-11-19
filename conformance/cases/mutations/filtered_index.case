@@ -1,0 +1,101 @@
+# UNIQUE filtered indexes and foreign keys skip rows whose filter columns are NULL.
+tags: mutations
+
+case unique_ignores_filtered_rows
+schema:
+  CREATE TABLE U (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K);
+  CREATE UNIQUE INDEX UByA ON U(A) STORING (B) WHERE B IS NOT NULL
+insert U cols=K,A,B:
+  [1, 10, null]
+  [2, 10, null]
+  [3, 10, "x"]
+expect:
+  ok
+expect@spanner:
+  same
+read U cols=K,B index=UByA:
+  all
+expect:
+  columns: K INT64, B STRING
+  ["3","x"]
+expect@spanner:
+  same
+
+case unique_duplicate_indexed_rows
+schema:
+  CREATE TABLE U (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K);
+  CREATE UNIQUE INDEX UByA ON U(A) STORING (B) WHERE B IS NOT NULL
+insert U cols=K,A,B:
+  [1, 10, "x"]
+  [2, 10, "y"]
+expect:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index UByA, duplicate key: {Int64(10)} in this transaction.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index UByA. Row [2] in table U duplicates key [10] created in this transaction.
+
+case unique_backfill_ignores_filtered_rows
+schema:
+  CREATE TABLE U (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K)
+insert U cols=K,A,B:
+  [1, 10, null]
+  [2, 10, null]
+  [3, 20, "x"]
+ddl:
+  CREATE UNIQUE INDEX UByA ON U(A) STORING (B) WHERE B IS NOT NULL
+expect:
+  ok
+expect@spanner:
+  same
+read U cols=K index=UByA:
+  all
+expect:
+  columns: K INT64
+  ["3"]
+expect@spanner:
+  same
+
+case unique_backfill_duplicate
+schema:
+  CREATE TABLE U (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K)
+insert U cols=K,A,B:
+  [1, 10, "x"]
+  [2, 10, "y"]
+ddl:
+  CREATE UNIQUE INDEX UByA ON U(A) STORING (B) WHERE B IS NOT NULL
+expect:
+  error: FAILED_PRECONDITION
+  message: Found uniqueness violation on index UByA, duplicate key: {Int64(10)}
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Found uniqueness violation: [10,1] [10,2].
+
+case foreign_key_ignores_filtered_index
+schema:
+  CREATE TABLE P (Id INT64 NOT NULL) PRIMARY KEY (Id);
+  CREATE TABLE C (K INT64 NOT NULL, PId INT64, B STRING(MAX), CONSTRAINT FkP FOREIGN KEY (PId) REFERENCES P (Id)) PRIMARY KEY (K);
+  CREATE INDEX CByP ON C(PId) STORING (B) WHERE B IS NOT NULL
+insert P cols=Id:
+  [1]
+insert C cols=K,PId,B:
+  [1, 1, null]
+delete P:
+  [1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `FkP` constraint violation when deleting or updating referenced key `{Int64(1)}` in table `P`. A row with that key exists in the referencing table `C`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint violation when deleting or updating referenced row(s): referencing row(s) found in table `C`.
+
+case filter_column_not_in_index
+schema:
+  CREATE TABLE U (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K)
+ddl:
+  CREATE INDEX UByA ON U(A) WHERE B IS NOT NULL
+expect:
+  error: UNIMPLEMENTED
+  message: Cannot null-filter column B that is not in the index UByA.
+expect@spanner:
+  same

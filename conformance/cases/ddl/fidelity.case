@@ -1,0 +1,108 @@
+tags: ddl admin
+
+# GetDatabaseDdl prints a filtered index's WHERE clause normalised (keywords uppercased).
+case filtered_index_where_lowercase
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K);
+  CREATE INDEX TByA ON T(A) WHERE A is not null
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX TByA ON T(A) WHERE A IS NOT NULL"
+
+case filtered_index_where_conjunction
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K);
+  CREATE INDEX TByAB ON T(A, B) where   A IS not NULL and B is NOT null
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX TByAB ON T(A, B) WHERE A IS NOT NULL AND B IS NOT NULL"
+
+case filtered_index_where_parens
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, A INT64, B STRING(MAX)) PRIMARY KEY (K)
+ddl:
+  CREATE INDEX TByAB ON T(A, B) WHERE (A IS NOT NULL) AND (B IS NOT NULL)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE INDEX TByAB ON T(A, B) WHERE (A IS NOT NULL) AND (B IS NOT NULL) : Syntax error on line 1, column 37: Encountered '(' while parsing: identifier
+
+case filtered_index_where_not_null_filter
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, A INT64) PRIMARY KEY (K)
+ddl:
+  CREATE INDEX TByA ON T(A) WHERE A > 0
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE INDEX TByA ON T(A) WHERE A > 0 : Syntax error on line 1, column 35: Expecting 'IS' but found '>'
+
+case filtered_index_where_missing_column
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, A INT64) PRIMARY KEY (K)
+ddl:
+  CREATE INDEX TByA ON T(A) WHERE Nope IS NOT NULL
+expect:
+  error: FAILED_PRECONDITION
+  message: Index TByA specifies a null filter on a nonexistent column Nope.
+
+case filtered_index_where_or
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, A INT64, B INT64) PRIMARY KEY (K)
+ddl:
+  CREATE INDEX TByA ON T(A) WHERE A IS NOT NULL OR B IS NOT NULL
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE INDEX TByA ON T(A) WHERE A IS NOT NULL OR B IS NOT NULL : Syntax error on line 1, column 47: Expecting 'EOF' but found 'OR'
+
+case filtered_index_where_quoted
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, `Order` INT64) PRIMARY KEY (K);
+  CREATE INDEX TByOrder ON T(`Order`) WHERE `Order` is not null
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  `Order` INT64,\n) PRIMARY KEY(K)"
+  "CREATE INDEX TByOrder ON T(`Order`) WHERE `Order` IS NOT NULL"
+
+case filtered_index_where_via_ddl
+schema:
+  CREATE TABLE feature_status (id INT64 NOT NULL, feature_id INT64, team_id INT64, user_id STRING(MAX)) PRIMARY KEY (id)
+ddl:
+  CREATE INDEX ids_feature_status_team_user ON feature_status(feature_id, team_id, user_id) WHERE user_id is not null
+expect:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE feature_status (\n  id INT64 NOT NULL,\n  feature_id INT64,\n  team_id INT64,\n  user_id STRING(MAX),\n) PRIMARY KEY(id)"
+  "CREATE INDEX ids_feature_status_team_user ON feature_status(feature_id, team_id, user_id) WHERE user_id IS NOT NULL"
+
+# A CHECK constraint added over rows that violate it fails like the mutation does.
+case add_check_on_violating_rows
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)
+insert T cols=K,V:
+  [1, 20]
+  [2, 5]
+ddl:
+  ALTER TABLE T ADD CONSTRAINT ck CHECK (V > 10)
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `T`.`ck` is violated for key {Int64(2)}
+
+case add_check_on_satisfying_rows
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)
+insert T cols=K,V:
+  [1, 20]
+ddl:
+  ALTER TABLE T ADD CONSTRAINT ck CHECK (V > 10)
+expect:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V INT64,\n  CONSTRAINT ck CHECK(V > 10),\n) PRIMARY KEY(K)"

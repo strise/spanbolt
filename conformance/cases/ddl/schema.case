@@ -1,0 +1,169 @@
+tags: ddl admin
+
+case schema_print_canonical
+schema:
+  create table T (k int64 not null, s string(max), b bytes(10), a array<string(20)>, ts timestamp options (allow_commit_timestamp=true)) primary key (k desc);
+  create unique null_filtered index TByS on T(s desc) storing (b)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  k INT64 NOT NULL,\n  s STRING(MAX),\n  b BYTES(10),\n  a ARRAY<STRING(20)>,\n  ts TIMESTAMP OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(k DESC)"
+  "CREATE UNIQUE NULL_FILTERED INDEX TByS ON T(s DESC) STORING (b)"
+
+case schema_print_interleave
+schema:
+  CREATE TABLE P (P INT64 NOT NULL) PRIMARY KEY (P);
+  CREATE TABLE C (P INT64 NOT NULL, C INT64 NOT NULL) PRIMARY KEY (P, C), INTERLEAVE IN PARENT P ON DELETE CASCADE;
+  CREATE INDEX CByC ON C(C), INTERLEAVE IN P
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE P (\n  P INT64 NOT NULL,\n) PRIMARY KEY(P)"
+  "CREATE TABLE C (\n  P INT64 NOT NULL,\n  C INT64 NOT NULL,\n) PRIMARY KEY(P, C),\n  INTERLEAVE IN PARENT P ON DELETE CASCADE"
+  "CREATE INDEX CByC ON C(C), INTERLEAVE IN P"
+
+case schema_print_generated_and_default
+schema:
+  CREATE TABLE G (K INT64 NOT NULL, A INT64 DEFAULT (1), B INT64 AS (A * 2) STORED, S STRING(MAX), L INT64 AS (CHAR_LENGTH(S))) PRIMARY KEY (K)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE G (\n  K INT64 NOT NULL,\n  A INT64 DEFAULT (1),\n  B INT64 AS (A * 2) STORED,\n  S STRING(MAX),\n  L INT64 AS (CHAR_LENGTH(S)),\n) PRIMARY KEY(K)"
+
+case schema_print_fk_check
+schema:
+  CREATE TABLE P (K INT64 NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE F (K INT64 NOT NULL, R INT64, CONSTRAINT FkP FOREIGN KEY (R) REFERENCES P (K), CONSTRAINT Pos CHECK (K > 0)) PRIMARY KEY (K)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE P (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE TABLE F (\n  K INT64 NOT NULL,\n  R INT64,\n  CONSTRAINT FkP FOREIGN KEY(R) REFERENCES P(K),\n  CONSTRAINT Pos CHECK(K > 0),\n) PRIMARY KEY(K)"
+
+case schema_print_search_index
+schema:
+  CREATE TABLE D (K INT64 NOT NULL, Body STRING(MAX), Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN) PRIMARY KEY (K);
+  CREATE SEARCH INDEX DSearch ON D(Body_Tokens)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE D (\n  K INT64 NOT NULL,\n  Body STRING(MAX),\n  Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX DSearch ON D(Body_Tokens)"
+
+case schema_print_row_deletion_policy
+schema:
+  CREATE TABLE R (K INT64 NOT NULL, Created TIMESTAMP) PRIMARY KEY (K), ROW DELETION POLICY (OLDER_THAN(Created, INTERVAL 30 DAY))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE R (\n  K INT64 NOT NULL,\n  Created TIMESTAMP,\n) PRIMARY KEY(K), ROW DELETION POLICY (OLDER_THAN(Created, INTERVAL 30 DAY))"
+
+case schema_print_view_and_sequence
+schema:
+  CREATE SEQUENCE Seq OPTIONS (sequence_kind = 'bit_reversed_positive');
+  CREATE TABLE T (K INT64 NOT NULL, V STRING(MAX)) PRIMARY KEY (K);
+  CREATE VIEW TV SQL SECURITY INVOKER AS SELECT T.K, T.V FROM T
+get_ddl
+expect:
+  statements:
+  "CREATE SEQUENCE Seq OPTIONS (\n  sequence_kind = 'bit_reversed_positive')"
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE VIEW TV SQL SECURITY INVOKER AS SELECT T.K, T.V FROM T"
+
+case schema_print_change_stream
+schema:
+  CREATE TABLE T (K INT64 NOT NULL) PRIMARY KEY (K);
+  CREATE CHANGE STREAM Cs FOR T
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs FOR T"
+
+case add_then_drop_index
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)
+ddl:
+  CREATE INDEX TByV ON T(V)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V INT64,\n) PRIMARY KEY(K)"
+  "CREATE INDEX TByV ON T(V)"
+ddl:
+  DROP INDEX TByV
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V INT64,\n) PRIMARY KEY(K)"
+
+case unique_index_on_duplicate_data
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)
+insert T cols=K,V:
+  [1, 5]
+  [2, 5]
+ddl:
+  CREATE UNIQUE INDEX TByV ON T(V)
+expect:
+  error: FAILED_PRECONDITION
+  message: Found uniqueness violation on index TByV, duplicate key: {Int64(5)}
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Found uniqueness violation: [5,1] [5,2].
+
+case not_null_on_column_with_nulls
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)
+insert T cols=K,V:
+  [1, null]
+ddl:
+  ALTER TABLE T ALTER COLUMN V INT64 NOT NULL
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: V in table: T referenced by key: {Int64(1)}
+
+case shrink_string_with_long_data
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V STRING(MAX)) PRIMARY KEY (K)
+insert T cols=K,V:
+  [1, "abcdef"]
+ddl:
+  ALTER TABLE T ALTER COLUMN V STRING(3)
+expect:
+  error: FAILED_PRECONDITION
+  message: Reducing the length of column V to 3 is not allowed because it has a value of length 6 at key: {Int64(1)}
+
+case add_column_then_read
+schema:
+  CREATE TABLE T (K INT64 NOT NULL) PRIMARY KEY (K)
+insert T cols=K:
+  [1]
+ddl:
+  ALTER TABLE T ADD COLUMN N INT64 NOT NULL DEFAULT (42)
+read T cols=K,N:
+  all
+expect:
+  columns: K INT64, N INT64
+  ["1","42"]
+
+case drop_column_then_read
+schema:
+  CREATE TABLE T (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)
+ddl:
+  ALTER TABLE T DROP COLUMN V
+read T cols=K,V:
+  all
+expect:
+  error: NOT_FOUND
+  message: Column not found in table T: V
+
+case ddl_on_empty_database
+ddl:
+  CREATE TABLE T (K INT64 NOT NULL) PRIMARY KEY (Nope)
+expect:
+  error: FAILED_PRECONDITION
+  message: Table T references nonexistent key column Nope.
+get_ddl
+expect:
+  statements:

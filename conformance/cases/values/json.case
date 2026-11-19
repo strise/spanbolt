@@ -1,0 +1,139 @@
+tags: values json
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case key_order
+insert V cols=K,J:
+  [1, "{\"b\":1,\"a\":2}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"a\":2,\"b\":1}"]
+
+case whitespace
+insert V cols=K,J:
+  [1, "[1, 2,  3]"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","[1,2,3]"]
+
+case float_number
+insert V cols=K,J:
+  [1, "{\"a\":1.0}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"a\":1.0}"]
+
+case exponent
+insert V cols=K,J:
+  [1, "{\"a\":1e2}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"a\":100.0}"]
+
+case string
+insert V cols=K,J:
+  [1, "\"str\""]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","\"str\""]
+
+case json_null
+insert V cols=K,J:
+  [1, "null"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","null"]
+
+case big_int
+insert V cols=K,J:
+  [1, "{\"n\":12345678901234567890}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"n\":12345678901234567890}"]
+
+case nested
+insert V cols=K,J:
+  [1, "{\"o\":{\"z\":[true,null,{\"y\":\"x\"}],\"a\":0}}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"o\":{\"a\":0,\"z\":[true,null,{\"y\":\"x\"}]}}"]
+
+case unicode_escape
+insert V cols=K,J:
+  [1, "{\"s\":\"\\u00e6\\n\"}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"s\":\"æ\\n\"}"]
+
+case duplicate_keys
+insert V cols=K,J:
+  [1, "{\"a\":1,\"a\":2}"]
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+  ["1","{\"a\":1}"]
+
+case invalid
+insert V cols=K,J:
+  [1, "{a:1}"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse {a:1} as a JSON. See https://cloud.google.com/spanner/docs/data-types for more details
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+
+case trailing_garbage
+insert V cols=K,J:
+  [1, "{} x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse {} x as a JSON. See https://cloud.google.com/spanner/docs/data-types for more details
+read V cols=K,J:
+  [1]
+expect:
+  columns: K INT64, J JSON
+

@@ -1,0 +1,85 @@
+tags: values bytes
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case empty
+insert V cols=K,Y:
+  [1, ""]
+read V cols=K,Y:
+  [1]
+expect:
+  columns: K INT64, Y BYTES
+  ["1",""]
+
+case binary
+insert V cols=K,Y:
+  [1, "AAEC/w=="]
+read V cols=K,Y:
+  [1]
+expect:
+  columns: K INT64, Y BYTES
+  ["1","AAEC/w=="]
+
+case bad_base64
+insert V cols=K,Y:
+  [1, "!!!"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse !!! as BYTES. Byte strings must be base64-encoded. For more details, see https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1#typecode
+read V cols=K,Y:
+  [1]
+expect:
+  columns: K INT64, Y BYTES
+
+case len_ok
+insert V cols=K,Y2:
+  [1, "AAE="]
+read V cols=K,Y2:
+  [1]
+expect:
+  columns: K INT64, Y2 BYTES
+  ["1","AAE="]
+
+case too_long
+insert V cols=K,Y2:
+  [1, "AAEC"]
+expect:
+  error: FAILED_PRECONDITION
+  message: New value exceeds the maximum size limit for this column: V.Y2, size: 3, limit: 2.
+read V cols=K,Y2:
+  [1]
+expect:
+  columns: K INT64, Y2 BYTES
+
+case unpadded
+insert V cols=K,Y:
+  [1, "AAE"]
+read V cols=K,Y:
+  [1]
+expect:
+  columns: K INT64, Y BYTES
+  ["1","AAE="]
+

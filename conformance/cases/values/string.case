@@ -1,0 +1,94 @@
+tags: values string
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case empty
+insert V cols=K,S:
+  [1, ""]
+read V cols=K,S:
+  [1]
+expect:
+  columns: K INT64, S STRING
+  ["1",""]
+
+case unicode
+insert V cols=K,S:
+  [1, "æøå 😀 ✓"]
+read V cols=K,S:
+  [1]
+expect:
+  columns: K INT64, S STRING
+  ["1","æøå 😀 ✓"]
+
+case newline_tab
+insert V cols=K,S:
+  [1, "a\nb\tc"]
+read V cols=K,S:
+  [1]
+expect:
+  columns: K INT64, S STRING
+  ["1","a\nb\tc"]
+
+case max_len_ok
+insert V cols=K,S3:
+  [1, "abc"]
+read V cols=K,S3:
+  [1]
+expect:
+  columns: K INT64, S3 STRING
+  ["1","abc"]
+
+case too_long
+insert V cols=K,S3:
+  [1, "abcd"]
+expect:
+  error: FAILED_PRECONDITION
+  message: New value exceeds the maximum size limit for this column: V.S3, size: 4, limit: 3.
+read V cols=K,S3:
+  [1]
+expect:
+  columns: K INT64, S3 STRING
+
+case multibyte_len
+insert V cols=K,S3:
+  [1, "æøå"]
+read V cols=K,S3:
+  [1]
+expect:
+  columns: K INT64, S3 STRING
+  ["1","æøå"]
+
+case multibyte_too_long
+insert V cols=K,S3:
+  [1, "😀😀😀😀"]
+expect:
+  error: FAILED_PRECONDITION
+  message: New value exceeds the maximum size limit for this column: V.S3, size: 4, limit: 3.
+read V cols=K,S3:
+  [1]
+expect:
+  columns: K INT64, S3 STRING
+

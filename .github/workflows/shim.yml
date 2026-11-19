@@ -1,0 +1,113 @@
+# Draft: not run yet. Builds the GoogleSQL shim per platform with Bazel and, on a tag
+# shim-<GOOGLESQL_VERSION>-s<SHIM_VERSION>, publishes the archives as that release's assets.
+# Afterwards pin them: download the *.sha256 assets, `scripts/package-shim.sh --pin-sums DIR`,
+# and commit native/googlesql-shim.env (docs/building.md).
+name: shim
+
+on:
+  push:
+    tags: ["shim-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PROTOC_VERSION: "31.1"
+
+jobs:
+  build:
+    name: shim (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The Linux shim needs glibc 2.38+ at run time; build it on Ubuntu 24.04 like the Dockerfile.
+          - { platform: linux-x86_64, runner: ubuntu-24.04, protoc: linux-x86_64 }
+          - { platform: linux-arm64, runner: ubuntu-24.04-arm, protoc: linux-aarch_64 }
+          - { platform: darwin-arm64, runner: macos-15, protoc: osx-aarch_64 }
+    runs-on: ${{ matrix.runner }}
+    # Cold: ~25 min on a 12-core Mac; a 4-core 16 GB runner at 2 jobs takes a few hours.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches native/googlesql-shim.env
+        if: github.ref_type == 'tag'
+        run: |
+          . native/googlesql-shim.env
+          want="shim-${GOOGLESQL_VERSION}-s${SHIM_VERSION}"
+          if [ "$GITHUB_REF_NAME" != "$want" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, but native/googlesql-shim.env says $want"; exit 1
+          fi
+      - name: Install clang 18 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 lld-18
+      - name: Install protoc
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-${{ matrix.protoc }}.zip"
+          unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
+          echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+      - name: Restore the Bazel disk cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/spanbolt-bazel-disk
+          key: bazel-disk-${{ matrix.platform }}-${{ hashFiles('native/googlesql/**') }}
+          restore-keys: bazel-disk-${{ matrix.platform }}-
+      - name: Build the shim
+        working-directory: native/googlesql
+        run: |
+          # Memory bounds this build: ~5 GB per compile job on googlesql's generated sources.
+          jobs=2
+          extra=()
+          if [ "$RUNNER_OS" = Linux ]; then
+            extra=(--repo_env=CC=clang-18 --repo_env=CXX=clang++-18)
+          else
+            jobs=3
+          fi
+          bazel build --jobs="$jobs" "${extra[@]}" //:libgooglesql_shim.so
+      - name: Package
+        run: scripts/package-shim.sh --platform ${{ matrix.platform }} --out dist
+      - name: Compare with the pinned checksum
+        run: |
+          . native/googlesql-shim.env
+          var="SHA256_$(echo ${{ matrix.platform }} | tr - _)"
+          pinned="${!var}"
+          read -r got _ < dist/*.sha256
+          if [ -n "$pinned" ] && [ "$pinned" != "$got" ]; then
+            echo "::warning::built $got, native/googlesql-shim.env pins $pinned; pin the release's checksums"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shim-${{ matrix.platform }}
+          path: dist/*
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shim-*
+          path: dist
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "GoogleSQL shim $GITHUB_REF_NAME" \
+              --notes "Prebuilt GoogleSQL shim archives for googlesql-sys (docs/building.md)."
+          fi

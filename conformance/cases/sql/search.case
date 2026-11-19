@@ -1,0 +1,198 @@
+tags: sql search
+schema:
+  CREATE TABLE Docs (
+    DocId INT64 NOT NULL,
+    Kind STRING(16),
+    Title STRING(MAX),
+    Body STRING(MAX),
+    Tags ARRAY<STRING(MAX)>,
+    Weight FLOAT64,
+    Title_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Title)) HIDDEN,
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+    Tags_Tokens TOKENLIST AS (TOKEN(Tags)) HIDDEN,
+    Title_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Title)) HIDDEN,
+  ) PRIMARY KEY (DocId);
+  CREATE SEARCH INDEX DocsSearch ON Docs(Title_Tokens, Body_Tokens, Tags_Tokens, Title_Substr) STORING (Weight)
+insert Docs cols=DocId,Kind,Title,Body,Tags,Weight:
+  [1, "news", "Acme acquires Beta Holding", "The deal between Acme AS and Beta Holding closed on Friday.", ["merger", "nordic"], 0.9]
+  [2, "news", "Beta Holding reports profit", "Quarterly profit rose sharply at Beta.", ["earnings"], 0.4]
+  [3, "filing", "Annual report Delta ASA", "Delta ASA filed its annual report. No sanctions noted.", [], null]
+  [4, "news", "Sanctions on shipping firms", "New sanctions target shipping firms in the region.", ["sanctions", "shipping"], 0.7]
+
+case search_single_term
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, 'sanctions')
+expect:
+  columns: DocId INT64
+  ["3"]
+  ["4"]
+expect@spanner:
+  same
+
+case search_or_terms
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Title_Tokens, @q)
+params:
+  @q STRING = "acme OR profit"
+expect:
+  columns: DocId INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case search_and_terms
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, 'beta holding')
+expect:
+  columns: DocId INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_phrase
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, '"annual report"')
+expect:
+  columns: DocId INT64
+  ["3"]
+expect@spanner:
+  same
+
+case search_negation
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Title_Tokens, 'beta -profit')
+expect:
+  columns: DocId INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_case_insensitive
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Title_Tokens, 'ACME')
+expect:
+  columns: DocId INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_tokenlist_concat
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(TOKENLIST_CONCAT([Title_Tokens, Body_Tokens]), 'delta')
+expect:
+  columns: DocId INT64
+  ["3"]
+expect@spanner:
+  same
+
+case search_with_filter
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, 'beta') AND Weight IS NOT NULL AND Kind = @kind
+params:
+  @kind STRING = "news"
+expect:
+  columns: DocId INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case search_count_subquery
+query:
+  SELECT COUNT(DocId) AS count FROM (SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, 'beta OR delta'))
+expect:
+  columns: count INT64
+  ["3"]
+expect@spanner:
+  same
+
+case search_score_order
+query:
+  SELECT DocId, SCORE(Body_Tokens, 'beta') > 0 AS scored FROM Docs WHERE SEARCH(Body_Tokens, 'beta') ORDER BY SCORE(Body_Tokens, 'beta') DESC, DocId
+expect:
+  columns: DocId INT64, scored BOOL
+  ["1",true]
+  ["2",true]
+expect@spanner:
+  same
+
+case snippet
+query:
+  SELECT DocId, SNIPPET(Body, 'sanctions') AS snip FROM Docs WHERE SEARCH(Body_Tokens, 'sanctions')
+expect:
+  columns: DocId INT64, snip JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":14,\"start_position\":5}],\"snippet\":\"New sanctions target shipping firms in the region.\"}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[{\"end_position\":48,\"start_position\":39}],\"snippet\":\"Delta ASA filed its annual report. No sanctions noted.\"}]}"]
+expect@spanner:
+  columns: DocId INT64, snip JSON
+  ["3","{\"snippets\":[{\"highlights\":[{\"begin\":39,\"end\":48}],\"snippet\":\"Delta ASA filed its annual report. No sanctions noted\",\"source_begin\":1,\"source_end\":54}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":14}],\"snippet\":\"New sanctions target shipping firms in the region\",\"source_begin\":1,\"source_end\":50}]}"]
+
+case search_tags_token
+query:
+  SELECT DocId FROM Docs WHERE ARRAY_INCLUDES_ANY(Tags, ['shipping', 'merger'])
+expect:
+  columns: DocId INT64
+  ["1"]
+  ["4"]
+expect@spanner:
+  same
+
+case search_substring
+query:
+  SELECT DocId FROM Docs WHERE SEARCH_SUBSTRING(Title_Substr, 'hold')
+expect:
+  columns: DocId INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case search_non_tokenlist_error
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body, 'beta')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SEARCH Argument types: STRING, STRING Signature: SEARCH(TOKENLIST, STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [dictionary => STRING]) Argument 1: Unable to coerce type STRING to expected type TOKENLIST [at 1:30]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SEARCH\n Argument types: STRING, STRING\n Signature: SEARCH(TOKENLIST, STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [enhance_query_options => JSON], [dictionary => STRING])\n Argument 1: Unable to coerce type STRING to expected type TOKENLIST [at 1:30]
+
+case search_no_results
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, 'zebra')
+expect:
+  columns: DocId INT64
+expect@spanner:
+  same
+
+case search_force_index
+query:
+  SELECT DocId, Weight FROM Docs@{FORCE_INDEX=DocsSearch} WHERE SEARCH(Title_Tokens, 'beta')
+expect:
+  columns: DocId INT64, Weight FLOAT64
+  ["1",0.9]
+  ["2",0.4]
+expect@spanner:
+  same
+
+case tokenize_select_hidden
+query:
+  SELECT Title_Tokens FROM Docs WHERE DocId = 1
+expect:
+  error: INVALID_ARGUMENT
+  message~: ^TOKENLIST is an internal-only type and cannot be returned to the user by SQL query
+expect@spanner:
+  same
+
+case search_null_query
+query:
+  SELECT DocId FROM Docs WHERE SEARCH(Body_Tokens, @q)
+params:
+  @q STRING = null
+expect:
+  columns: DocId INT64
+expect@spanner:
+  same
+

@@ -1,0 +1,553 @@
+use std::sync::Arc;
+
+use spanbolt_ddl::{AlterTable, DataCheck, Schema, Statement};
+use spanbolt_proto::database_admin as da;
+use spanbolt_proto::database_admin::database_admin_server::DatabaseAdmin;
+use spanbolt_proto::google::iam::v1 as iam;
+use spanbolt_proto::longrunning::Operation;
+use spanbolt_storage::DbState;
+use tonic::{Request, Response, Status};
+
+use crate::emulator::{DatabaseEntry, Emulator};
+use crate::names;
+use crate::page::page;
+use crate::services::operations::{any, done, failed};
+use crate::status::{to_status, unimplemented};
+
+pub struct DatabaseAdminService {
+    pub emu: Arc<Emulator>,
+}
+
+const TYPE_PREFIX: &str = "type.googleapis.com/google.spanner.admin.database.v1.";
+
+fn to_proto(entry: &DatabaseEntry) -> da::Database {
+    da::Database {
+        name: entry.name.clone(),
+        state: da::database::State::Ready as i32,
+        create_time: Some(entry.create_time.to_proto()),
+        version_retention_period: "1h".into(),
+        earliest_version_time: Some(entry.create_time.to_proto()),
+        database_dialect: da::DatabaseDialect::GoogleStandardSql as i32,
+        ..Default::default()
+    }
+}
+
+/// Why a DDL batch failed, with the index of the failing statement.
+#[derive(Debug)]
+pub enum DdlFailure {
+    /// The statement is invalid against the schema. The emulator fails the whole request
+    /// synchronously and applies nothing.
+    Schema(Status),
+    /// The schema change is valid but the existing rows violate it (a unique index over duplicates,
+    /// a CHECK the rows fail). The emulator commits the statements before it and reports this one
+    /// in the operation's error.
+    Data(usize, Status),
+}
+
+impl DdlFailure {
+    pub fn into_status(self) -> Status {
+        match self {
+            DdlFailure::Schema(s) | DdlFailure::Data(_, s) => s,
+        }
+    }
+}
+
+/// Applies DDL statements in order: first every statement against the schema, then the
+/// row-dependent checks and data migration against the rows moved to each intermediate schema.
+/// Nothing is applied on failure.
+pub fn apply_ddl(state: &DbState, statements: &[String]) -> Result<DbState, DdlFailure> {
+    let has_rows = state.row_count() > 0;
+    let mut schema = (*state.schema).clone();
+    // With rows, each statement's schema and checks, for the data phase.
+    let mut steps: Vec<(Schema, Vec<DataCheck>)> = Vec::new();
+    for sql in statements {
+        let checks =
+            apply_schema(&mut schema, sql, !state.prod_messages).map_err(DdlFailure::Schema)?;
+        if has_rows {
+            steps.push((schema.clone(), checks));
+        }
+    }
+    if !has_rows {
+        return state
+            .with_schema(schema)
+            .map_err(|e| DdlFailure::Schema(to_status(e)));
+    }
+    let mut migrated = state.clone();
+    for (i, (schema, checks)) in steps.into_iter().enumerate() {
+        let next = migrated
+            .with_schema(schema)
+            .map_err(|e| DdlFailure::Data(i, to_status(e)))?;
+        for check in &checks {
+            next.run_data_check(check)
+                .map_err(|e| DdlFailure::Data(i, to_status(e)))?;
+        }
+        migrated = next;
+    }
+    Ok(migrated)
+}
+
+/// Validates the DEFAULT, generated-column and CHECK expressions a statement declares through
+/// the registered SQL evaluator (none without the `googlesql` feature).
+fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
+    use spanbolt_storage::expr::{ExprKind, expr_evaluator};
+    let (table, only): (&str, Option<&str>) = match stmt {
+        Statement::CreateTable { table, .. } => (&table.name, None),
+        Statement::AlterTable { table, action } => match action {
+            AlterTable::AddColumn { column, .. } | AlterTable::AlterColumn { column } => {
+                (table, Some(column.name.as_str()))
+            }
+            AlterTable::SetColumnDefault { name, .. } => (table, Some(name.as_str())),
+            AlterTable::AddCheck(c) => (table, Some(c.name.as_str())),
+            _ => return Ok(()),
+        },
+        _ => return Ok(()),
+    };
+    let Some(t) = schema.table(table) else {
+        return Ok(());
+    };
+    let mut work: Vec<(String, ExprKind)> = Vec::new();
+    for c in &t.columns {
+        if only.is_some_and(|o| !o.eq_ignore_ascii_case(&c.name)) {
+            continue;
+        }
+        if let Some(d) = &c.default {
+            work.push((
+                d.clone(),
+                ExprKind::Default {
+                    column: c.name.clone(),
+                    ty: c.ty.clone(),
+                },
+            ));
+        }
+        if let Some((e, _)) = c.generated.as_ref().and_then(|g| g.expr()) {
+            work.push((
+                e.to_string(),
+                ExprKind::Generated {
+                    column: c.name.clone(),
+                },
+            ));
+        }
+    }
+    for ck in &t.checks {
+        if only.is_none_or(|o| o.eq_ignore_ascii_case(&ck.name)) {
+            work.push((
+                ck.expr.clone(),
+                ExprKind::Check {
+                    name: ck.name.clone(),
+                },
+            ));
+        }
+    }
+    if work.is_empty() {
+        return Ok(());
+    }
+    let Some(ev) = expr_evaluator() else {
+        return Ok(());
+    };
+    let catalog = spanbolt_storage::Catalog::build(schema).map_err(to_status)?;
+    let Some(tm) = catalog.table_id(&t.name).map(|id| catalog.table(id)) else {
+        return Ok(());
+    };
+    for (expr, kind) in &work {
+        ev.validate(expr, tm, kind).map_err(to_status)?;
+    }
+    Ok(())
+}
+
+/// Applies one statement to `schema`, returning the data checks the existing rows must pass.
+fn apply_schema(
+    schema: &mut Schema,
+    sql: &str,
+    emulator_compat: bool,
+) -> Result<Vec<DataCheck>, Status> {
+    let ddl = |e: spanbolt_ddl::DdlError| to_status(e.into());
+    let stmt = spanbolt_ddl::parse_statement(sql).map_err(ddl)?;
+    let checks = schema.data_checks(&stmt);
+    for check in &checks {
+        if let DataCheck::TableEmpty { message, .. } = check
+            && matches!(
+                &stmt,
+                Statement::AlterTable {
+                    action: AlterTable::AddColumn { .. },
+                    ..
+                }
+            )
+        {
+            // The official emulator rejects ADD COLUMN NOT NULL without a default outright.
+            return Err(Status::unimplemented(message.clone()));
+        }
+    }
+    if emulator_compat {
+        schema.apply_emulator_compat(&stmt).map_err(ddl)?;
+    } else {
+        schema.apply(&stmt).map_err(ddl)?;
+    }
+    validate_exprs(schema, &stmt)?;
+    Ok(checks)
+}
+
+#[tonic::async_trait]
+impl DatabaseAdmin for DatabaseAdminService {
+    async fn list_databases(
+        &self,
+        req: Request<da::ListDatabasesRequest>,
+    ) -> Result<Response<da::ListDatabasesResponse>, Status> {
+        let req = req.get_ref();
+        let inst = self.emu.instance(&req.parent)?;
+        let all = inst
+            .databases
+            .read()
+            .values()
+            .map(|d| to_proto(d))
+            .collect();
+        let (databases, next_page_token) = page(
+            all,
+            |d: &da::Database| &d.name,
+            req.page_size,
+            &req.page_token,
+        );
+        Ok(Response::new(da::ListDatabasesResponse {
+            databases,
+            next_page_token,
+        }))
+    }
+
+    async fn create_database(
+        &self,
+        req: Request<da::CreateDatabaseRequest>,
+    ) -> Result<Response<Operation>, Status> {
+        let req = req.into_inner();
+        if req.database_dialect == da::DatabaseDialect::Postgresql as i32 {
+            return Err(unimplemented("The PostgreSQL dialect"));
+        }
+        let id = names::parse_create_database(&req.create_statement)?;
+        names::validate_database_id(&id)?;
+        self.emu.instance(&req.parent)?;
+        let name = format!("{}/databases/{id}", req.parent);
+        let entry = self.emu.add_database(&name, || {
+            let state = apply_ddl(&DbState::default(), &req.extra_statements)
+                .map_err(DdlFailure::into_status)?;
+            self.emu.new_database((*state.schema).clone())
+        })?;
+        let proto = to_proto(&entry);
+        let meta = da::CreateDatabaseMetadata {
+            database: name.clone(),
+        };
+        let op = done(
+            format!("{name}/operations/_auto_op_{}", self.emu.opaque_id()),
+            any(&format!("{TYPE_PREFIX}CreateDatabaseMetadata"), &meta),
+            any(&format!("{TYPE_PREFIX}Database"), &proto),
+        );
+        Ok(Response::new(self.emu.put_operation(op)))
+    }
+
+    async fn get_database(
+        &self,
+        req: Request<da::GetDatabaseRequest>,
+    ) -> Result<Response<da::Database>, Status> {
+        let entry = self.emu.database(&req.get_ref().name)?;
+        Ok(Response::new(to_proto(&entry)))
+    }
+
+    async fn update_database(
+        &self,
+        req: Request<da::UpdateDatabaseRequest>,
+    ) -> Result<Response<Operation>, Status> {
+        let req = req.into_inner();
+        let spec = req
+            .database
+            .ok_or_else(|| Status::invalid_argument("Missing database"))?;
+        let entry = self.emu.database(&spec.name)?;
+        let mut proto = to_proto(&entry);
+        proto.enable_drop_protection = spec.enable_drop_protection;
+        let meta = da::UpdateDatabaseMetadata {
+            request: None,
+            progress: None,
+            cancel_time: None,
+        };
+        let op = done(
+            format!(
+                "{}/operations/_auto_op_{}",
+                entry.name,
+                self.emu.opaque_id()
+            ),
+            any(&format!("{TYPE_PREFIX}UpdateDatabaseMetadata"), &meta),
+            any(&format!("{TYPE_PREFIX}Database"), &proto),
+        );
+        Ok(Response::new(self.emu.put_operation(op)))
+    }
+
+    async fn update_database_ddl(
+        &self,
+        req: Request<da::UpdateDatabaseDdlRequest>,
+    ) -> Result<Response<Operation>, Status> {
+        crate::timing::note(
+            req.extensions(),
+            || req.get_ref().statements.join(";\n"),
+            Some(req.get_ref().statements.len() as u64),
+        );
+        let req = req.into_inner();
+        if !req.operation_id.is_empty() && !valid_operation_id(&req.operation_id) {
+            return Err(Status::invalid_argument(format!(
+                "Invalid operation id: {}.",
+                req.operation_id
+            )));
+        }
+        let entry = self.emu.database(&req.database)?;
+        if req.statements.is_empty() {
+            return Err(Status::invalid_argument(
+                "Missing statements in the request.",
+            ));
+        }
+        let op_name = format!(
+            "{}/operations/{}",
+            entry.name,
+            if req.operation_id.is_empty() {
+                format!("_auto_op_{}", self.emu.opaque_id())
+            } else {
+                req.operation_id.clone()
+            }
+        );
+        if !req.operation_id.is_empty() && self.emu.operation(&op_name).is_ok() {
+            return Err(Status::already_exists(format!(
+                "Operation already exists: {op_name}"
+            )));
+        }
+        // Like the emulator: an invalid statement fails the request and applies nothing; rows that
+        // violate a statement fail the operation, keeping the statements before it.
+        let mut schema_error: Option<Status> = None;
+        let mut data_error: Option<(usize, Status)> = None;
+        let result = entry.db.update_state(|s| {
+            let failure = match apply_ddl(s, &req.statements) {
+                Ok(next) => return Ok(next),
+                Err(f) => f,
+            };
+            let (status, keep) = match failure {
+                DdlFailure::Schema(e) => {
+                    let err = spanbolt_storage::Error::new(code_of(&e), e.message());
+                    schema_error = Some(e);
+                    return Err(err);
+                }
+                DdlFailure::Data(i, e) => (e, i),
+            };
+            let err = spanbolt_storage::Error::new(code_of(&status), status.message());
+            data_error = Some((keep, status));
+            if keep == 0 {
+                return Err(err);
+            }
+            apply_ddl(s, &req.statements[..keep]).map_err(|_| err)
+        });
+        if let Some(e) = schema_error {
+            return Err(e);
+        }
+        let committed = match (&result, &data_error) {
+            (Ok(_), Some((keep, _))) => *keep,
+            (Ok(_), None) => req.statements.len(),
+            (Err(_), Some(_)) => 0,
+            (Err(e), None) => return Err(to_status(e.clone())),
+        };
+        let meta = da::UpdateDatabaseDdlMetadata {
+            database: entry.name.clone(),
+            statements: req.statements.clone(),
+            commit_timestamps: match &result {
+                Ok(ts) => vec![ts.to_proto(); committed],
+                Err(_) => Vec::new(),
+            },
+            ..Default::default()
+        };
+        let meta = any(&format!("{TYPE_PREFIX}UpdateDatabaseDdlMetadata"), &meta);
+        let op = match data_error {
+            Some((_, e)) => failed(op_name, meta, &e),
+            None => done(
+                op_name,
+                meta,
+                any("type.googleapis.com/google.protobuf.Empty", &()),
+            ),
+        };
+        Ok(Response::new(self.emu.put_operation(op)))
+    }
+
+    async fn drop_database(
+        &self,
+        req: Request<da::DropDatabaseRequest>,
+    ) -> Result<Response<()>, Status> {
+        self.emu.drop_database(&req.get_ref().database)?;
+        Ok(Response::new(()))
+    }
+
+    async fn get_database_ddl(
+        &self,
+        req: Request<da::GetDatabaseDdlRequest>,
+    ) -> Result<Response<da::GetDatabaseDdlResponse>, Status> {
+        let entry = self.emu.database(&req.get_ref().database)?;
+        let statements = entry.db.latest().state.schema.to_ddl();
+        Ok(Response::new(da::GetDatabaseDdlResponse {
+            statements,
+            proto_descriptors: Vec::new(),
+        }))
+    }
+
+    async fn set_iam_policy(
+        &self,
+        _: Request<iam::SetIamPolicyRequest>,
+    ) -> Result<Response<iam::Policy>, Status> {
+        Err(unimplemented("SetIamPolicy"))
+    }
+
+    async fn get_iam_policy(
+        &self,
+        _: Request<iam::GetIamPolicyRequest>,
+    ) -> Result<Response<iam::Policy>, Status> {
+        Err(unimplemented("GetIamPolicy"))
+    }
+
+    async fn test_iam_permissions(
+        &self,
+        _: Request<iam::TestIamPermissionsRequest>,
+    ) -> Result<Response<iam::TestIamPermissionsResponse>, Status> {
+        Err(unimplemented("TestIamPermissions"))
+    }
+
+    async fn create_backup(
+        &self,
+        _: Request<da::CreateBackupRequest>,
+    ) -> Result<Response<Operation>, Status> {
+        Err(unimplemented("CreateBackup"))
+    }
+
+    async fn copy_backup(
+        &self,
+        _: Request<da::CopyBackupRequest>,
+    ) -> Result<Response<Operation>, Status> {
+        Err(unimplemented("CopyBackup"))
+    }
+
+    async fn get_backup(
+        &self,
+        _: Request<da::GetBackupRequest>,
+    ) -> Result<Response<da::Backup>, Status> {
+        Err(unimplemented("GetBackup"))
+    }
+
+    async fn update_backup(
+        &self,
+        _: Request<da::UpdateBackupRequest>,
+    ) -> Result<Response<da::Backup>, Status> {
+        Err(unimplemented("UpdateBackup"))
+    }
+
+    async fn delete_backup(
+        &self,
+        _: Request<da::DeleteBackupRequest>,
+    ) -> Result<Response<()>, Status> {
+        Err(unimplemented("DeleteBackup"))
+    }
+
+    async fn list_backups(
+        &self,
+        _: Request<da::ListBackupsRequest>,
+    ) -> Result<Response<da::ListBackupsResponse>, Status> {
+        Ok(Response::new(da::ListBackupsResponse::default()))
+    }
+
+    async fn restore_database(
+        &self,
+        _: Request<da::RestoreDatabaseRequest>,
+    ) -> Result<Response<Operation>, Status> {
+        Err(unimplemented("RestoreDatabase"))
+    }
+
+    async fn list_database_operations(
+        &self,
+        _: Request<da::ListDatabaseOperationsRequest>,
+    ) -> Result<Response<da::ListDatabaseOperationsResponse>, Status> {
+        // Like the emulator, which leaves the method unimplemented (an empty message); the
+        // longrunning ListOperations on `<database>/operations` lists a database's operations.
+        Err(Status::unimplemented(""))
+    }
+
+    async fn list_backup_operations(
+        &self,
+        _: Request<da::ListBackupOperationsRequest>,
+    ) -> Result<Response<da::ListBackupOperationsResponse>, Status> {
+        Ok(Response::new(da::ListBackupOperationsResponse::default()))
+    }
+
+    async fn list_database_roles(
+        &self,
+        req: Request<da::ListDatabaseRolesRequest>,
+    ) -> Result<Response<da::ListDatabaseRolesResponse>, Status> {
+        self.emu.database(&req.get_ref().parent)?;
+        Ok(Response::new(da::ListDatabaseRolesResponse::default()))
+    }
+
+    async fn add_split_points(
+        &self,
+        req: Request<da::AddSplitPointsRequest>,
+    ) -> Result<Response<da::AddSplitPointsResponse>, Status> {
+        self.emu.database(&req.get_ref().database)?;
+        Ok(Response::new(da::AddSplitPointsResponse {}))
+    }
+
+    async fn create_backup_schedule(
+        &self,
+        _: Request<da::CreateBackupScheduleRequest>,
+    ) -> Result<Response<da::BackupSchedule>, Status> {
+        Err(unimplemented("CreateBackupSchedule"))
+    }
+
+    async fn get_backup_schedule(
+        &self,
+        _: Request<da::GetBackupScheduleRequest>,
+    ) -> Result<Response<da::BackupSchedule>, Status> {
+        Err(unimplemented("GetBackupSchedule"))
+    }
+
+    async fn update_backup_schedule(
+        &self,
+        _: Request<da::UpdateBackupScheduleRequest>,
+    ) -> Result<Response<da::BackupSchedule>, Status> {
+        Err(unimplemented("UpdateBackupSchedule"))
+    }
+
+    async fn delete_backup_schedule(
+        &self,
+        _: Request<da::DeleteBackupScheduleRequest>,
+    ) -> Result<Response<()>, Status> {
+        Err(unimplemented("DeleteBackupSchedule"))
+    }
+
+    async fn list_backup_schedules(
+        &self,
+        _: Request<da::ListBackupSchedulesRequest>,
+    ) -> Result<Response<da::ListBackupSchedulesResponse>, Status> {
+        Ok(Response::new(da::ListBackupSchedulesResponse::default()))
+    }
+
+    async fn internal_update_graph_operation(
+        &self,
+        _: Request<da::InternalUpdateGraphOperationRequest>,
+    ) -> Result<Response<da::InternalUpdateGraphOperationResponse>, Status> {
+        Err(unimplemented("InternalUpdateGraphOperation"))
+    }
+}
+
+/// The emulator's operation ids: a lowercase letter, then 1 to 127 lowercase letters, digits or `_`.
+fn valid_operation_id(id: &str) -> bool {
+    let b = id.as_bytes();
+    (2..=128).contains(&b.len())
+        && b[0].is_ascii_lowercase()
+        && b[1..]
+            .iter()
+            .all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
+}
+
+fn code_of(s: &Status) -> spanbolt_storage::Code {
+    use spanbolt_storage::Code;
+    match s.code() {
+        tonic::Code::NotFound => Code::NotFound,
+        tonic::Code::AlreadyExists => Code::AlreadyExists,
+        tonic::Code::FailedPrecondition => Code::FailedPrecondition,
+        _ => Code::InvalidArgument,
+    }
+}

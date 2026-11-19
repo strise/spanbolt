@@ -1,0 +1,96 @@
+tags: values date
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case leap_day
+insert V cols=K,D:
+  [1, "2024-02-29"]
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+  ["1","2024-02-29"]
+
+case min
+insert V cols=K,D:
+  [1, "0001-01-01"]
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+  ["1","0001-01-01"]
+
+case max
+insert V cols=K,D:
+  [1, "9999-12-31"]
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+  ["1","9999-12-31"]
+
+case not_leap
+insert V cols=K,D:
+  [1, "2023-02-29"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2023-02-29 as a DATE. Dates must be in the format YYYY-[M]M-[D]D and the year must be in the range [1, 9999]. For more details on the DATE type encoding, see https://cloud.google.com/spanner/docs/data-types#date-type
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+
+case year_10000
+insert V cols=K,D:
+  [1, "10000-01-01"]
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid date value: 10000-01-01. Dates must be in the format YYYY-[M]M-[D]D and the year must be in the range [1, 9999]. For more details on the DATE type encoding, see https://cloud.google.com/spanner/docs/data-types#date-type
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+
+case no_padding
+insert V cols=K,D:
+  [1, "2024-1-2"]
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+  ["1","2024-01-02"]
+
+case timestamp_into_date
+insert V cols=K,D:
+  [1, "2024-01-02T00:00:00Z"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-01-02T00:00:00Z as a DATE. Dates must be in the format YYYY-[M]M-[D]D and the year must be in the range [1, 9999]. For more details on the DATE type encoding, see https://cloud.google.com/spanner/docs/data-types#date-type
+read V cols=K,D:
+  [1]
+expect:
+  columns: K INT64, D DATE
+

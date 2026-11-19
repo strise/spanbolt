@@ -1,0 +1,41 @@
+"""spanbolt native shim around the GoogleSQL analyser."""
+
+module(name = "spanbolt_googlesql")
+
+bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "re2", version = "2025-11-05.bcr.1", repo_name = "com_googlesource_code_re2")
+bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1", repo_name = "json")
+bazel_dep(name = "abseil-cpp", version = "20260817.0", repo_name = "com_google_absl")
+bazel_dep(name = "protobuf", version = "37.0-rc3", repo_name = "com_google_protobuf")
+
+bazel_dep(name = "googlesql", version = "2026.11.2", repo_name = "com_google_googlesql")
+archive_override(
+    module_name = "googlesql",
+    integrity = "sha256-Ub6JK56RcDT1qENhCqavFN+P9z6qkB7dcQlYj9u54a8=",
+    strip_prefix = "googlesql-2026.11.2",
+    urls = ["https://github.com/google/googlesql/archive/refs/tags/2026.11.2.tar.gz"],
+)
+
+# Mirrors googlesql's own root-only override: grpc 1.84.0 still references the
+# pre-split upb reflection target in protobuf 37.
+single_version_override(
+    module_name = "grpc",
+    patch_cmds = [
+        "sed -i.bak 's|\"@com_google_protobuf//upb/reflection\"|\"@com_google_protobuf//upb/reflection\", \"@com_google_protobuf//upb/reflection:reflection_cc\"|g' BUILD src/core/BUILD test/core/xds/BUILD && rm -f BUILD.bak src/core/BUILD.bak test/core/xds/BUILD.bak",
+    ],
+    version = "1.84.0",
+)
+
+# googlesql's codegen (gen_resolved_ast.py) pins its pip wheels to Python 3.11;
+# the default toolchain is only honoured from the root module.
+bazel_dep(name = "rules_python", version = "2.4.1")
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.11",
+)
+
+# ICU's source tree (googlesql's own http_archive): //:icu_data trims its prebuilt data file.
+googlesql_archives = use_extension("@com_google_googlesql//bazel:http_archive_deps.bzl", "googlesql_http_archive_deps")
+use_repo(googlesql_archives, "icu")

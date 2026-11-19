@@ -1,0 +1,439 @@
+tags: txn
+schema:
+  CREATE TABLE Acct (
+    Id INT64 NOT NULL,
+    Balance INT64 NOT NULL,
+  ) PRIMARY KEY (Id)
+insert Acct cols=Id,Balance:
+  [1, 100]
+  [2, 50]
+
+case mutations_not_visible_before_commit
+begin txn=t
+update Acct cols=Id,Balance txn=t:
+  [1, 0]
+read Acct cols=Id,Balance txn=t:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+commit txn=t
+read Acct cols=Id,Balance:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","0"]
+
+case rollback_discards_mutations
+begin txn=t
+update Acct cols=Id,Balance txn=t:
+  [1, 0]
+rollback txn=t
+read Acct cols=Id,Balance:
+  all
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+  ["2","50"]
+
+case read_your_writes_dml
+tags: sql
+begin txn=t
+dml txn=t:
+  UPDATE Acct SET Balance = Balance - 10 WHERE Id = 1
+expect:
+  count: 1
+query txn=t:
+  SELECT Balance FROM Acct WHERE Id = 1
+expect:
+  columns: Balance INT64
+  ["90"]
+read Acct cols=Id,Balance txn=t:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","90"]
+commit txn=t
+
+case dml_insert_then_read_api
+tags: sql
+begin txn=t
+dml txn=t:
+  INSERT INTO Acct (Id, Balance) VALUES (3, 7)
+expect:
+  count: 1
+read Acct cols=Id,Balance txn=t:
+  all
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+  ["2","50"]
+  ["3","7"]
+rollback txn=t
+read Acct cols=Id,Balance:
+  all
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+  ["2","50"]
+
+case dml_then_rollback
+tags: sql
+begin txn=t
+dml txn=t:
+  DELETE FROM Acct WHERE TRUE
+expect:
+  count: 2
+rollback txn=t
+read Acct cols=Id:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case other_txn_does_not_see_uncommitted
+skip: the emulator allows one read-write transaction at a time and aborts the other; spanbolt runs them concurrently by design (DESIGN.md goal 4)
+begin txn=a
+update Acct cols=Id,Balance txn=a:
+  [1, 1]
+begin txn=b
+read Acct cols=Id,Balance txn=b:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+commit txn=a
+expect:
+  error: ABORTED
+  message: Transaction 1795022896915366 aborted due to active transaction 1795022896915367. The emulator only supports one transaction at a time.
+commit txn=b
+
+case write_write_conflict
+skip: the emulator allows one read-write transaction at a time and aborts the other; spanbolt runs them concurrently by design (DESIGN.md goal 4)
+begin txn=a
+begin txn=b
+read Acct cols=Balance txn=a:
+  [1]
+expect:
+  columns: Balance INT64
+  ["100"]
+read Acct cols=Balance txn=b:
+  [1]
+expect:
+  error: ABORTED
+  message: Transaction 1795022896915594 aborted due to active transaction 1795022896915593. The emulator only supports one transaction at a time.
+update Acct cols=Id,Balance txn=a:
+  [1, 90]
+update Acct cols=Id,Balance txn=b:
+  [1, 80]
+commit txn=a
+commit txn=b
+expect:
+  error: ABORTED
+  message: Transaction 1795022896915594 aborted due to active transaction 1795022896915593. The emulator only supports one transaction at a time.
+read Acct cols=Id,Balance:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","90"]
+
+case read_then_concurrent_commit
+skip: the emulator allows one read-write transaction at a time and aborts the other; spanbolt runs them concurrently by design (DESIGN.md goal 4)
+begin txn=a
+read Acct cols=Balance txn=a:
+  [1]
+expect:
+  columns: Balance INT64
+  ["100"]
+update Acct cols=Id,Balance:
+  [1, 7]
+expect:
+  error: ABORTED
+  message: Transaction 1795022896915771 aborted due to active transaction 1795022896915770. The emulator only supports one transaction at a time.
+update Acct cols=Id,Balance txn=a:
+  [1, 90]
+commit txn=a
+read Acct cols=Id,Balance:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","90"]
+
+case disjoint_rows_both_commit
+skip: the emulator allows one read-write transaction at a time and aborts the other; spanbolt runs them concurrently by design (DESIGN.md goal 4)
+begin txn=a
+begin txn=b
+read Acct cols=Balance txn=a:
+  [1]
+expect:
+  columns: Balance INT64
+  ["100"]
+read Acct cols=Balance txn=b:
+  [2]
+expect:
+  error: ABORTED
+  message: Transaction 1795022896927248 aborted due to active transaction 1795022896927247. The emulator only supports one transaction at a time.
+update Acct cols=Id,Balance txn=a:
+  [1, 1]
+update Acct cols=Id,Balance txn=b:
+  [2, 2]
+commit txn=a
+commit txn=b
+expect:
+  error: ABORTED
+  message: Transaction 1795022896927248 aborted due to active transaction 1795022896927247. The emulator only supports one transaction at a time.
+read Acct cols=Id,Balance:
+  all
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","1"]
+  ["2","50"]
+
+case blind_writes_both_commit
+skip: the emulator allows one read-write transaction at a time and aborts the other; spanbolt runs them concurrently by design (DESIGN.md goal 4)
+begin txn=a
+begin txn=b
+update Acct cols=Id,Balance txn=a:
+  [1, 1]
+update Acct cols=Id,Balance txn=b:
+  [1, 2]
+commit txn=a
+commit txn=b
+read Acct cols=Id,Balance:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","2"]
+
+case dml_conflict
+skip: the emulator allows one read-write transaction at a time and aborts the other; spanbolt runs them concurrently by design (DESIGN.md goal 4)
+tags: sql
+begin txn=a
+begin txn=b
+dml txn=a:
+  UPDATE Acct SET Balance = 1 WHERE Id = 1
+expect:
+  count: 1
+dml txn=b:
+  UPDATE Acct SET Balance = 2 WHERE Id = 1
+expect:
+  error: ABORTED
+  message: Transaction 1795022896927698 aborted due to active transaction 1795022896927697. The emulator only supports one transaction at a time.
+commit txn=a
+commit txn=b
+expect:
+  error: ABORTED
+  message: Transaction 1795022896927698 aborted due to active transaction 1795022896927697. The emulator only supports one transaction at a time.
+read Acct cols=Id,Balance:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","1"]
+
+case read_only_txn_snapshot
+begin txn=ro ro
+read Acct cols=Id,Balance txn=ro:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+update Acct cols=Id,Balance:
+  [1, 5]
+read Acct cols=Id,Balance txn=ro:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+read Acct cols=Id,Balance:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","5"]
+rollback txn=ro
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot commit or rollback a read-only or partitioned-dml transaction.
+
+case read_only_txn_rejects_dml
+tags: sql
+begin txn=ro ro
+dml txn=ro:
+  UPDATE Acct SET Balance = 0 WHERE TRUE
+expect:
+  error: INVALID_ARGUMENT
+  message: DML statements can only be performed in a read-write or partitioned-dml transaction. Current transaction type is ReadOnly.
+
+case read_only_txn_rejects_commit_with_mutations
+begin txn=ro ro
+update Acct cols=Id,Balance txn=ro:
+  [1, 0]
+commit txn=ro
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot commit or rollback a read-only or partitioned-dml transaction.
+
+case read_only_txn_commit_without_mutations
+begin txn=ro ro
+commit txn=ro
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot commit or rollback a read-only or partitioned-dml transaction.
+
+case stale_read_at_commit_timestamp
+update Acct cols=Id,Balance save=t1:
+  [1, 11]
+update Acct cols=Id,Balance save=t2:
+  [1, 22]
+read Acct cols=Id,Balance bound=read_timestamp:t1:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","11"]
+read Acct cols=Id,Balance bound=read_timestamp:t2:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","22"]
+read Acct cols=Id,Balance bound=min_read_timestamp:t2:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","22"]
+
+case stale_read_only_txn_at_timestamp
+update Acct cols=Id,Balance save=t1:
+  [1, 11]
+update Acct cols=Id,Balance:
+  [1, 22]
+begin txn=ro ro bound=read_timestamp:t1
+read Acct cols=Id,Balance txn=ro:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","11"]
+rollback txn=ro
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot commit or rollback a read-only or partitioned-dml transaction.
+
+case max_staleness_single_use
+read Acct cols=Id bound=max_staleness:10s:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case max_staleness_in_begin_rejected
+begin txn=ro ro bound=max_staleness:10s
+expect:
+  error: INVALID_ARGUMENT
+  message: Timestamp bound: max_staleness for read can be only be used for a single use transaction.
+
+case min_read_timestamp_in_begin_rejected
+update Acct cols=Id,Balance save=t1:
+  [1, 11]
+begin txn=ro ro bound=min_read_timestamp:t1
+expect:
+  error: INVALID_ARGUMENT
+  message: Timestamp bound: min_read_timestamp for read can be only be used for a single use transaction.
+
+case exact_staleness_before_database
+read Acct cols=Id bound=exact_staleness:1h:
+  all
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+
+case exact_staleness_zero
+read Acct cols=Id bound=exact_staleness:0s:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case negative_staleness
+read Acct cols=Id bound=exact_staleness:-1s:
+  all
+expect:
+  error: INVALID_ARGUMENT
+  message: Staleness must be non-negative.
+
+case read_timestamp_in_future
+update Acct cols=Id,Balance save=t1:
+  [1, 11]
+read Acct cols=Id,Balance bound=read_timestamp:t1:
+  [1]
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","11"]
+
+case query_in_read_write_txn
+tags: sql
+begin txn=t
+query txn=t:
+  SELECT Id, Balance FROM Acct ORDER BY Id
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","100"]
+  ["2","50"]
+commit txn=t
+
+case stale_query
+tags: sql
+update Acct cols=Id,Balance save=t1:
+  [1, 11]
+update Acct cols=Id,Balance:
+  [1, 22]
+query bound=read_timestamp:t1:
+  SELECT Balance FROM Acct WHERE Id = 1
+expect:
+  columns: Balance INT64
+  ["11"]
+
+case batch_dml_in_txn_visible
+tags: sql
+begin txn=t
+batch txn=t:
+  UPDATE Acct SET Balance = 0 WHERE Id = 1;
+  INSERT INTO Acct (Id, Balance) VALUES (3, 3)
+expect:
+  counts: [1,1]
+query txn=t:
+  SELECT Id, Balance FROM Acct ORDER BY Id
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","0"]
+  ["2","50"]
+  ["3","3"]
+commit txn=t
+
+case mutation_and_dml_same_txn
+tags: sql
+begin txn=t
+insert Acct cols=Id,Balance txn=t:
+  [3, 3]
+dml txn=t:
+  UPDATE Acct SET Balance = 9 WHERE Id = 3
+expect:
+  count: 0
+commit txn=t
+read Acct cols=Id,Balance:
+  [3]
+expect:
+  columns: Id INT64, Balance INT64
+  ["3","3"]
+
+case commit_ts_ordering
+update Acct cols=Id,Balance save=t1:
+  [1, 1]
+update Acct cols=Id,Balance save=t2:
+  [2, 2]
+read Acct cols=Id,Balance bound=read_timestamp:t1:
+  all
+expect:
+  columns: Id INT64, Balance INT64
+  ["1","1"]
+  ["2","50"]

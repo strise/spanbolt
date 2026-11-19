@@ -1,0 +1,130 @@
+tags: values float64
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case zero
+insert V cols=K,F:
+  [1, 0.0]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1",0.0]
+
+case negative_zero
+insert V cols=K,F:
+  [1, -0.0]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1",-0.0]
+
+case max
+insert V cols=K,F:
+  [1, 1.7976931348623157e308]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1",1.7976931348623157e+308]
+
+case min_subnormal
+insert V cols=K,F:
+  [1, 5e-324]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1",5e-324]
+
+case nan
+insert V cols=K,F:
+  [1, "NaN"]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1","NaN"]
+
+case inf
+insert V cols=K,F:
+  [1, "Infinity"]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1","Infinity"]
+
+case neg_inf
+insert V cols=K,F:
+  [1, "-Infinity"]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1","-Infinity"]
+
+case point_one
+insert V cols=K,F:
+  [1, 0.1]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1",0.1]
+
+case third
+insert V cols=K,F:
+  [1, 0.3333333333333333]
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+  ["1",0.3333333333333333]
+
+case int_string
+insert V cols=K,F:
+  [1, "1"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 1 as a FLOAT64. Only the following string values are supported for FLOAT64: 'Infinity', 'NaN', and '-Infinity'. See https://cloud.google.com/spanner/docs/data-types#floating-point-type for more details
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+
+case bad_string
+insert V cols=K,F:
+  [1, "abc"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse abc as a FLOAT64. Only the following string values are supported for FLOAT64: 'Infinity', 'NaN', and '-Infinity'. See https://cloud.google.com/spanner/docs/data-types#floating-point-type for more details
+read V cols=K,F:
+  [1]
+expect:
+  columns: K INT64, F FLOAT64
+

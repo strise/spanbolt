@@ -1,0 +1,1385 @@
+# JSON mutators, JSON_CONTAINS, and JSON-to-array/FLOAT32 conversions.
+tags: sql function json
+schema:
+  CREATE TABLE Docs (Id INT64 NOT NULL, Data JSON, Tags ARRAY<STRING(MAX)>) PRIMARY KEY (Id)
+insert Docs cols=Id,Data,Tags:
+  [1, "{\"a\": [1, 2], \"b\": {\"c\": true}}", ["x", "y"]]
+  [2, "{\"a\": 1}", []]
+  [3, null, null]
+
+case jm_001
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":2}"]
+
+case jm_002
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$', 2)
+expect:
+  columns: JSON
+  ["2"]
+
+case jm_003
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b.c.d', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":{\"c\":{\"d\":2}}}"]
+
+case jm_004
+query:
+  SELECT JSON_SET(JSON '{"a": null}', '$.a.b', 2)
+expect:
+  columns: JSON
+  ["{\"a\":{\"b\":2}}"]
+
+case jm_005
+query:
+  SELECT JSON_SET(JSON '{"a": null}', '$.a[1]', 2)
+expect:
+  columns: JSON
+  ["{\"a\":[null,2]}"]
+
+case jm_006
+query:
+  SELECT JSON_SET(JSON 'null', '$.a', 2)
+expect:
+  columns: JSON
+  ["{\"a\":2}"]
+
+case jm_007
+query:
+  SELECT JSON_SET(JSON 'null', '$[2]', 2)
+expect:
+  columns: JSON
+  ["[null,null,2]"]
+
+case jm_008
+query:
+  SELECT JSON_SET(JSON '[1, 2]', '$.a', 2)
+expect:
+  columns: JSON
+  ["[1,2]"]
+
+case jm_009
+query:
+  SELECT JSON_SET(JSON '[1, 2]', '$[0]', 'x')
+expect:
+  columns: JSON
+  ["[\"x\",2]"]
+
+case jm_010
+query:
+  SELECT JSON_SET(JSON '[1, 2]', '$[5]', 'x')
+expect:
+  columns: JSON
+  ["[1,2,null,null,null,\"x\"]"]
+
+case jm_011
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$[0]', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_012
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2, '$.c', 3)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":2,\"c\":3}"]
+
+case jm_013
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2, '$.b.c', 3)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":2}"]
+
+case jm_014
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', [1, 2])
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":[1,2]}"]
+
+case jm_015
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', STRUCT(1 AS x, 'y' AS z))
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":{\"x\":1,\"z\":\"y\"}}"]
+
+case jm_016
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', JSON '{"c": [true]}')
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":{\"c\":[true]}}"]
+
+case jm_017
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', NULL)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":null}"]
+
+case jm_018
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', CAST(NULL AS STRING))
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":null}"]
+
+case jm_019
+query:
+  SELECT JSON_SET(CAST(NULL AS JSON), '$.b', 2)
+expect:
+  columns: JSON
+  [null]
+
+case jm_020
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', CAST(NULL AS STRING), 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_021
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', 'b', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: JSONPath must start with '$'
+
+case jm_022
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2, create_if_missing => false)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_023
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.a', 5, create_if_missing => false)
+expect:
+  columns: JSON
+  ["{\"a\":5}"]
+
+case jm_024
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2, create_if_missing => CAST(NULL AS BOOL))
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_025
+query:
+  SELECT JSON_SET(JSON '{"a": [1, 2]}', '$.a[1]', 9, create_if_missing => false)
+expect:
+  columns: JSON
+  ["{\"a\":[1,9]}"]
+
+case jm_026
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 1.5)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":1.5}"]
+
+case jm_027
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 1e300 * 10)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":1e+301}"]
+
+case jm_028
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', NUMERIC '1.25')
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":1.25}"]
+
+case jm_029
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', DATE '2024-01-02')
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":\"2024-01-02\"}"]
+
+case jm_030
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', b'ab')
+expect:
+  columns: JSON
+  ["{\"a\":1,\"b\":\"YWI=\"}"]
+
+case jm_031
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$."x.y"', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1,\"x.y\":2}"]
+
+case jm_032
+query:
+  SELECT JSON_SET(JSON '{"a": {"b": {"c": 1}}}', '$.a.b.c', 2)
+expect:
+  columns: JSON
+  ["{\"a\":{\"b\":{\"c\":2}}}"]
+
+case jm_033
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.a[0]', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_034
+query:
+  SELECT JSON_SET(JSON '[]', '$[0][1]', 2)
+expect:
+  columns: JSON
+  ["[[null,2]]"]
+
+case jm_035
+query:
+  SELECT JSON_SET(JSON '{"b": 1, "a": 2}', '$.c', 3)
+expect:
+  columns: JSON
+  ["{\"a\":2,\"b\":1,\"c\":3}"]
+
+case jm_036
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function JSON_SET Argument types: JSON, STRING Signature: JSON_SET(JSON, STRING, ANY, [[STRING, ANY], ...], [create_if_missing => BOOL]) Signature requires at least 3 arguments, found 2 arguments [at 1:8]
+
+case jm_037
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.b', 2, '$.c')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function JSON_SET Argument types: JSON, STRING, INT64, STRING Signature: JSON_SET(JSON, STRING, ANY, [[STRING, ANY], ...], [create_if_missing => BOOL]) Positional argument at 4 is invalid because argument `create_if_missing` can only be referred to by name [at 1:8]
+
+case jm_038
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$[-1]', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: [-1]
+
+case jm_039
+query:
+  SELECT JSON_SET(JSON '[1]', '$[-1]', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: [-1]
+
+case jm_040
+query:
+  SELECT JSON_SET(JSON '[1]', '$.0', 2)
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_041
+query:
+  SELECT JSON_SET(JSON '[1]', '$.1', 2)
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_042
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$..a', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: ..a
+
+case jm_043
+query:
+  SELECT JSON_REMOVE(JSON '{"a": 1, "b": {"c": 2}}', '$.b.c', '$.a')
+expect:
+  columns: JSON
+  ["{\"b\":{}}"]
+
+case jm_044
+query:
+  SELECT JSON_REMOVE(JSON '{"a": 1}', '$.x')
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_045
+query:
+  SELECT JSON_REMOVE(JSON '[1, 2, 3]', '$[7]')
+expect:
+  columns: JSON
+  ["[1,2,3]"]
+
+case jm_046
+query:
+  SELECT JSON_REMOVE(JSON '[1, 2, 3]', '$[0]', '$[0]')
+expect:
+  columns: JSON
+  ["[3]"]
+
+case jm_047
+query:
+  SELECT JSON_REMOVE(JSON '{"a": 1}', CAST(NULL AS STRING))
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_048
+query:
+  SELECT JSON_REMOVE(JSON '{"a": 1}', '$.a', CAST(NULL AS STRING))
+expect:
+  columns: JSON
+  ["{}"]
+
+case jm_049
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', 2)
+expect:
+  columns: JSON
+  ["[1,2]"]
+
+case jm_050
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', [2, 3])
+expect:
+  columns: JSON
+  ["[1,2,3]"]
+
+case jm_051
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', [2, 3], append_each_element => false)
+expect:
+  columns: JSON
+  ["[1,[2,3]]"]
+
+case jm_052
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', [2, 3], append_each_element => CAST(NULL AS BOOL))
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_053
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '{"a": [1]}', '$.a', 'x', '$.a', 'y')
+expect:
+  columns: JSON
+  ["{\"a\":[1,\"x\",\"y\"]}"]
+
+case jm_054
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '{"a": 1}', '$.a', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_055
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '{"a": null}', '$.a', 2)
+expect:
+  columns: JSON
+  ["{\"a\":[2]}"]
+
+case jm_056
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '{"a": 1}', '$.b', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_057
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '{"a": {}}', '$.a', 2)
+expect:
+  columns: JSON
+  ["{\"a\":{}}"]
+
+case jm_058
+query:
+  SELECT JSON_ARRAY_APPEND(JSON 'null', '$', 2)
+expect:
+  columns: JSON
+  ["[2]"]
+
+case jm_059
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', NULL)
+expect:
+  columns: JSON
+  ["[1,null]"]
+
+case jm_060
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', CAST(NULL AS ARRAY<INT64>))
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_061
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', ARRAY<INT64>[])
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_062
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[[1], 2]', '$[0]', 3)
+expect:
+  columns: JSON
+  ["[[1,3],2]"]
+
+case jm_063
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', CAST(NULL AS STRING), 2)
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_064
+query:
+  SELECT JSON_ARRAY_APPEND(CAST(NULL AS JSON), '$', 2)
+expect:
+  columns: JSON
+  [null]
+
+case jm_065
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', 'x', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: JSONPath must start with '$'
+
+case jm_066
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$', JSON '[2, 3]')
+expect:
+  columns: JSON
+  ["[1,[2,3]]"]
+
+case jm_067
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[1]', 2)
+expect:
+  columns: JSON
+  ["[1,2,3]"]
+
+case jm_068
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[0]', 0)
+expect:
+  columns: JSON
+  ["[0,1,3]"]
+
+case jm_069
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[2]', 4)
+expect:
+  columns: JSON
+  ["[1,3,4]"]
+
+case jm_070
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[5]', 4)
+expect:
+  columns: JSON
+  ["[1,3,null,null,null,4]"]
+
+case jm_071
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[1]', [7, 8])
+expect:
+  columns: JSON
+  ["[1,7,8,3]"]
+
+case jm_072
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[1]', [7, 8], insert_each_element => false)
+expect:
+  columns: JSON
+  ["[1,[7,8],3]"]
+
+case jm_073
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$[1]', [7, 8], insert_each_element => CAST(NULL AS BOOL))
+expect:
+  columns: JSON
+  ["[1,3]"]
+
+case jm_074
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1, 3]', '$', 2)
+expect:
+  columns: JSON
+  ["[1,3]"]
+
+case jm_075
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": [1]}', '$.a', 2)
+expect:
+  columns: JSON
+  ["{\"a\":[1]}"]
+
+case jm_076
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": [1]}', '$.a[0]', 2, '$.a[0]', 3)
+expect:
+  columns: JSON
+  ["{\"a\":[3,2,1]}"]
+
+case jm_077
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": 1}', '$.a[0]', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_078
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": null}', '$.a[1]', 2)
+expect:
+  columns: JSON
+  ["{\"a\":[null,2]}"]
+
+case jm_079
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": 1}', '$.b[0]', 2)
+expect:
+  columns: JSON
+  ["{\"a\":1}"]
+
+case jm_080
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[[1]]', '$[0][0]', 0)
+expect:
+  columns: JSON
+  ["[[0,1]]"]
+
+case jm_081
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1]', '$[0]', NULL)
+expect:
+  columns: JSON
+  ["[null,1]"]
+
+case jm_082
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1]', '$[0]', ARRAY<STRING>[])
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_083
+query:
+  SELECT JSON_ARRAY_INSERT(CAST(NULL AS JSON), '$[0]', 2)
+expect:
+  columns: JSON
+  [null]
+
+case jm_084
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1]', CAST(NULL AS STRING), 2)
+expect:
+  columns: JSON
+  ["[1]"]
+
+case jm_085
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": [1]}', '$.a.0', 2)
+expect:
+  columns: JSON
+  ["{\"a\":[1]}"]
+
+case jm_086
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": [1, 2]}', JSON '{"a": [2]}')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_087
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": 1, "b": 2}', JSON '{"a": 1}')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_088
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": 1}', JSON '{"a": 1, "b": 2}')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_089
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": {"b": 1, "c": 2}}', JSON '{"a": {"b": 1}}')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_090
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": 1}', JSON '{}')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_091
+query:
+  SELECT JSON_CONTAINS(JSON '[1, 2, 3]', JSON '[]')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_092
+query:
+  SELECT JSON_CONTAINS(JSON '[1, 2, 3]', JSON '[3, 1]')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_093
+query:
+  SELECT JSON_CONTAINS(JSON '[1, 2, 3]', JSON '[1, 1]')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_094
+query:
+  SELECT JSON_CONTAINS(JSON '[1, 2, 3]', JSON '1')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_095
+query:
+  SELECT JSON_CONTAINS(JSON '[1, [2, 3]]', JSON '[2]')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_096
+query:
+  SELECT JSON_CONTAINS(JSON '[1, [2, 3]]', JSON '[[2]]')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_097
+query:
+  SELECT JSON_CONTAINS(JSON '[[1, 2, 3]]', JSON '[[1, 2]]')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_098
+query:
+  SELECT JSON_CONTAINS(JSON '[[1, 2, 3]]', JSON '[1, 2]')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_099
+query:
+  SELECT JSON_CONTAINS(JSON '1', JSON '1')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_100
+query:
+  SELECT JSON_CONTAINS(JSON '1', JSON '1.0')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_101
+query:
+  SELECT JSON_CONTAINS(JSON '1', JSON '[1]')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_102
+query:
+  SELECT JSON_CONTAINS(JSON '"a"', JSON '"a"')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_103
+query:
+  SELECT JSON_CONTAINS(JSON '"a"', JSON '"b"')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_104
+query:
+  SELECT JSON_CONTAINS(JSON 'null', JSON 'null')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_105
+query:
+  SELECT JSON_CONTAINS(JSON '[null]', JSON 'null')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_106
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": null}', JSON '{"a": null}')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_107
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": 1}', JSON '1')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_108
+query:
+  SELECT JSON_CONTAINS(JSON '[{"a": 1, "b": 2}]', JSON '[{"a": 1}]')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_109
+query:
+  SELECT JSON_CONTAINS(JSON '[{"a": 1, "b": 2}]', JSON '{"a": 1}')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_110
+query:
+  SELECT JSON_CONTAINS(JSON '{"a": [1, 2]}', JSON '{"a": 2}')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_111
+query:
+  SELECT JSON_CONTAINS(JSON 'true', JSON 'true')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_112
+query:
+  SELECT JSON_CONTAINS(JSON '[true]', JSON 'false')
+expect:
+  columns: BOOL
+  [false]
+
+case jm_113
+query:
+  SELECT JSON_CONTAINS(JSON '1e2', JSON '100')
+expect:
+  columns: BOOL
+  [true]
+
+case jm_114
+query:
+  SELECT JSON_CONTAINS(JSON '[1, 2]', CAST(NULL AS JSON))
+expect:
+  columns: BOOL
+  [null]
+
+case jm_115
+query:
+  SELECT JSON_CONTAINS(CAST(NULL AS JSON), JSON '1')
+expect:
+  columns: BOOL
+  [null]
+
+case jm_116
+query:
+  SELECT BOOL_ARRAY(JSON '[true, false]')
+expect:
+  columns: ARRAY<BOOL>
+  [[true,false]]
+
+case jm_117
+query:
+  SELECT BOOL_ARRAY(JSON '[]')
+expect:
+  columns: ARRAY<BOOL>
+  [[]]
+
+case jm_118
+query:
+  SELECT BOOL_ARRAY(JSON '[true, null]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a boolean
+
+case jm_119
+query:
+  SELECT BOOL_ARRAY(JSON '[1]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a boolean
+
+case jm_120
+query:
+  SELECT BOOL_ARRAY(JSON 'true')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an array
+
+case jm_121
+query:
+  SELECT BOOL_ARRAY(JSON 'null')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an array
+
+case jm_122
+query:
+  SELECT BOOL_ARRAY(CAST(NULL AS JSON))
+expect:
+  columns: ARRAY<BOOL>
+  [null]
+
+case jm_123
+query:
+  SELECT BOOL_ARRAY(JSON '["true"]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a boolean
+
+case jm_124
+query:
+  SELECT INT64_ARRAY(JSON '[1, -2, 3.0, 1e2]')
+expect:
+  columns: ARRAY<INT64>
+  [["1","-2","3","100"]]
+
+case jm_125
+query:
+  SELECT INT64_ARRAY(JSON '[1.5]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON number: 1.5 cannot be converted to an int64
+
+case jm_126
+query:
+  SELECT INT64_ARRAY(JSON '[9223372036854775808]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an integer
+
+case jm_127
+query:
+  SELECT INT64_ARRAY(JSON '["1"]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an integer
+
+case jm_128
+query:
+  SELECT INT64_ARRAY(JSON '[null]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an integer
+
+case jm_129
+query:
+  SELECT INT64_ARRAY(JSON '1')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an array
+
+case jm_130
+query:
+  SELECT INT64_ARRAY(JSON '[]')
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case jm_131
+query:
+  SELECT FLOAT64_ARRAY(JSON '[1, 2.5, -1e300]')
+expect:
+  columns: ARRAY<FLOAT64>
+  [[1.0,2.5,-1e+300]]
+
+case jm_132
+query:
+  SELECT FLOAT64_ARRAY(JSON '["NaN", "Infinity", "-Infinity"]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_133
+query:
+  SELECT FLOAT64_ARRAY(JSON '["1.5"]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_134
+query:
+  SELECT FLOAT64_ARRAY(JSON '[18446744073709551615]')
+expect:
+  columns: ARRAY<FLOAT64>
+  [[1.8446744073709552e+19]]
+
+case jm_135
+query:
+  SELECT FLOAT64_ARRAY(JSON '[18446744073709551615]', wide_number_mode => 'exact')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: 18446744073709551615 cannot be converted to FLOAT64 without loss of precision
+
+case jm_136
+query:
+  SELECT FLOAT64_ARRAY(JSON '[18446744073709551615]', wide_number_mode => 'round')
+expect:
+  columns: ARRAY<FLOAT64>
+  [[1.8446744073709552e+19]]
+
+case jm_137
+query:
+  SELECT FLOAT64_ARRAY(JSON '[1]', wide_number_mode => 'foo')
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid `wide_number_mode` specified: foo
+
+case jm_138
+query:
+  SELECT FLOAT64_ARRAY(JSON '[true]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_139
+query:
+  SELECT FLOAT64_ARRAY(JSON '[null]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_140
+query:
+  SELECT FLOAT32_ARRAY(JSON '[1, 2.5, 0.1]')
+expect:
+  columns: ARRAY<FLOAT32>
+  [[1.0,2.5,0.10000000149011612]]
+
+case jm_141
+query:
+  SELECT FLOAT32_ARRAY(JSON '[1e300]')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: 1e+300 cannot be converted to FLOAT32
+
+case jm_142
+query:
+  SELECT FLOAT32_ARRAY(JSON '["NaN", "-Infinity"]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_143
+query:
+  SELECT FLOAT32_ARRAY(JSON '[16777217]')
+expect:
+  columns: ARRAY<FLOAT32>
+  [[16777216.0]]
+
+case jm_144
+query:
+  SELECT FLOAT32_ARRAY(JSON '[16777217]', wide_number_mode => 'exact')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: 16777217 cannot be converted to FLOAT32 without loss of precision
+
+case jm_145
+query:
+  SELECT FLOAT32_ARRAY(JSON '[0.1]', wide_number_mode => 'exact')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: 0.1 cannot be converted to FLOAT32 without loss of precision
+
+case jm_146
+query:
+  SELECT FLOAT32_ARRAY(JSON '{}')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an array
+
+case jm_147
+query:
+  SELECT STRING_ARRAY(JSON '["a", "b"]')
+expect:
+  columns: ARRAY<STRING>
+  [["a","b"]]
+
+case jm_148
+query:
+  SELECT STRING_ARRAY(JSON '["a", 1]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a string
+
+case jm_149
+query:
+  SELECT STRING_ARRAY(JSON '[null]')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a string
+
+case jm_150
+query:
+  SELECT STRING_ARRAY(JSON '[]')
+expect:
+  columns: ARRAY<STRING>
+  [[]]
+
+case jm_151
+query:
+  SELECT STRING_ARRAY(JSON '"a"')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not an array
+
+case jm_152
+query:
+  SELECT FLOAT32(JSON '1.5')
+expect:
+  columns: FLOAT32
+  [1.5]
+
+case jm_153
+query:
+  SELECT FLOAT32(JSON '0.1')
+expect:
+  columns: FLOAT32
+  [0.10000000149011612]
+
+case jm_154
+query:
+  SELECT FLOAT32(JSON '1e300')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: 1e+300 cannot be converted to FLOAT32
+
+case jm_155
+query:
+  SELECT FLOAT32(JSON '"NaN"')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_156
+query:
+  SELECT FLOAT32(JSON '16777217')
+expect:
+  columns: FLOAT32
+  [16777216.0]
+
+case jm_157
+query:
+  SELECT FLOAT32(JSON '16777217', wide_number_mode => 'exact')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: 16777217 cannot be converted to FLOAT32 without loss of precision
+
+case jm_158
+query:
+  SELECT FLOAT32(JSON '16777217', wide_number_mode => 'round')
+expect:
+  columns: FLOAT32
+  [16777216.0]
+
+case jm_159
+query:
+  SELECT FLOAT32(JSON 'true')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_160
+query:
+  SELECT FLOAT32(JSON 'null')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_161
+query:
+  SELECT FLOAT32(CAST(NULL AS JSON))
+expect:
+  columns: FLOAT32
+  [null]
+
+case jm_162
+query:
+  SELECT FLOAT32(JSON '"1.5"')
+expect:
+  error: OUT_OF_RANGE
+  message: The provided JSON input is not a number
+
+case jm_163
+query:
+  SELECT FLOAT32(JSON '3.4028234663852886e38')
+expect:
+  columns: FLOAT32
+  [3.4028234663852886e+38]
+
+case jm_164
+query:
+  SELECT FLOAT32(JSON '-3.5e38')
+expect:
+  error: OUT_OF_RANGE
+  message: JSON number: -3.5e+38 cannot be converted to FLOAT32
+
+case set_column
+query:
+  SELECT Id, JSON_SET(Data, '$.b.d', Id) FROM Docs ORDER BY Id
+expect:
+  columns: Id INT64, JSON
+  ["1","{\"a\":[1,2],\"b\":{\"c\":true,\"d\":1}}"]
+  ["2","{\"a\":1,\"b\":{\"d\":2}}"]
+  ["3",null]
+
+case set_param
+query:
+  SELECT Id, JSON_SET(Data, @p, @v) FROM Docs ORDER BY Id
+params:
+  @p STRING = "$.a[3]"
+  @v STRING = "z"
+expect:
+  columns: Id INT64, JSON
+  ["1","{\"a\":[1,2,null,\"z\"],\"b\":{\"c\":true}}"]
+  ["2","{\"a\":1}"]
+  ["3",null]
+
+case append_column
+query:
+  SELECT Id, JSON_ARRAY_APPEND(Data, '$.a', Tags) FROM Docs ORDER BY Id
+expect:
+  columns: Id INT64, JSON
+  ["1","{\"a\":[1,2,\"x\",\"y\"],\"b\":{\"c\":true}}"]
+  ["2","{\"a\":1}"]
+  ["3",null]
+
+case insert_column
+query:
+  SELECT Id, JSON_ARRAY_INSERT(Data, '$.a[0]', Id) FROM Docs ORDER BY Id
+expect:
+  columns: Id INT64, JSON
+  ["1","{\"a\":[1,1,2],\"b\":{\"c\":true}}"]
+  ["2","{\"a\":1}"]
+  ["3",null]
+
+case contains_where
+query:
+  SELECT Id FROM Docs WHERE JSON_CONTAINS(Data, JSON '{"a": [2]}') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+
+case contains_param
+query:
+  SELECT Id, JSON_CONTAINS(Data, @c) FROM Docs ORDER BY Id
+params:
+  @c JSON = "{\"b\": {}}"
+expect:
+  columns: Id INT64, BOOL
+  ["1",true]
+  ["2",false]
+  ["3",null]
+
+case bool_array_column
+query:
+  SELECT Id, BOOL_ARRAY(JSON_QUERY(Data, '$.x')) FROM Docs ORDER BY Id
+expect:
+  columns: Id INT64, ARRAY<BOOL>
+  ["1",null]
+  ["2",null]
+  ["3",null]
+
+case dml_set
+dml:
+  UPDATE Docs SET Data = JSON_SET(Data, '$.n', 1) WHERE Id = 2 THEN RETURN Id, Data
+expect:
+  count: 1
+  columns: Id INT64, Data JSON
+  ["2","{\"a\":1,\"n\":1}"]
+
+case edge_insert_bad_path
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1]', '$[-1]', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid token in JSONPath at: [-1]
+
+case edge_insert_no_dollar
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1]', 'x', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: JSONPath must start with '$'
+
+case edge_append_bad_token
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '[1]', '$..a', 2)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid token in JSONPath at: ..a
+
+case edge_set_leading_zero
+query:
+  SELECT JSON_SET(JSON '[1, 2]', '$[01]', 9)
+expect:
+  columns: JSON
+  ["[1,9]"]
+
+case edge_set_space_index
+query:
+  SELECT JSON_SET(JSON '[1, 2]', '$[ 1 ]', 9)
+expect:
+  columns: JSON
+  ["[1,9]"]
+
+case edge_set_wildcard
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.*', 9)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: .*
+
+case edge_set_empty_quoted
+query:
+  SELECT JSON_SET(JSON '{"a": 1}', '$.""', 9)
+expect:
+  columns: JSON
+  ["{\"\":9,\"a\":1}"]
+
+case edge_contains_big
+query:
+  SELECT JSON_CONTAINS(JSON '[18446744073709551615]', JSON '18446744073709551615'), JSON_CONTAINS(JSON '9007199254740993', JSON '9007199254740992')
+expect:
+  columns: BOOL, BOOL
+  [true,false]
+
+case edge_set_nan
+query:
+  SELECT JSON_SET(JSON '{}', '$.a', CAST('NaN' AS FLOAT64))
+expect:
+  columns: JSON
+  ["{\"a\":\"NaN\"}"]
+
+case edge_remove_bad_token
+query:
+  SELECT JSON_REMOVE(JSON '{"a": 1}', '$[-1]')
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_REMOVE: Invalid token in JSONPath at: [-1]
+
+case edge_insert_null_pad_empty
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '[1]', '$[3]', ARRAY<INT64>[])
+expect:
+  columns: JSON
+  ["[1,null,null,null]"]
+
+case edge_float32_array_wide_null
+query:
+  SELECT FLOAT32_ARRAY(JSON '[1]', wide_number_mode => CAST(NULL AS STRING)), FLOAT32(JSON '1', wide_number_mode => CAST(NULL AS STRING))
+expect:
+  columns: ARRAY<FLOAT32>, FLOAT32
+  [null,null]
+
+case edge_set_where_param_path
+query:
+  SELECT Id FROM Docs WHERE JSON_CONTAINS(JSON_SET(Data, '$.z', 1), JSON '{"z": 1}') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case edge_path_chars
+query:
+  SELECT JSON_SET(JSON '{}', '$.a-b', 1), JSON_SET(JSON '{}', '$.a b', 1), JSON_SET(JSON '{}', '$.ø', 1), JSON_SET(JSON '{}', '$.a$', 1)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: $
+
+case edge_path_star_mid
+query:
+  SELECT JSON_SET(JSON '{}', '$.a*', 1)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: *
+
+case edge_path_quote_in_key
+query:
+  SELECT JSON_SET(JSON '{}', '$.a"b', 1)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: "b
+
+case edge_path_bracket_quoted
+query:
+  SELECT JSON_SET(JSON '{}', '$["a"]', 1)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: ["a"]
+
+case edge_path_trailing_dot
+query:
+  SELECT JSON_SET(JSON '{}', '$.a.', 1)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_SET: Invalid token in JSONPath at: .
+
+case edge_remove_dotdot
+query:
+  SELECT JSON_REMOVE(JSON '{"a": 1}', '$..a')
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid input to JSON_REMOVE: Invalid token in JSONPath at: ..a
+
+case edge_remove_key_on_array
+query:
+  SELECT JSON_REMOVE(JSON '[1, 2]', '$.0')
+expect:
+  columns: JSON
+  ["[1,2]"]
+
+case edge_insert_null_empty
+query:
+  SELECT JSON_ARRAY_INSERT(JSON '{"a": null}', '$.a[2]', ARRAY<INT64>[])
+expect:
+  columns: JSON
+  ["{\"a\":[null,null,null]}"]
+
+case edge_append_null_empty
+query:
+  SELECT JSON_ARRAY_APPEND(JSON '{"a": null}', '$.a', ARRAY<INT64>[])
+expect:
+  columns: JSON
+  ["{\"a\":[]}"]

@@ -1,0 +1,15 @@
+[package]
+name = "spanbolt-proto"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+prost.workspace = true
+prost-types.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+
+[build-dependencies]
+protoc-bin-vendored.workspace = true
+tonic-prost-build.workspace = true

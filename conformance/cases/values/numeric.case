@@ -1,0 +1,143 @@
+tags: values numeric
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case zero
+insert V cols=K,N:
+  [1, "0"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","0"]
+
+case max
+insert V cols=K,N:
+  [1, "99999999999999999999999999999.999999999"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","99999999999999999999999999999.999999999"]
+
+case min
+insert V cols=K,N:
+  [1, "-99999999999999999999999999999.999999999"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","-99999999999999999999999999999.999999999"]
+
+case trailing_zeros
+insert V cols=K,N:
+  [1, "1.500000000"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","1.5"]
+
+case leading_dot
+insert V cols=K,N:
+  [1, ".5"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","0.5"]
+
+case plus_sign
+insert V cols=K,N:
+  [1, "+7"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","7"]
+
+case exponent
+insert V cols=K,N:
+  [1, "1e3"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","1000"]
+
+case ten_fraction_digits
+insert V cols=K,N:
+  [1, "1.0000000001"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 1.0000000001 as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+
+case overflow
+insert V cols=K,N:
+  [1, "100000000000000000000000000000"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 100000000000000000000000000000 as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+
+case garbage
+insert V cols=K,N:
+  [1, "1.2.3"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 1.2.3 as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+
+case negative_small
+insert V cols=K,N:
+  [1, "-0.000000001"]
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+  ["1","-0.000000001"]
+
+case as_number
+insert V cols=K,N:
+  [1, 1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as NUMERIC
+read V cols=K,N:
+  [1]
+expect:
+  columns: K INT64, N NUMERIC
+

@@ -1,0 +1,165 @@
+tags: sql values
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+  ) PRIMARY KEY (K)
+
+case numeric_edges
+query:
+  SELECT NUMERIC '99999999999999999999999999999.999999999' AS mx, NUMERIC '-0.000000001' AS mn, NUMERIC '1.50' AS trailing, NUMERIC '0' AS z
+expect:
+  columns: mx NUMERIC, mn NUMERIC, trailing NUMERIC, z NUMERIC
+  ["99999999999999999999999999999.999999999","-0.000000001","1.5","0"]
+
+case numeric_literal_too_precise
+query:
+  SELECT NUMERIC '1.0000000001'
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid NUMERIC literal: "1.0000000001" [at 1:8]
+
+case float_edges
+query:
+  SELECT CAST('NaN' AS FLOAT64) AS nan, CAST('inf' AS FLOAT64) AS inf, CAST('-inf' AS FLOAT64) AS ninf, 1.7976931348623157e308 AS mx, 5e-324 AS mn, 0.1 + 0.2 AS sum
+expect:
+  columns: nan FLOAT64, inf FLOAT64, ninf FLOAT64, mx FLOAT64, mn FLOAT64, sum FLOAT64
+  ["NaN","Infinity","-Infinity",1.7976931348623157e+308,5e-324,0.30000000000000004]
+
+case float32_values
+query:
+  SELECT CAST(0.1 AS FLOAT32) AS f, CAST('NaN' AS FLOAT32) AS nan, CAST(16777217 AS FLOAT32) AS rounded
+expect:
+  columns: f FLOAT32, nan FLOAT32, rounded FLOAT32
+  [0.10000000149011612,"NaN",16777216.0]
+
+case float_param_round_trip
+query:
+  SELECT @f AS f, @g AS g, @n AS n
+params:
+  @f FLOAT64 = 0.30000000000000004
+  @g FLOAT64 = -0.0
+  @n FLOAT64 = "NaN"
+expect:
+  columns: f FLOAT64, g FLOAT64, n FLOAT64
+  [0.30000000000000004,-0.0,"NaN"]
+
+case int64_edges
+query:
+  SELECT 9223372036854775807 AS mx, -9223372036854775808 AS mn, 0x7fffffffffffffff AS hex
+expect:
+  columns: mx INT64, mn INT64, hex INT64
+  ["9223372036854775807","-9223372036854775808","9223372036854775807"]
+
+case timestamp_nanos_param
+query:
+  SELECT @t AS t, TIMESTAMP_ADD(@t, INTERVAL 1 NANOSECOND) AS t1
+params:
+  @t TIMESTAMP = "2024-01-02T03:04:05.123456789Z"
+expect:
+  columns: t TIMESTAMP, t1 TIMESTAMP
+  ["2024-01-02T03:04:05.123456789Z","2024-01-02T03:04:05.12345679Z"]
+
+case timestamp_param_offset
+query:
+  SELECT @t AS t
+params:
+  @t TIMESTAMP = "2024-01-02T03:04:05+01:00"
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-01-02T03:04:05+01:00 as a TIMESTAMP. The timestamp value must end with an uppercase literal 'Z' to specify Zulu time (UTC-0). For details on the TIMESTAMP type encoding, see https://cloud.google.com/spanner/docs/data-types#timestamp-type
+
+case date_param
+query:
+  SELECT @d AS d, DATE_ADD(@d, INTERVAL 1 DAY) AS next
+params:
+  @d DATE = "2024-02-28"
+expect:
+  columns: d DATE, next DATE
+  ["2024-02-28","2024-02-29"]
+
+case bytes_param
+query:
+  SELECT @b AS b, LENGTH(@b) AS n
+params:
+  @b BYTES = "AAEC/w=="
+expect:
+  columns: b BYTES, n INT64
+  ["AAEC/w==","4"]
+
+case bytes_literal_escapes
+query:
+  SELECT b'\x00\x01abc' AS b, B"""multi
+  line""" AS m
+expect:
+  columns: b BYTES, m BYTES
+  ["AAFhYmM=","bXVsdGkKbGluZQ=="]
+
+case string_literal_forms
+query:
+  SELECT 'it\'s' AS a, "dq" AS b, r'\d' AS raw, '\u00e6\n' AS esc, '''tri'ple''' AS tri
+expect:
+  columns: a STRING, b STRING, raw STRING, esc STRING, tri STRING
+  ["it's","dq","\\d","æ\n","tri'ple"]
+
+case array_struct_literals
+query:
+  SELECT [1, 2, NULL] AS a, STRUCT(1 AS x, 'y' AS y).y AS fy, ARRAY<STRUCT<a INT64, b STRING>>[(1, 'a'), (2, NULL)] AS arr
+expect:
+  columns: a ARRAY<INT64>, fy STRING, arr ARRAY<STRUCT<a INT64, b STRING>>
+  [["1","2",null],"y",[["1","a"],["2",null]]]
+
+case struct_in_array_result
+query:
+  SELECT ARRAY(SELECT AS STRUCT 1 AS x, [2, 3] AS y) AS s
+expect:
+  columns: s ARRAY<STRUCT<x INT64, y ARRAY<INT64>>>
+  [[["1",["2","3"]]]]
+
+case null_typed_values
+query:
+  SELECT CAST(NULL AS INT64) AS i, CAST(NULL AS ARRAY<STRING>) AS a, CAST(NULL AS JSON) AS j, CAST(NULL AS NUMERIC) AS n
+expect:
+  columns: i INT64, a ARRAY<STRING>, j JSON, n NUMERIC
+  [null,null,null,null]
+
+case numeric_param
+query:
+  SELECT @n AS n, @n * 2 AS d
+params:
+  @n NUMERIC = "12345678901234567890.123456789"
+expect:
+  columns: n NUMERIC, d NUMERIC
+  ["12345678901234567890.123456789","24691357802469135780.246913578"]
+
+case int64_param_as_string
+query:
+  SELECT @i + 1 AS i
+params:
+  @i INT64 = "41"
+expect:
+  columns: i INT64
+  ["42"]
+
+case int64_param_invalid
+query:
+  SELECT @i
+params:
+  @i INT64 = "x"
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer
+
+case interval_values
+query:
+  SELECT INTERVAL 5 DAY AS d, INTERVAL '1-2' YEAR TO MONTH AS ym
+expect:
+  columns: d INTERVAL, ym INTERVAL
+  ["P5D","P1Y2M"]
+
+case uuid_values
+query:
+  SELECT NEW_UUID() IS NOT NULL AS ok, CAST('a8f9e3c8-0e9e-4f3a-9b0e-6b0b9d1c0a11' AS UUID) AS u
+expect:
+  columns: ok BOOL, u UUID
+  [true,"a8f9e3c8-0e9e-4f3a-9b0e-6b0b9d1c0a11"]
+

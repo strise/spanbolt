@@ -1,0 +1,137 @@
+soak:     30s rss=  154.1MB footprint=   90.7MB heap=   40.6MB ops=457782 passes=32 instances=2 databases=45 sessions=8 txns=0 operations=3346 catalogs=11 plans=1390 search_postings=32 search_queries=111
+soak:     60s rss=  185.7MB footprint=   94.1MB heap=   44.2MB ops=449833 passes=65 instances=2 databases=44 sessions=10 txns=1 operations=6673 catalogs=11 plans=2285 search_postings=32 search_queries=111
+soak:     90s rss=  218.1MB footprint=   89.4MB heap=   53.6MB ops=459282 passes=98 instances=2 databases=47 sessions=9 txns=2 operations=10039 catalogs=14 plans=3566 search_postings=32 search_queries=111
+soak:    120s rss=  250.8MB footprint=   92.0MB heap=   45.5MB ops=461367 passes=132 instances=2 databases=36 sessions=15 txns=0 operations=13457 catalogs=6 plans=1160 search_postings=32 search_queries=111
+soak:    150s rss=  265.6MB footprint=   84.8MB heap=   50.9MB ops=462520 passes=165 instances=2 databases=46 sessions=9 txns=0 operations=16837 catalogs=7 plans=3356 search_postings=32 search_queries=111
+soak:    180s rss=  279.5MB footprint=   91.9MB heap=   51.4MB ops=435504 passes=198 instances=2 databases=45 sessions=9 txns=0 operations=20133 catalogs=7 plans=2056 search_postings=32 search_queries=111
+soak:    210s rss=  298.4MB footprint=  102.6MB heap=   65.6MB ops=467724 passes=231 instances=2 databases=48 sessions=13 txns=0 operations=23516 catalogs=8 plans=4413 search_postings=32 search_queries=111
+soak:    240s rss=  325.3MB footprint=  113.8MB heap=   62.6MB ops=483171 passes=265 instances=2 databases=45 sessions=10 txns=0 operations=26997 catalogs=11 plans=4279 search_postings=32 search_queries=111
+soak:    270s rss=  361.1MB footprint=  124.5MB heap=   58.0MB ops=463825 passes=299 instances=2 databases=11 sessions=7 txns=0 operations=30382 catalogs=6 plans=2605 search_postings=32 search_queries=111
+soak:    300s rss=  378.2MB footprint=  129.0MB heap=   78.0MB ops=417716 passes=330 instances=2 databases=49 sessions=14 txns=0 operations=33543 catalogs=14 plans=5523 search_postings=32 search_queries=111
+soak:    330s rss=  394.2MB footprint=  121.6MB heap=   72.6MB ops=481435 passes=364 instances=2 databases=45 sessions=11 txns=0 operations=37022 catalogs=11 plans=4750 search_postings=32 search_queries=111
+soak:    360s rss=  412.6MB footprint=  130.5MB heap=   86.2MB ops=334035 passes=392 instances=2 databases=46 sessions=12 txns=0 operations=39711 catalogs=8 plans=5063 search_postings=32 search_queries=111
+soak:    390s rss=  450.1MB footprint=  154.0MB heap=   89.9MB ops=240685 passes=421 instances=2 databases=40 sessions=11 txns=1 operations=42188 catalogs=4 plans=3494 search_postings=32 search_queries=111
+soak:    420s rss=  453.2MB footprint=  125.7MB heap=   83.4MB ops=405326 passes=453 instances=2 databases=46 sessions=11 txns=0 operations=45307 catalogs=13 plans=6326 search_postings=32 search_queries=111
+soak:    450s rss=  459.5MB footprint=  129.7MB heap=   78.6MB ops=465073 passes=487 instances=2 databases=44 sessions=10 txns=0 operations=48707 catalogs=7 plans=4655 search_postings=32 search_queries=111
+soak:    480s rss=  466.9MB footprint=  119.7MB heap=   71.9MB ops=430869 passes=520 instances=2 databases=34 sessions=13 txns=0 operations=51944 catalogs=6 plans=198 search_postings=32 search_queries=111
+soak:    510s rss=  476.9MB footprint=  103.0MB heap=   93.9MB ops=467093 passes=553 instances=2 databases=55 sessions=13 txns=0 operations=55311 catalogs=16 plans=3391 search_postings=32 search_queries=111
+soak:    540s rss=  489.4MB footprint=  110.5MB heap=   93.3MB ops=470012 passes=587 instances=2 databases=11 sessions=6 txns=0 operations=58731 catalogs=6 plans=778 search_postings=32 search_queries=111
+soak:    570s rss=  501.0MB footprint=  116.7MB heap=   90.0MB ops=452030 passes=621 instances=2 databases=47 sessions=12 txns=0 operations=62086 catalogs=12 plans=3224 search_postings=32 search_queries=111
+soak:    600s rss=  511.3MB footprint=  120.7MB heap=   91.9MB ops=462475 passes=655 instances=2 databases=44 sessions=10 txns=0 operations=65479 catalogs=11 plans=1852 search_postings=32 search_queries=111
+soak:    630s rss=  517.5MB footprint=  124.7MB heap=  112.9MB ops=467300 passes=688 instances=2 databases=52 sessions=14 txns=0 operations=68826 catalogs=15 plans=4368 search_postings=32 search_queries=111
+soak:    660s rss=  530.8MB footprint=  132.7MB heap=   95.3MB ops=482324 passes=723 instances=2 databases=38 sessions=8 txns=0 operations=72331 catalogs=3 plans=1880 search_postings=32 search_queries=111
+soak:    690s rss=  545.0MB footprint=  136.4MB heap=   98.2MB ops=482435 passes=757 instances=2 databases=45 sessions=11 txns=0 operations=75779 catalogs=7 plans=2720 search_postings=32 search_queries=111
+soak:    720s rss=  558.4MB footprint=  143.0MB heap=  101.7MB ops=481252 passes=791 instances=2 databases=43 sessions=7 txns=0 operations=79227 catalogs=11 plans=3677 search_postings=32 search_queries=111
+soak:    750s rss=  573.3MB footprint=  149.9MB heap=  113.1MB ops=485891 passes=825 instances=2 databases=48 sessions=11 txns=0 operations=82687 catalogs=11 plans=5406 search_postings=32 search_queries=111
+soak:    780s rss=  588.3MB footprint=  156.2MB heap=  108.6MB ops=483920 passes=860 instances=2 databases=41 sessions=10 txns=1 operations=86198 catalogs=7 plans=3066 search_postings=32 search_queries=111
+soak:    810s rss=  602.3MB footprint=  161.1MB heap=  109.5MB ops=481768 passes=894 instances=2 databases=45 sessions=10 txns=0 operations=89644 catalogs=7 plans=4270 search_postings=32 search_queries=111
+soak:    840s rss=  616.2MB footprint=  167.8MB heap=  119.1MB ops=486138 passes=928 instances=2 databases=47 sessions=12 txns=0 operations=93107 catalogs=12 plans=5967 search_postings=32 search_queries=111
+soak:    870s rss=  631.3MB footprint=  174.5MB heap=  129.8MB ops=484487 passes=962 instances=2 databases=59 sessions=13 txns=0 operations=96569 catalogs=19 plans=6893 search_postings=32 search_queries=111
+soak:    900s rss=  644.7MB footprint=  178.4MB heap=  112.2MB ops=475283 passes=997 instances=2 databases=43 sessions=14 txns=0 operations=100042 catalogs=7 plans=144 search_postings=32 search_queries=111
+soak:    930s rss=  660.3MB footprint=  141.5MB heap=  120.7MB ops=483966 passes=1031 instances=2 databases=45 sessions=11 txns=0 operations=103495 catalogs=10 plans=1205 search_postings=32 search_queries=111
+soak:    960s rss=  675.9MB footprint=  149.7MB heap=  120.7MB ops=485268 passes=1065 instances=2 databases=46 sessions=8 txns=0 operations=106949 catalogs=7 plans=2550 search_postings=32 search_queries=111
+soak:    990s rss=  688.8MB footprint=  153.6MB heap=  143.1MB ops=482829 passes=1099 instances=2 databases=51 sessions=12 txns=0 operations=110401 catalogs=13 plans=3784 search_postings=32 search_queries=111
+soak:   1020s rss=  702.3MB footprint=  162.9MB heap=  123.3MB ops=481598 passes=1134 instances=2 databases=44 sessions=14 txns=0 operations=113906 catalogs=8 plans=1373 search_postings=32 search_queries=111
+soak:   1050s rss=  718.0MB footprint=  168.0MB heap=  129.1MB ops=484154 passes=1168 instances=2 databases=46 sessions=12 txns=0 operations=117358 catalogs=7 plans=2590 search_postings=32 search_queries=111
+soak:   1080s rss=  733.7MB footprint=  174.9MB heap=  135.4MB ops=484585 passes=1202 instances=2 databases=46 sessions=9 txns=0 operations=120813 catalogs=9 plans=4170 search_postings=32 search_queries=111
+soak:   1110s rss=  748.6MB footprint=  182.3MB heap=  149.4MB ops=483964 passes=1236 instances=2 databases=57 sessions=22 txns=8 operations=124273 catalogs=17 plans=5127 search_postings=32 search_queries=111
+soak:   1140s rss=  763.9MB footprint=  189.7MB heap=  136.5MB ops=482004 passes=1271 instances=2 databases=45 sessions=11 txns=0 operations=127767 catalogs=7 plans=3217 search_postings=32 search_queries=111
+soak:   1170s rss=  778.6MB footprint=  197.6MB heap=  144.0MB ops=483197 passes=1305 instances=2 databases=41 sessions=8 txns=1 operations=131213 catalogs=11 plans=4912 search_postings=32 search_queries=111
+soak:   1200s rss=  794.5MB footprint=  206.7MB heap=  151.1MB ops=480991 passes=1339 instances=2 databases=52 sessions=14 txns=0 operations=134661 catalogs=12 plans=5819 search_postings=32 search_queries=111
+soak:   1230s rss=  808.9MB footprint=  210.2MB heap=  143.8MB ops=483850 passes=1374 instances=2 databases=40 sessions=9 txns=2 operations=138173 catalogs=8 plans=3416 search_postings=32 search_queries=111
+soak:   1260s rss=  824.9MB footprint=  218.1MB heap=  151.4MB ops=484685 passes=1408 instances=2 databases=46 sessions=11 txns=0 operations=141630 catalogs=9 plans=4836 search_postings=32 search_queries=111
+soak:   1290s rss=  841.9MB footprint=  226.9MB heap=  162.0MB ops=482327 passes=1442 instances=2 databases=47 sessions=10 txns=0 operations=145079 catalogs=11 plans=6606 search_postings=32 search_queries=111
+soak:   1320s rss=  855.9MB footprint=  207.1MB heap=  167.7MB ops=480354 passes=1476 instances=2 databases=54 sessions=6 txns=0 operations=148529 catalogs=17 plans=3081 search_postings=32 search_queries=111
+soak:   1350s rss=  869.8MB footprint=  179.4MB heap=  152.3MB ops=485929 passes=1511 instances=2 databases=43 sessions=13 txns=4 operations=152037 catalogs=8 plans=549 search_postings=32 search_queries=111
+soak:   1380s rss=  883.4MB footprint=  182.5MB heap=  156.4MB ops=482597 passes=1545 instances=2 databases=44 sessions=8 txns=0 operations=155481 catalogs=7 plans=2131 search_postings=32 search_queries=111
+soak:   1410s rss=  899.8MB footprint=  193.8MB heap=  171.2MB ops=488151 passes=1579 instances=2 databases=50 sessions=14 txns=0 operations=158955 catalogs=14 plans=3763 search_postings=32 search_queries=111
+soak:   1440s rss=  912.6MB footprint=  196.5MB heap=  167.0MB ops=483087 passes=1614 instances=2 databases=44 sessions=8 txns=0 operations=162464 catalogs=11 plans=1743 search_postings=32 search_queries=111
+soak:   1470s rss=  927.9MB footprint=  202.8MB heap=  168.2MB ops=481841 passes=1648 instances=2 databases=42 sessions=8 txns=0 operations=165905 catalogs=7 plans=3661 search_postings=32 search_queries=111
+soak:   1500s rss=  944.0MB footprint=  211.8MB heap=  178.1MB ops=480679 passes=1682 instances=2 databases=48 sessions=9 txns=1 operations=169347 catalogs=10 plans=4592 search_postings=32 search_queries=111
+soak:   1530s rss=  958.6MB footprint=  218.5MB heap=  167.2MB ops=487334 passes=1717 instances=2 databases=40 sessions=10 txns=0 operations=172868 catalogs=3 plans=2185 search_postings=32 search_queries=111
+soak:   1560s rss=  974.1MB footprint=  225.8MB heap=  175.3MB ops=482450 passes=1751 instances=2 databases=42 sessions=8 txns=0 operations=176311 catalogs=9 plans=3287 search_postings=32 search_queries=111
+soak:   1590s rss=  988.5MB footprint=  227.8MB heap=  183.9MB ops=487847 passes=1785 instances=2 databases=47 sessions=14 txns=1 operations=179774 catalogs=8 plans=4923 search_postings=32 search_queries=111
+soak:   1620s rss= 1002.2MB footprint=  235.5MB heap=  185.2MB ops=482595 passes=1819 instances=2 databases=46 sessions=9 txns=0 operations=183221 catalogs=13 plans=5624 search_postings=32 search_queries=111
+soak:   1650s rss= 1015.9MB footprint=  240.7MB heap=  205.3MB ops=482855 passes=1853 instances=2 databases=56 sessions=10 txns=1 operations=186674 catalogs=20 plans=6319 search_postings=32 search_queries=111
+soak:   1680s rss= 1030.8MB footprint=  247.7MB heap=  186.8MB ops=482440 passes=1888 instances=2 databases=45 sessions=9 txns=1 operations=190174 catalogs=11 plans=4120 search_postings=32 search_queries=111
+soak:   1710s rss= 1045.8MB footprint=  253.9MB heap=  193.4MB ops=485719 passes=1922 instances=2 databases=44 sessions=11 txns=0 operations=193627 catalogs=9 plans=5361 search_postings=32 search_queries=111
+soak:   1740s rss= 1058.2MB footprint=  207.3MB heap=  189.5MB ops=486929 passes=1956 instances=2 databases=47 sessions=12 txns=1 operations=197075 catalogs=8 plans=2546 search_postings=32 search_queries=111
+soak:   1770s rss= 1069.4MB footprint=  212.0MB heap=  183.5MB ops=491780 passes=1991 instances=2 databases=6 sessions=6 txns=0 operations=200553 catalogs=2 plans=434 search_postings=32 search_queries=111
+soak:   1800s rss= 1079.5MB footprint=  217.9MB heap=  200.3MB ops=484476 passes=2025 instances=2 databases=45 sessions=14 txns=0 operations=204052 catalogs=5 plans=852 search_postings=32 search_queries=111
+soak:   1830s rss= 1091.7MB footprint=  225.1MB heap=  198.5MB ops=488236 passes=2059 instances=2 databases=45 sessions=11 txns=0 operations=207503 catalogs=9 plans=2299 search_postings=32 search_queries=111
+soak:   1860s rss= 1105.5MB footprint=  234.6MB heap=  202.8MB ops=490249 passes=2093 instances=2 databases=46 sessions=11 txns=0 operations=210969 catalogs=8 plans=3512 search_postings=32 search_queries=111
+soak:   1890s rss= 1116.8MB footprint=  237.9MB heap=  215.8MB ops=488426 passes=2127 instances=2 databases=50 sessions=10 txns=1 operations=214425 catalogs=13 plans=4399 search_postings=32 search_queries=111
+soak:   1920s rss= 1128.5MB footprint=  244.1MB heap=  220.3MB ops=483280 passes=2161 instances=2 databases=56 sessions=15 txns=5 operations=217871 catalogs=18 plans=4857 search_postings=32 search_queries=111
+soak:   1950s rss= 1140.1MB footprint=  249.1MB heap=  216.1MB ops=479871 passes=2196 instances=2 databases=44 sessions=13 txns=0 operations=221343 catalogs=7 plans=2260 search_postings=32 search_queries=111
+soak:   1980s rss= 1150.3MB footprint=  254.6MB heap=  218.0MB ops=488103 passes=2230 instances=2 databases=45 sessions=12 txns=0 operations=224796 catalogs=8 plans=3565 search_postings=32 search_queries=111
+soak:   2010s rss= 1162.1MB footprint=  263.8MB heap=  216.6MB ops=487446 passes=2264 instances=2 databases=45 sessions=9 txns=1 operations=228246 catalogs=11 plans=4897 search_postings=32 search_queries=111
+soak:   2040s rss= 1174.5MB footprint=  268.2MB heap=  233.1MB ops=492299 passes=2298 instances=2 databases=51 sessions=11 txns=0 operations=231723 catalogs=18 plans=5939 search_postings=32 search_queries=111
+soak:   2070s rss= 1186.0MB footprint=  275.8MB heap=  218.9MB ops=490555 passes=2333 instances=2 databases=46 sessions=13 txns=0 operations=235245 catalogs=10 plans=3547 search_postings=32 search_queries=111
+soak:   2100s rss= 1196.5MB footprint=  280.6MB heap=  225.6MB ops=488695 passes=2367 instances=2 databases=45 sessions=9 txns=1 operations=238707 catalogs=11 plans=4700 search_postings=32 search_queries=111
+soak:   2130s rss= 1206.5MB footprint=  283.7MB heap=  226.1MB ops=488260 passes=2401 instances=2 databases=43 sessions=10 txns=0 operations=242157 catalogs=7 plans=5542 search_postings=32 search_queries=111
+soak:   2160s rss= 1217.5MB footprint=  271.5MB heap=  227.3MB ops=493489 passes=2435 instances=2 databases=47 sessions=10 txns=0 operations=245633 catalogs=9 plans=2634 search_postings=32 search_queries=111
+soak:   2190s rss= 1233.0MB footprint=  255.7MB heap=  240.6MB ops=490277 passes=2469 instances=2 databases=54 sessions=11 txns=0 operations=249106 catalogs=18 plans=3370 search_postings=32 search_queries=111
+soak:   2220s rss= 1249.3MB footprint=  260.0MB heap=  226.8MB ops=487907 passes=2504 instances=2 databases=42 sessions=14 txns=1 operations=252614 catalogs=4 plans=763 search_postings=32 search_queries=111
+soak:   2250s rss= 1296.2MB footprint=  295.6MB heap=  235.3MB ops=489848 passes=2538 instances=2 databases=44 sessions=9 txns=0 operations=256080 catalogs=10 plans=1540 search_postings=32 search_queries=111
+soak:   2280s rss= 1325.8MB footprint=  282.5MB heap=  247.9MB ops=455534 passes=2571 instances=2 databases=50 sessions=14 txns=0 operations=259383 catalogs=10 plans=4059 search_postings=32 search_queries=111
+soak:   2310s rss= 1366.1MB footprint=  291.3MB heap=  252.0MB ops=489577 passes=2605 instances=2 databases=56 sessions=8 txns=0 operations=262850 catalogs=19 plans=4584 search_postings=32 search_queries=111
+soak:   2340s rss= 1410.6MB footprint=  302.3MB heap=  240.4MB ops=485719 passes=2640 instances=2 databases=45 sessions=8 txns=1 operations=266346 catalogs=11 plans=2117 search_postings=32 search_queries=111
+soak:   2370s rss= 1445.4MB footprint=  310.2MB heap=  246.6MB ops=466614 passes=2673 instances=2 databases=45 sessions=11 txns=0 operations=269686 catalogs=8 plans=4526 search_postings=32 search_queries=111
+soak:   2400s rss= 1494.9MB footprint=  321.9MB heap=  264.8MB ops=488657 passes=2707 instances=2 databases=55 sessions=13 txns=0 operations=273152 catalogs=16 plans=5369 search_postings=32 search_queries=111
+soak:   2430s rss= 1542.4MB footprint=  325.9MB heap=  264.5MB ops=492116 passes=2741 instances=2 databases=57 sessions=10 txns=0 operations=276622 catalogs=23 plans=5765 search_postings=32 search_queries=111
+soak:   2460s rss= 1578.1MB footprint=  323.4MB heap=  256.6MB ops=490469 passes=2776 instances=2 databases=45 sessions=14 txns=0 operations=280129 catalogs=5 plans=3203 search_postings=32 search_queries=111
+soak:   2490s rss= 1598.5MB footprint=  322.1MB heap=  260.5MB ops=488968 passes=2810 instances=2 databases=43 sessions=10 txns=0 operations=283580 catalogs=11 plans=3973 search_postings=32 search_queries=111
+soak:   2520s rss= 1618.4MB footprint=  325.6MB heap=  260.1MB ops=486210 passes=2844 instances=2 databases=45 sessions=11 txns=0 operations=287022 catalogs=11 plans=4198 search_postings=32 search_queries=111
+soak:   2550s rss= 1640.3MB footprint=  339.7MB heap=  271.5MB ops=481840 passes=2878 instances=2 databases=44 sessions=10 txns=0 operations=290460 catalogs=7 plans=4185 search_postings=32 search_queries=111
+soak:   2580s rss= 1652.0MB footprint=  307.6MB heap=  274.0MB ops=429575 passes=2910 instances=2 databases=47 sessions=12 txns=0 operations=293641 catalogs=10 plans=2543 search_postings=32 search_queries=111
+soak:   2610s rss= 1657.9MB footprint=  291.0MB heap=  272.9MB ops=220852 passes=2938 instances=2 databases=58 sessions=11 txns=1 operations=296023 catalogs=19 plans=3209 search_postings=32 search_queries=111
+soak:   2640s rss= 1661.1MB footprint=  292.4MB heap=  282.7MB ops=243187 passes=2968 instances=2 databases=56 sessions=18 txns=6 operations=298595 catalogs=21 plans=3353 search_postings=32 search_queries=111
+soak:   2670s rss= 1664.8MB footprint=  294.8MB heap=  272.9MB ops=239565 passes=2998 instances=2 databases=51 sessions=14 txns=1 operations=301146 catalogs=15 plans=3292 search_postings=32 search_queries=111
+soak:   2700s rss= 1667.5MB footprint=  296.7MB heap=  283.5MB ops=247541 passes=3028 instances=2 databases=50 sessions=7 txns=1 operations=303732 catalogs=16 plans=3500 search_postings=32 search_queries=111
+soak:   2730s rss= 1670.3MB footprint=  298.8MB heap=  281.9MB ops=238919 passes=3058 instances=2 databases=55 sessions=12 txns=0 operations=306292 catalogs=19 plans=3701 search_postings=32 search_queries=111
+soak:   2760s rss= 1674.2MB footprint=  301.8MB heap=  282.7MB ops=235338 passes=3088 instances=2 databases=47 sessions=10 txns=0 operations=308827 catalogs=11 plans=3347 search_postings=32 search_queries=111
+soak:   2790s rss= 1677.1MB footprint=  303.9MB heap=  274.5MB ops=231670 passes=3118 instances=2 databases=45 sessions=10 txns=0 operations=311356 catalogs=11 plans=2464 search_postings=32 search_queries=111
+soak:   2820s rss= 1680.3MB footprint=  306.6MB heap=  287.4MB ops=238585 passes=3148 instances=2 databases=42 sessions=8 txns=0 operations=313913 catalogs=9 plans=1568 search_postings=32 search_queries=111
+soak:   2850s rss= 1683.1MB footprint=  308.7MB heap=  285.4MB ops=235880 passes=3177 instances=2 databases=46 sessions=6 txns=0 operations=316399 catalogs=15 plans=4122 search_postings=32 search_queries=111
+soak:   2880s rss= 1686.1MB footprint=  311.4MB heap=  289.6MB ops=231471 passes=3207 instances=2 databases=46 sessions=12 txns=0 operations=318923 catalogs=10 plans=2951 search_postings=32 search_queries=111
+soak:   2910s rss= 1689.1MB footprint=  313.8MB heap=  296.0MB ops=232449 passes=3236 instances=2 databases=58 sessions=21 txns=6 operations=321395 catalogs=19 plans=4557 search_postings=32 search_queries=111
+soak:   2940s rss= 1692.0MB footprint=  316.4MB heap=  292.5MB ops=229216 passes=3266 instances=2 databases=44 sessions=10 txns=1 operations=323908 catalogs=7 plans=2044 search_postings=32 search_queries=111
+soak:   2970s rss= 1695.3MB footprint=  319.4MB heap=  297.5MB ops=241073 passes=3295 instances=2 databases=54 sessions=11 txns=0 operations=326411 catalogs=20 plans=4798 search_postings=32 search_queries=111
+soak:   3000s rss= 1698.4MB footprint=  321.8MB heap=  309.6MB ops=239612 passes=3325 instances=2 databases=45 sessions=10 txns=0 operations=328960 catalogs=8 plans=4026 search_postings=32 search_queries=111
+soak:   3030s rss= 1701.7MB footprint=  324.8MB heap=  304.3MB ops=244047 passes=3355 instances=2 databases=45 sessions=7 txns=0 operations=331532 catalogs=9 plans=3714 search_postings=32 search_queries=111
+soak:   3060s rss= 1704.9MB footprint=  327.6MB heap=  299.5MB ops=234756 passes=3385 instances=2 databases=37 sessions=9 txns=0 operations=334068 catalogs=4 plans=2286 search_postings=32 search_queries=111
+soak:   3090s rss= 1709.1MB footprint=  331.1MB heap=  301.1MB ops=254260 passes=3415 instances=2 databases=44 sessions=8 txns=1 operations=336681 catalogs=10 plans=2919 search_postings=32 search_queries=111
+soak:   3120s rss= 1712.9MB footprint=  334.5MB heap=  317.2MB ops=235470 passes=3444 instances=2 databases=57 sessions=21 txns=5 operations=339168 catalogs=17 plans=5513 search_postings=32 search_queries=111
+soak:   3150s rss= 1716.7MB footprint=  337.5MB heap=  313.6MB ops=232140 passes=3474 instances=2 databases=44 sessions=8 txns=0 operations=341691 catalogs=9 plans=4075 search_postings=32 search_queries=111
+soak:   3180s rss= 1720.6MB footprint=  340.9MB heap=  299.0MB ops=250462 passes=3504 instances=2 databases=46 sessions=9 txns=0 operations=344271 catalogs=7 plans=3333 search_postings=32 search_queries=111
+soak:   3210s rss= 1725.5MB footprint=  344.6MB heap=  305.7MB ops=471345 passes=3538 instances=2 databases=44 sessions=14 txns=0 operations=347683 catalogs=4 plans=3180 search_postings=32 search_queries=111
+soak:   3240s rss= 1729.9MB footprint=  347.4MB heap=  309.9MB ops=408135 passes=3570 instances=2 databases=42 sessions=6 txns=0 operations=350816 catalogs=11 plans=5314 search_postings=32 search_queries=111
+soak:   3270s rss= 1734.2MB footprint=  351.7MB heap=  312.2MB ops=358195 passes=3603 instances=2 databases=44 sessions=10 txns=0 operations=353867 catalogs=10 plans=4250 search_postings=32 search_queries=111
+soak:   3300s rss= 1739.6MB footprint=  356.5MB heap=  312.3MB ops=405013 passes=3635 instances=2 databases=44 sessions=9 txns=0 operations=356966 catalogs=7 plans=5721 search_postings=32 search_queries=111
+soak:   3330s rss= 1746.4MB footprint=  359.4MB heap=  312.1MB ops=476866 passes=3669 instances=2 databases=45 sessions=11 txns=1 operations=360396 catalogs=11 plans=1771 search_postings=32 search_queries=111
+soak:   3360s rss= 1752.1MB footprint=  358.8MB heap=  313.9MB ops=472481 passes=3703 instances=2 databases=45 sessions=11 txns=0 operations=363818 catalogs=11 plans=1863 search_postings=32 search_queries=111
+soak:   3390s rss= 1754.0MB footprint=  360.8MB heap=  333.3MB ops=202222 passes=3726 instances=2 databases=49 sessions=13 txns=0 operations=365831 catalogs=11 plans=3165 search_postings=32 search_queries=111
+soak:   3420s rss= 1758.4MB footprint=  364.4MB heap=  318.3MB ops=355461 passes=3757 instances=2 databases=44 sessions=8 txns=0 operations=368741 catalogs=8 plans=2278 search_postings=32 search_queries=111
+soak:   3450s rss= 1763.8MB footprint=  368.3MB heap=  317.9MB ops=322262 passes=3787 instances=2 databases=44 sessions=10 txns=0 operations=371487 catalogs=11 plans=1300 search_postings=32 search_queries=111
+soak:   3480s rss= 1766.0MB footprint=  370.5MB heap=  349.9MB ops=223317 passes=3813 instances=2 databases=57 sessions=19 txns=6 operations=373742 catalogs=19 plans=3902 search_postings=32 search_queries=111
+soak:   3510s rss= 1769.8MB footprint=  372.8MB heap=  330.7MB ops=352115 passes=3845 instances=2 databases=51 sessions=9 txns=0 operations=376695 catalogs=13 plans=3950 search_postings=32 search_queries=111
+soak:   3540s rss= 1774.7MB footprint=  375.7MB heap=  350.6MB ops=486917 passes=3879 instances=2 databases=51 sessions=9 txns=0 operations=380148 catalogs=16 plans=4320 search_postings=32 search_queries=111
+soak:   3570s rss= 1779.8MB footprint=  379.5MB heap=  334.9MB ops=485810 passes=3913 instances=2 databases=47 sessions=10 txns=0 operations=383587 catalogs=13 plans=4282 search_postings=32 search_queries=111
+soak:   3600s rss= 1784.6MB footprint=  382.6MB heap=  334.5MB ops=476955 passes=3947 instances=2 databases=45 sessions=10 txns=0 operations=387015 catalogs=10 plans=3030 search_postings=32 search_queries=111
+== soak summary (3600 s, 4 workers)
+rss: start 154.1 MB, after warm-up 511.3 MB, end 1784.6 MB, peak 1784.6 MB, slope after warm-up +1718.5 MB/h
+footprint: start 90.7 MB, after warm-up 120.7 MB, end 382.6 MB, peak 382.6 MB, slope after warm-up +288.4 MB/h
+heap: start 40.6 MB, after warm-up 91.9 MB, end 334.5 MB, peak 350.6 MB, slope after warm-up +298.4 MB/h
+conformance passes: 3948 (last: TOTAL 3489 3458 14 7 0 10); workload errors: 0
+latency p50/p99 µs, first window after warm-up -> last window:
+  create_db      450/1188     ->     429/1141    
+  seed          1305/3135     ->    1303/2996    
+  point          194/957      ->     188/1031    
+  index          232/599      ->     224/586     
+  search         483/2457     ->     484/2247    
+  dml            447/999      ->     434/963     
+  commit         201/1117     ->     195/1140    
+  clone          136/912      ->     134/1030    
+  drop_db        220/832      ->     215/865     
+final sizes: instances=2 databases=2 sessions=2 txns=0 operations=387028 catalogs=19 plans=4984 search_postings=32 search_queries=111
+csv: .mcp-output/soak-1h-b.csv

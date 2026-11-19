@@ -1,0 +1,1918 @@
+# ARRAY_MIN/MAX/SLICE/FIRST/LAST/INCLUDES*, the lambda forms (ARRAY_FILTER, ARRAY_TRANSFORM,
+# ARRAY_INCLUDES with a lambda) and the vector distance functions.
+tags: sql function array
+schema:
+  CREATE TABLE Items (
+    Id INT64 NOT NULL,
+    Tags ARRAY<STRING(MAX)>,
+    Nums ARRAY<INT64>,
+    Vec ARRAY<FLOAT64>,
+    Vec32 ARRAY<FLOAT32>,
+  ) PRIMARY KEY (Id)
+insert Items cols=Id,Tags,Nums,Vec,Vec32:
+  [1, ["a", "b", "c"], [1, 2, 3], [1.0, 0.0], [1.0, 0.0]]
+  [2, ["b", null], [5, null], [0.0, 1.0], [0.0, 1.0]]
+  [3, [], [], [3.0, 4.0], [3.0, 4.0]]
+  [4, null, null, null, null]
+  [5, ["x"], [7], [1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]
+
+case array_min_int
+query:
+  SELECT ARRAY_MIN([3, 1, 2])
+expect:
+  columns: INT64
+  ["1"]
+
+case array_min_null_elems
+query:
+  SELECT ARRAY_MIN([3, NULL, 1])
+expect:
+  columns: INT64
+  ["1"]
+
+case array_min_all_null
+query:
+  SELECT ARRAY_MIN([CAST(NULL AS INT64), NULL])
+expect:
+  columns: INT64
+  [null]
+
+case array_min_empty
+query:
+  SELECT ARRAY_MIN(CAST([] AS ARRAY<INT64>))
+expect:
+  columns: INT64
+  [null]
+
+case array_min_null_array
+query:
+  SELECT ARRAY_MIN(CAST(NULL AS ARRAY<INT64>))
+expect:
+  columns: INT64
+  [null]
+
+case array_min_float
+query:
+  SELECT ARRAY_MIN([1.5, -2.5, 0.0])
+expect:
+  columns: FLOAT64
+  [-2.5]
+
+case array_min_float_nan
+query:
+  SELECT ARRAY_MIN([1.5, CAST('nan' AS FLOAT64), -2.5])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case array_min_float_inf
+query:
+  SELECT ARRAY_MIN([1.5, CAST('inf' AS FLOAT64), -CAST('inf' AS FLOAT64)])
+expect:
+  columns: FLOAT64
+  ["-Infinity"]
+
+case array_min_float32
+query:
+  SELECT ARRAY_MIN([CAST(1.5 AS FLOAT32), CAST(-1 AS FLOAT32)])
+expect:
+  columns: FLOAT32
+  [-1.0]
+
+case array_min_string
+query:
+  SELECT ARRAY_MIN(['b', 'a', 'C'])
+expect:
+  columns: STRING
+  ["C"]
+
+case array_min_bytes
+query:
+  SELECT ARRAY_MIN([b'b', b'a'])
+expect:
+  columns: BYTES
+  ["YQ=="]
+
+case array_min_date
+query:
+  SELECT ARRAY_MIN([DATE '2020-01-02', DATE '2019-05-01'])
+expect:
+  columns: DATE
+  ["2019-05-01"]
+
+case array_min_timestamp
+query:
+  SELECT ARRAY_MIN([TIMESTAMP '2020-01-02T00:00:00Z', TIMESTAMP '2019-05-01T00:00:00Z'])
+expect:
+  columns: TIMESTAMP
+  ["2019-05-01T00:00:00Z"]
+
+case array_min_numeric
+query:
+  SELECT ARRAY_MIN([NUMERIC '1.25', NUMERIC '-3.5'])
+expect:
+  columns: NUMERIC
+  ["-3.5"]
+
+case array_min_bool
+query:
+  SELECT ARRAY_MIN([true, false])
+expect:
+  columns: BOOL
+  [false]
+
+case array_min_column
+query:
+  SELECT Id, ARRAY_MIN(Nums), ARRAY_MIN(Tags), ARRAY_MIN(Vec) FROM Items
+expect:
+  columns: Id INT64, INT64, STRING, FLOAT64
+  ["4",null,null,null]
+  ["3",null,null,3.0]
+  ["2","5","b",0.0]
+  ["1","1","a",0.0]
+  ["5","7","x",1.0]
+
+case array_max_int
+query:
+  SELECT ARRAY_MAX([3, 1, 2])
+expect:
+  columns: INT64
+  ["3"]
+
+case array_max_null_elems
+query:
+  SELECT ARRAY_MAX([3, NULL, 1])
+expect:
+  columns: INT64
+  ["3"]
+
+case array_max_all_null
+query:
+  SELECT ARRAY_MAX([CAST(NULL AS INT64), NULL])
+expect:
+  columns: INT64
+  [null]
+
+case array_max_empty
+query:
+  SELECT ARRAY_MAX(CAST([] AS ARRAY<INT64>))
+expect:
+  columns: INT64
+  [null]
+
+case array_max_null_array
+query:
+  SELECT ARRAY_MAX(CAST(NULL AS ARRAY<INT64>))
+expect:
+  columns: INT64
+  [null]
+
+case array_max_float
+query:
+  SELECT ARRAY_MAX([1.5, -2.5, 0.0])
+expect:
+  columns: FLOAT64
+  [1.5]
+
+case array_max_float_nan
+query:
+  SELECT ARRAY_MAX([1.5, CAST('nan' AS FLOAT64), -2.5])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case array_max_float_inf
+query:
+  SELECT ARRAY_MAX([1.5, CAST('inf' AS FLOAT64), -CAST('inf' AS FLOAT64)])
+expect:
+  columns: FLOAT64
+  ["Infinity"]
+
+case array_max_float32
+query:
+  SELECT ARRAY_MAX([CAST(1.5 AS FLOAT32), CAST(-1 AS FLOAT32)])
+expect:
+  columns: FLOAT32
+  [1.5]
+
+case array_max_string
+query:
+  SELECT ARRAY_MAX(['b', 'a', 'C'])
+expect:
+  columns: STRING
+  ["b"]
+
+case array_max_bytes
+query:
+  SELECT ARRAY_MAX([b'b', b'a'])
+expect:
+  columns: BYTES
+  ["Yg=="]
+
+case array_max_date
+query:
+  SELECT ARRAY_MAX([DATE '2020-01-02', DATE '2019-05-01'])
+expect:
+  columns: DATE
+  ["2020-01-02"]
+
+case array_max_timestamp
+query:
+  SELECT ARRAY_MAX([TIMESTAMP '2020-01-02T00:00:00Z', TIMESTAMP '2019-05-01T00:00:00Z'])
+expect:
+  columns: TIMESTAMP
+  ["2020-01-02T00:00:00Z"]
+
+case array_max_numeric
+query:
+  SELECT ARRAY_MAX([NUMERIC '1.25', NUMERIC '-3.5'])
+expect:
+  columns: NUMERIC
+  ["1.25"]
+
+case array_max_bool
+query:
+  SELECT ARRAY_MAX([true, false])
+expect:
+  columns: BOOL
+  [true]
+
+case array_max_column
+query:
+  SELECT Id, ARRAY_MAX(Nums), ARRAY_MAX(Tags), ARRAY_MAX(Vec) FROM Items
+expect:
+  columns: Id INT64, INT64, STRING, FLOAT64
+  ["4",null,null,null]
+  ["3",null,null,4.0]
+  ["2","5","b",1.0]
+  ["1","3","c",1.0]
+  ["5","7","x",3.0]
+
+case array_min_nan_only
+query:
+  SELECT ARRAY_MIN([CAST('nan' AS FLOAT64), NULL])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case array_max_nan_first
+query:
+  SELECT ARRAY_MAX([CAST('nan' AS FLOAT64), 1.0])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case array_min_struct
+query:
+  SELECT ARRAY_MIN([STRUCT(1 AS a)])
+expect:
+  error: INVALID_ARGUMENT
+  message: ARRAY_MIN cannot be used on argument of type ARRAY<STRUCT<a INT64>> because the array's element type does not support ordering [at 1:8]
+
+case array_min_array_of_array
+query:
+  SELECT ARRAY_MIN([[1]])
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot construct array with element type ARRAY<INT64> because nested arrays are not supported [at 1:19]
+
+case array_slice_basic
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 1, 3)
+expect:
+  columns: ARRAY<INT64>
+  [["2","3","4"]]
+
+case array_slice_from_zero
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 0, 0)
+expect:
+  columns: ARRAY<INT64>
+  [["1"]]
+
+case array_slice_neg
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], -3, -1)
+expect:
+  columns: ARRAY<INT64>
+  [["3","4","5"]]
+
+case array_slice_neg_start_pos_end
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], -2, 4)
+expect:
+  columns: ARRAY<INT64>
+  [["4","5"]]
+
+case array_slice_start_after_end
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 3, 1)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_slice_neg_start_after_end
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], -1, -3)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_slice_start_out_of_range
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 7, 9)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_slice_end_out_of_range
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 2, 99)
+expect:
+  columns: ARRAY<INT64>
+  [["3","4","5"]]
+
+case array_slice_neg_out_of_range
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], -99, -4)
+expect:
+  columns: ARRAY<INT64>
+  [["1","2"]]
+
+case array_slice_both_neg_out_of_range
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], -99, -50)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_slice_start_neg_end_neg_oor
+query:
+  SELECT ARRAY_SLICE([1, 2, 3, 4, 5], 0, -99)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_slice_null_elems
+query:
+  SELECT ARRAY_SLICE(['a', NULL, 'c'], 0, 1)
+expect:
+  columns: ARRAY<STRING>
+  [["a",null]]
+
+case array_slice_empty
+query:
+  SELECT ARRAY_SLICE(CAST([] AS ARRAY<INT64>), 0, 1)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_slice_int64_extremes
+query:
+  SELECT ARRAY_SLICE([1, 2, 3], -9223372036854775808, 9223372036854775807)
+expect:
+  columns: ARRAY<INT64>
+  [["1","2","3"]]
+
+case array_slice_null_array
+query:
+  SELECT ARRAY_SLICE(CAST(NULL AS ARRAY<INT64>), 0, 1)
+expect:
+  columns: ARRAY<INT64>
+  [null]
+
+case array_slice_null_start
+query:
+  SELECT ARRAY_SLICE([1, 2], NULL, 1)
+expect:
+  columns: ARRAY<INT64>
+  [null]
+
+case array_slice_null_end
+query:
+  SELECT ARRAY_SLICE([1, 2], 0, NULL)
+expect:
+  columns: ARRAY<INT64>
+  [null]
+
+case array_slice_column
+query:
+  SELECT Id, ARRAY_SLICE(Tags, 1, -1) FROM Items
+expect:
+  columns: Id INT64, ARRAY<STRING>
+  ["4",null]
+  ["3",[]]
+  ["2",[null]]
+  ["1",["b","c"]]
+  ["5",[]]
+
+case array_slice_params
+query:
+  SELECT ARRAY_SLICE(@a, @s, @e)
+params:
+  @a ARRAY<INT64> = [10, 20, 30, 40]
+  @s INT64 = -3
+  @e INT64 = 2
+expect:
+  columns: ARRAY<INT64>
+  [["20","30"]]
+
+case array_first_int
+query:
+  SELECT ARRAY_FIRST([1, 2, 3])
+expect:
+  columns: INT64
+  ["1"]
+
+case array_first_null_elem
+query:
+  SELECT ARRAY_FIRST([CAST(NULL AS INT64)])
+expect:
+  columns: INT64
+  [null]
+
+case array_first_empty
+query:
+  SELECT ARRAY_FIRST(CAST([] AS ARRAY<INT64>))
+expect:
+  error: OUT_OF_RANGE
+  message: ARRAY_FIRST cannot get the first element of an empty array
+
+case array_first_null_array
+query:
+  SELECT ARRAY_FIRST(CAST(NULL AS ARRAY<STRING>))
+expect:
+  columns: STRING
+  [null]
+
+case array_first_struct
+query:
+  SELECT ARRAY_FIRST([STRUCT(1 AS a, 'x' AS b), STRUCT(2, 'y')]).b
+expect:
+  columns: b STRING
+  ["x"]
+
+case array_first_column
+query:
+  SELECT Id, ARRAY_FIRST(Tags) FROM Items WHERE Id != 3
+expect:
+  columns: Id INT64, STRING
+  ["5","x"]
+  ["1","a"]
+  ["4",null]
+  ["2","b"]
+
+case array_first_column_empty
+query:
+  SELECT Id, ARRAY_FIRST(Tags) FROM Items WHERE Id = 3
+expect:
+  error: OUT_OF_RANGE
+  message: ARRAY_FIRST cannot get the first element of an empty array
+
+case array_last_int
+query:
+  SELECT ARRAY_LAST([1, 2, 3])
+expect:
+  columns: INT64
+  ["3"]
+
+case array_last_null_elem
+query:
+  SELECT ARRAY_LAST([CAST(NULL AS INT64)])
+expect:
+  columns: INT64
+  [null]
+
+case array_last_empty
+query:
+  SELECT ARRAY_LAST(CAST([] AS ARRAY<INT64>))
+expect:
+  error: OUT_OF_RANGE
+  message: ARRAY_LAST cannot get the last element of an empty array
+
+case array_last_null_array
+query:
+  SELECT ARRAY_LAST(CAST(NULL AS ARRAY<STRING>))
+expect:
+  columns: STRING
+  [null]
+
+case array_last_struct
+query:
+  SELECT ARRAY_LAST([STRUCT(1 AS a, 'x' AS b), STRUCT(2, 'y')]).b
+expect:
+  columns: b STRING
+  ["y"]
+
+case array_last_column
+query:
+  SELECT Id, ARRAY_LAST(Tags) FROM Items WHERE Id != 3
+expect:
+  columns: Id INT64, STRING
+  ["5","x"]
+  ["1","c"]
+  ["4",null]
+  ["2",null]
+
+case array_last_column_empty
+query:
+  SELECT Id, ARRAY_LAST(Tags) FROM Items WHERE Id = 3
+expect:
+  error: OUT_OF_RANGE
+  message: ARRAY_LAST cannot get the last element of an empty array
+
+case array_includes_hit
+query:
+  SELECT ARRAY_INCLUDES([1, 2, 3], 2)
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_miss
+query:
+  SELECT ARRAY_INCLUDES([1, 2, 3], 5)
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_null_target
+query:
+  SELECT ARRAY_INCLUDES([1, 2, 3], NULL)
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_null_elem_miss
+query:
+  SELECT ARRAY_INCLUDES([1, NULL], 3)
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_null_elem_hit
+query:
+  SELECT ARRAY_INCLUDES([1, NULL], 1)
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_null_array
+query:
+  SELECT ARRAY_INCLUDES(CAST(NULL AS ARRAY<INT64>), 1)
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_empty
+query:
+  SELECT ARRAY_INCLUDES(CAST([] AS ARRAY<INT64>), 1)
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_nan
+query:
+  SELECT ARRAY_INCLUDES([1.0, CAST('nan' AS FLOAT64)], CAST('nan' AS FLOAT64))
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_int_float
+query:
+  SELECT ARRAY_INCLUDES([1.0, 2.0], 1)
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_string
+query:
+  SELECT ARRAY_INCLUDES(['a', 'B'], 'b')
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_struct
+query:
+  SELECT ARRAY_INCLUDES([STRUCT(1 AS a)], STRUCT(1 AS a))
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_array_elem
+query:
+  SELECT ARRAY_INCLUDES([[1]], [1])
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot construct array with element type ARRAY<INT64> because nested arrays are not supported [at 1:24]
+
+case array_includes_where_param
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES(Tags, @x)
+params:
+  @x STRING = "b"
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case array_includes_where_null_param
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES(Tags, @x)
+params:
+  @x STRING = null
+expect:
+  columns: Id INT64
+
+case array_includes_select_column
+query:
+  SELECT Id, ARRAY_INCLUDES(Nums, 5) FROM Items
+expect:
+  columns: Id INT64, BOOL
+  ["4",null]
+  ["3",false]
+  ["2",true]
+  ["1",false]
+  ["5",false]
+
+case array_includes_any_hit
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2, 3], [3, 4])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_all_hit
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2, 3], [3, 1])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_miss
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2, 3], [4, 5])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_null_source
+query:
+  SELECT ARRAY_INCLUDES_ANY(CAST(NULL AS ARRAY<INT64>), [1])
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_any_null_targets
+query:
+  SELECT ARRAY_INCLUDES_ANY([1], CAST(NULL AS ARRAY<INT64>))
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_any_empty_targets
+query:
+  SELECT ARRAY_INCLUDES_ANY([1], CAST([] AS ARRAY<INT64>))
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_empty_source
+query:
+  SELECT ARRAY_INCLUDES_ANY(CAST([] AS ARRAY<INT64>), [1])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_both_empty
+query:
+  SELECT ARRAY_INCLUDES_ANY(CAST([] AS ARRAY<INT64>), CAST([] AS ARRAY<INT64>))
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_null_in_targets_hit
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2], [1, NULL])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_null_in_targets_miss
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2], [5, NULL])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_null_in_source
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, NULL], [1, 2])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_null_in_both
+query:
+  SELECT ARRAY_INCLUDES_ANY([NULL, 1], [CAST(NULL AS INT64)])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_only_null_target
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2], [CAST(NULL AS INT64)])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_nan
+query:
+  SELECT ARRAY_INCLUDES_ANY([1.0, CAST('nan' AS FLOAT64)], [CAST('nan' AS FLOAT64)])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_any_dups
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 1], [1, 1, 1])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_string
+query:
+  SELECT ARRAY_INCLUDES_ANY(['a', 'b'], ['b', 'a'])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_where_param
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ANY(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["b", "x"]
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["5"]
+
+case array_includes_any_where_param_ab
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ANY(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["a", "b"]
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case array_includes_any_where_param_empty
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ANY(Tags, @p)
+params:
+  @p ARRAY<STRING> = []
+expect:
+  columns: Id INT64
+
+case array_includes_any_where_param_null
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ANY(Tags, @p)
+params:
+  @p ARRAY<STRING> = null
+expect:
+  columns: Id INT64
+
+case array_includes_any_where_param_with_null
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ANY(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["b", null]
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case array_includes_any_select_column
+query:
+  SELECT Id, ARRAY_INCLUDES_ANY(Nums, [1, 5]) FROM Items
+expect:
+  columns: Id INT64, BOOL
+  ["4",null]
+  ["3",false]
+  ["2",true]
+  ["1",true]
+  ["5",false]
+
+case array_includes_any_struct
+query:
+  SELECT ARRAY_INCLUDES_ANY([STRUCT(1 AS a)], [STRUCT(1 AS a)])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_any_int_float
+query:
+  SELECT ARRAY_INCLUDES_ANY([1, 2], [1.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_INCLUDES_ANY Argument types: ARRAY<INT64>, ARRAY<FLOAT64> Signature: ARRAY_INCLUDES_ANY(ARRAY<T1>, ARRAY<T1>) Unable to coerce type ARRAY<INT64> to inferred array type ARRAY<FLOAT64> for argument <array<T1>> [at 1:8]
+
+case array_includes_all_hit
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2, 3], [3, 4])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_all_hit
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2, 3], [3, 1])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_all_miss
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2, 3], [4, 5])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_null_source
+query:
+  SELECT ARRAY_INCLUDES_ALL(CAST(NULL AS ARRAY<INT64>), [1])
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_all_null_targets
+query:
+  SELECT ARRAY_INCLUDES_ALL([1], CAST(NULL AS ARRAY<INT64>))
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_all_empty_targets
+query:
+  SELECT ARRAY_INCLUDES_ALL([1], CAST([] AS ARRAY<INT64>))
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_all_empty_source
+query:
+  SELECT ARRAY_INCLUDES_ALL(CAST([] AS ARRAY<INT64>), [1])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_both_empty
+query:
+  SELECT ARRAY_INCLUDES_ALL(CAST([] AS ARRAY<INT64>), CAST([] AS ARRAY<INT64>))
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_all_null_in_targets_hit
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2], [1, NULL])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_null_in_targets_miss
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2], [5, NULL])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_null_in_source
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, NULL], [1, 2])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_null_in_both
+query:
+  SELECT ARRAY_INCLUDES_ALL([NULL, 1], [CAST(NULL AS INT64)])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_only_null_target
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2], [CAST(NULL AS INT64)])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_nan
+query:
+  SELECT ARRAY_INCLUDES_ALL([1.0, CAST('nan' AS FLOAT64)], [CAST('nan' AS FLOAT64)])
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_all_dups
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 1], [1, 1, 1])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_all_string
+query:
+  SELECT ARRAY_INCLUDES_ALL(['a', 'b'], ['b', 'a'])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_all_where_param
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ALL(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["b", "x"]
+expect:
+  columns: Id INT64
+
+case array_includes_all_where_param_ab
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ALL(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["a", "b"]
+expect:
+  columns: Id INT64
+  ["1"]
+
+case array_includes_all_where_param_empty
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ALL(Tags, @p)
+params:
+  @p ARRAY<STRING> = []
+expect:
+  columns: Id INT64
+  ["1"]
+  ["5"]
+  ["2"]
+  ["3"]
+
+case array_includes_all_where_param_null
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ALL(Tags, @p)
+params:
+  @p ARRAY<STRING> = null
+expect:
+  columns: Id INT64
+
+case array_includes_all_where_param_with_null
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES_ALL(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["b", null]
+expect:
+  columns: Id INT64
+
+case array_includes_all_select_column
+query:
+  SELECT Id, ARRAY_INCLUDES_ALL(Nums, [1, 5]) FROM Items
+expect:
+  columns: Id INT64, BOOL
+  ["4",null]
+  ["3",false]
+  ["2",false]
+  ["1",false]
+  ["5",false]
+
+case array_includes_all_struct
+query:
+  SELECT ARRAY_INCLUDES_ALL([STRUCT(1 AS a)], [STRUCT(1 AS a)])
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_all_int_float
+query:
+  SELECT ARRAY_INCLUDES_ALL([1, 2], [1.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_INCLUDES_ALL Argument types: ARRAY<INT64>, ARRAY<FLOAT64> Signature: ARRAY_INCLUDES_ALL(ARRAY<T1>, ARRAY<T1>) Unable to coerce type ARRAY<INT64> to inferred array type ARRAY<FLOAT64> for argument <array<T1>> [at 1:8]
+
+case array_includes_any_not_where
+query:
+  SELECT Id FROM Items WHERE NOT ARRAY_INCLUDES_ANY(Tags, @p)
+params:
+  @p ARRAY<STRING> = ["b"]
+expect:
+  columns: Id INT64
+  ["5"]
+  ["3"]
+
+case array_filter_basic
+query:
+  SELECT ARRAY_FILTER([1, 2, 3, 4], e -> e > 2)
+expect:
+  columns: ARRAY<INT64>
+  [["3","4"]]
+
+case array_filter_index
+query:
+  SELECT ARRAY_FILTER([10, 20, 30, 40], (e, i) -> i > 1)
+expect:
+  columns: ARRAY<INT64>
+  [["30","40"]]
+
+case array_filter_null_array
+query:
+  SELECT ARRAY_FILTER(CAST(NULL AS ARRAY<INT64>), e -> e > 2)
+expect:
+  columns: ARRAY<INT64>
+  [null]
+
+case array_filter_null_elem
+query:
+  SELECT ARRAY_FILTER([1, NULL, 3], e -> e > 0)
+expect:
+  columns: ARRAY<INT64>
+  [["1","3"]]
+
+case array_filter_null_elem_kept
+query:
+  SELECT ARRAY_FILTER([1, NULL, 3], e -> e IS NULL)
+expect:
+  columns: ARRAY<INT64>
+  [[null]]
+
+case array_filter_empty
+query:
+  SELECT ARRAY_FILTER(CAST([] AS ARRAY<INT64>), e -> true)
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_filter_captured_param
+query:
+  SELECT ARRAY_FILTER([1, 2, 3, 4], e -> e >= @m)
+params:
+  @m INT64 = 3
+expect:
+  columns: ARRAY<INT64>
+  [["3","4"]]
+
+case array_filter_column
+query:
+  SELECT Id, ARRAY_FILTER(Nums, e -> e > Id) FROM Items
+expect:
+  columns: Id INT64, ARRAY<INT64>
+  ["4",null]
+  ["3",[]]
+  ["2",["5"]]
+  ["1",["2","3"]]
+  ["5",["7"]]
+
+case array_filter_where
+query:
+  SELECT Id FROM Items WHERE ARRAY_LENGTH(ARRAY_FILTER(Tags, t -> t > 'a')) > 0
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["5"]
+
+case array_filter_error
+query:
+  SELECT ARRAY_FILTER([1, 0], e -> 1 / e > 0)
+expect:
+  error: OUT_OF_RANGE
+  message: division by zero: 1 / 0
+
+case array_filter_non_bool
+query:
+  SELECT ARRAY_FILTER([1, 2], e -> e)
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_FILTER Argument types: ARRAY<INT64>, LAMBDA Signature: ARRAY_FILTER(ARRAY<T1>, FUNCTION<T1->BOOL>) Argument 2: failed to resolve lambda body, error: Lambda should return type BOOL, but returns INT64 Signature: ARRAY_FILTER(ARRAY<T1>, FUNCTION<(T1, INT64)->BOOL>) Argument 2: lambda requires 2 arguments but 1 is provided [at 1:8]
+
+case array_transform_basic
+query:
+  SELECT ARRAY_TRANSFORM([1, 2, 3], e -> e * 10)
+expect:
+  columns: ARRAY<INT64>
+  [["10","20","30"]]
+
+case array_transform_index
+query:
+  SELECT ARRAY_TRANSFORM(['a', 'b'], (e, i) -> CONCAT(e, CAST(i AS STRING)))
+expect:
+  columns: ARRAY<STRING>
+  [["a0","b1"]]
+
+case array_transform_null_array
+query:
+  SELECT ARRAY_TRANSFORM(CAST(NULL AS ARRAY<INT64>), e -> e + 1)
+expect:
+  columns: ARRAY<INT64>
+  [null]
+
+case array_transform_null_elem
+query:
+  SELECT ARRAY_TRANSFORM([1, NULL], e -> e + 1)
+expect:
+  columns: ARRAY<INT64>
+  [["2",null]]
+
+case array_transform_empty
+query:
+  SELECT ARRAY_TRANSFORM(CAST([] AS ARRAY<STRING>), e -> LENGTH(e))
+expect:
+  columns: ARRAY<INT64>
+  [[]]
+
+case array_transform_type_change
+query:
+  SELECT ARRAY_TRANSFORM(['ab', 'c'], e -> LENGTH(e))
+expect:
+  columns: ARRAY<INT64>
+  [["2","1"]]
+
+case array_transform_column
+query:
+  SELECT Id, ARRAY_TRANSFORM(Tags, t -> UPPER(t)) FROM Items
+expect:
+  columns: Id INT64, ARRAY<STRING>
+  ["4",null]
+  ["3",[]]
+  ["2",["B",null]]
+  ["1",["A","B","C"]]
+  ["5",["X"]]
+
+case array_transform_nested
+query:
+  SELECT ARRAY_TRANSFORM([1, 2], e -> ARRAY_TRANSFORM([10, 20], f -> e + f))
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_TRANSFORM Argument types: ARRAY<INT64>, LAMBDA Signature: ARRAY_TRANSFORM(ARRAY<T1>, FUNCTION<T1->T2>) <array<T2>> is inferred to be array of array, which is not supported Signature: ARRAY_TRANSFORM(ARRAY<T1>, FUNCTION<(T1, INT64)->T2>) Argument 2: lambda requires 2 arguments but 1 is provided [at 1:8]
+
+case array_transform_error
+query:
+  SELECT ARRAY_TRANSFORM([9223372036854775807], e -> e + 1)
+expect:
+  error: OUT_OF_RANGE
+  message: int64 overflow: 9223372036854775807 + 1
+
+case array_includes_lambda_hit
+query:
+  SELECT ARRAY_INCLUDES([1, 2, 3], e -> e > 2)
+expect:
+  columns: BOOL
+  [true]
+
+case array_includes_lambda_miss
+query:
+  SELECT ARRAY_INCLUDES([1, 2, 3], e -> e > 5)
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_lambda_null_result
+query:
+  SELECT ARRAY_INCLUDES([1, NULL], e -> e > 5)
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_lambda_null_array
+query:
+  SELECT ARRAY_INCLUDES(CAST(NULL AS ARRAY<INT64>), e -> e > 5)
+expect:
+  columns: BOOL
+  [null]
+
+case array_includes_lambda_empty
+query:
+  SELECT ARRAY_INCLUDES(CAST([] AS ARRAY<INT64>), e -> true)
+expect:
+  columns: BOOL
+  [false]
+
+case array_includes_lambda_where
+query:
+  SELECT Id FROM Items WHERE ARRAY_INCLUDES(Nums, n -> n > @m)
+params:
+  @m INT64 = 2
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["5"]
+
+case array_includes_lambda_index
+query:
+  SELECT ARRAY_INCLUDES([1, 2], (e, i) -> i = 1)
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_INCLUDES Argument types: ARRAY<INT64>, LAMBDA Signature: ARRAY_INCLUDES(ARRAY<T1>, T1) Argument 2: expected T1, found LAMBDA Signature: ARRAY_INCLUDES(ARRAY<T1>, FUNCTION<T1->BOOL>) Argument 2: lambda requires 1 arguments but 2 is provided [at 1:8]
+
+case array_filter_subquery_in_body
+query:
+  SELECT ARRAY_FILTER([1, 2, 3], e -> e IN (SELECT 2 UNION ALL SELECT 3))
+expect:
+  columns: ARRAY<INT64>
+  [["2","3"]]
+
+case array_filter_key_filter
+query:
+  SELECT Id FROM Items WHERE Id = ARRAY_FIRST(ARRAY_FILTER(Nums, e -> e > 1))
+expect:
+  error: OUT_OF_RANGE
+  message: ARRAY_FIRST cannot get the first element of an empty array
+
+case cosine_distance_basic
+query:
+  SELECT COSINE_DISTANCE([1.0, 2.0], [3.0, 4.0])
+expect:
+  columns: FLOAT64
+  [0.01613008990009257]
+
+case cosine_distance_float32
+query:
+  SELECT COSINE_DISTANCE(ARRAY<FLOAT32>[1, 2], ARRAY<FLOAT32>[3, 4])
+expect:
+  columns: FLOAT64
+  [0.01613008990009257]
+
+case cosine_distance_int64
+query:
+  SELECT COSINE_DISTANCE([1, 2], [3, 4])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function COSINE_DISTANCE Argument types: ARRAY<INT64>, ARRAY<INT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT32> [at 1:8]
+
+case cosine_distance_mixed_float
+query:
+  SELECT COSINE_DISTANCE(ARRAY<FLOAT32>[1, 2], [3.0, 4.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function COSINE_DISTANCE Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> [at 1:8]
+
+case cosine_distance_length_mismatch
+query:
+  SELECT COSINE_DISTANCE([1.0, 2.0], [3.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Array length mismatch: 2 and 1
+
+case cosine_distance_null_array
+query:
+  SELECT COSINE_DISTANCE(CAST(NULL AS ARRAY<FLOAT64>), [3.0])
+expect:
+  columns: FLOAT64
+  [null]
+
+case cosine_distance_null_elem
+query:
+  SELECT COSINE_DISTANCE([1.0, NULL], [3.0, 4.0])
+expect:
+  error: OUT_OF_RANGE
+  message: NULL array element in first argument
+
+case cosine_distance_empty
+query:
+  SELECT COSINE_DISTANCE(CAST([] AS ARRAY<FLOAT64>), CAST([] AS ARRAY<FLOAT64>))
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute cosine distance against zero vector
+
+case cosine_distance_zero
+query:
+  SELECT COSINE_DISTANCE([0.0, 0.0], [1.0, 1.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute cosine distance against zero vector
+
+case cosine_distance_nan
+query:
+  SELECT COSINE_DISTANCE([CAST('nan' AS FLOAT64), 1.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case cosine_distance_inf
+query:
+  SELECT COSINE_DISTANCE([CAST('inf' AS FLOAT64), 1.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case cosine_distance_overflow
+query:
+  SELECT COSINE_DISTANCE([1e308, 1e308], [1e308, -1e308])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1e+308 * 1e+308
+
+case cosine_distance_column
+query:
+  SELECT Id, COSINE_DISTANCE(Vec, [1.0, 1.0]) FROM Items WHERE Id != 5
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",0.010050506338833531]
+  ["1",0.29289321881345254]
+  ["4",null]
+  ["2",0.29289321881345254]
+
+case cosine_distance_column_mismatch
+query:
+  SELECT Id, COSINE_DISTANCE(Vec, [1.0, 1.0]) FROM Items WHERE Id = 5
+expect:
+  error: OUT_OF_RANGE
+  message: Array length mismatch: 3 and 2
+
+case cosine_distance_column32
+query:
+  SELECT Id, COSINE_DISTANCE(Vec32, ARRAY<FLOAT32>[1, 1]) FROM Items WHERE Id < 5
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",0.010050506338833531]
+  ["1",0.29289321881345254]
+  ["4",null]
+  ["2",0.29289321881345254]
+
+case cosine_distance_param
+query:
+  SELECT Id, COSINE_DISTANCE(Vec, @q) FROM Items WHERE Id < 4 ORDER BY COSINE_DISTANCE(Vec, @q), Id
+params:
+  @q ARRAY<FLOAT64> = [0.6, 0.8]
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",0.0]
+  ["2",0.19999999999999996]
+  ["1",0.4]
+
+case cosine_distance_options
+query:
+  SELECT COSINE_DISTANCE([1.0, 2.0], [3.0, 4.0], options => JSON '{}')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function COSINE_DISTANCE Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Named argument `options` does not exist in signature Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Named argument `options` does not exist in signature [at 1:8]
+
+case euclidean_distance_basic
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.0, 2.0], [3.0, 4.0])
+expect:
+  columns: FLOAT64
+  [2.8284271247461903]
+
+case euclidean_distance_float32
+query:
+  SELECT EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>[1, 2], ARRAY<FLOAT32>[3, 4])
+expect:
+  columns: FLOAT64
+  [2.8284271247461903]
+
+case euclidean_distance_int64
+query:
+  SELECT EUCLIDEAN_DISTANCE([1, 2], [3, 4])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function EUCLIDEAN_DISTANCE Argument types: ARRAY<INT64>, ARRAY<INT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT32> [at 1:8]
+
+case euclidean_distance_mixed_float
+query:
+  SELECT EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>[1, 2], [3.0, 4.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function EUCLIDEAN_DISTANCE Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> [at 1:8]
+
+case euclidean_distance_length_mismatch
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.0, 2.0], [3.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Array length mismatch: 2 and 1
+
+case euclidean_distance_null_array
+query:
+  SELECT EUCLIDEAN_DISTANCE(CAST(NULL AS ARRAY<FLOAT64>), [3.0])
+expect:
+  columns: FLOAT64
+  [null]
+
+case euclidean_distance_null_elem
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.0, NULL], [3.0, 4.0])
+expect:
+  error: OUT_OF_RANGE
+  message: NULL array element in first argument
+
+case euclidean_distance_empty
+query:
+  SELECT EUCLIDEAN_DISTANCE(CAST([] AS ARRAY<FLOAT64>), CAST([] AS ARRAY<FLOAT64>))
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case euclidean_distance_zero
+query:
+  SELECT EUCLIDEAN_DISTANCE([0.0, 0.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  [1.4142135623730951]
+
+case euclidean_distance_nan
+query:
+  SELECT EUCLIDEAN_DISTANCE([CAST('nan' AS FLOAT64), 1.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case euclidean_distance_inf
+query:
+  SELECT EUCLIDEAN_DISTANCE([CAST('inf' AS FLOAT64), 1.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  ["Infinity"]
+
+case euclidean_distance_overflow
+query:
+  SELECT EUCLIDEAN_DISTANCE([1e308, 1e308], [1e308, -1e308])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1e+308 - -1e+308
+
+case euclidean_distance_column
+query:
+  SELECT Id, EUCLIDEAN_DISTANCE(Vec, [1.0, 1.0]) FROM Items WHERE Id != 5
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",3.605551275463989]
+  ["1",1.0]
+  ["4",null]
+  ["2",1.0]
+
+case euclidean_distance_column_mismatch
+query:
+  SELECT Id, EUCLIDEAN_DISTANCE(Vec, [1.0, 1.0]) FROM Items WHERE Id = 5
+expect:
+  error: OUT_OF_RANGE
+  message: Array length mismatch: 3 and 2
+
+case euclidean_distance_column32
+query:
+  SELECT Id, EUCLIDEAN_DISTANCE(Vec32, ARRAY<FLOAT32>[1, 1]) FROM Items WHERE Id < 5
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",3.605551275463989]
+  ["1",1.0]
+  ["4",null]
+  ["2",1.0]
+
+case euclidean_distance_param
+query:
+  SELECT Id, EUCLIDEAN_DISTANCE(Vec, @q) FROM Items WHERE Id < 4 ORDER BY EUCLIDEAN_DISTANCE(Vec, @q), Id
+params:
+  @q ARRAY<FLOAT64> = [0.6, 0.8]
+expect:
+  columns: Id INT64, FLOAT64
+  ["2",0.6324555320336759]
+  ["1",0.894427190999916]
+  ["3",4.0]
+
+case euclidean_distance_options
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.0, 2.0], [3.0, 4.0], options => JSON '{}')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function EUCLIDEAN_DISTANCE Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Named argument `options` does not exist in signature Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Named argument `options` does not exist in signature [at 1:8]
+
+case dot_product_basic
+query:
+  SELECT DOT_PRODUCT([1.0, 2.0], [3.0, 4.0])
+expect:
+  columns: FLOAT64
+  [11.0]
+
+case dot_product_float32
+query:
+  SELECT DOT_PRODUCT(ARRAY<FLOAT32>[1, 2], ARRAY<FLOAT32>[3, 4])
+expect:
+  columns: FLOAT64
+  [11.0]
+
+case dot_product_int64
+query:
+  SELECT DOT_PRODUCT([1, 2], [3, 4])
+expect:
+  columns: FLOAT64
+  [11.0]
+
+case dot_product_mixed_float
+query:
+  SELECT DOT_PRODUCT(ARRAY<FLOAT32>[1, 2], [3.0, 4.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function DOT_PRODUCT Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64> Signature: DOT_PRODUCT(ARRAY<INT64>, ARRAY<INT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<INT64> Signature: DOT_PRODUCT(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> Signature: DOT_PRODUCT(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> [at 1:8]
+
+case dot_product_length_mismatch
+query:
+  SELECT DOT_PRODUCT([1.0, 2.0], [3.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Array arguments to DOT_PRODUCT must have equal length. The given arrays have lengths of 2 and 1
+
+case dot_product_null_array
+query:
+  SELECT DOT_PRODUCT(CAST(NULL AS ARRAY<FLOAT64>), [3.0])
+expect:
+  columns: FLOAT64
+  [null]
+
+case dot_product_null_elem
+query:
+  SELECT DOT_PRODUCT([1.0, NULL], [3.0, 4.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute DOT_PRODUCT with a NULL element, since it is unclear if NULLs should be ignored, counted as a zero value, or another interpretation. The NULL element was found in the first array argument at OFFSET 1
+
+case dot_product_empty
+query:
+  SELECT DOT_PRODUCT(CAST([] AS ARRAY<FLOAT64>), CAST([] AS ARRAY<FLOAT64>))
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case dot_product_zero
+query:
+  SELECT DOT_PRODUCT([0.0, 0.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case dot_product_nan
+query:
+  SELECT DOT_PRODUCT([CAST('nan' AS FLOAT64), 1.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  ["NaN"]
+
+case dot_product_inf
+query:
+  SELECT DOT_PRODUCT([CAST('inf' AS FLOAT64), 1.0], [1.0, 1.0])
+expect:
+  columns: FLOAT64
+  ["Infinity"]
+
+case dot_product_overflow
+query:
+  SELECT DOT_PRODUCT([1e308, 1e308], [1e308, -1e308])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1e+308 * 1e+308
+
+case dot_product_column
+query:
+  SELECT Id, DOT_PRODUCT(Vec, [1.0, 1.0]) FROM Items WHERE Id != 5
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",7.0]
+  ["1",1.0]
+  ["4",null]
+  ["2",1.0]
+
+case dot_product_column_mismatch
+query:
+  SELECT Id, DOT_PRODUCT(Vec, [1.0, 1.0]) FROM Items WHERE Id = 5
+expect:
+  error: OUT_OF_RANGE
+  message: Array arguments to DOT_PRODUCT must have equal length. The given arrays have lengths of 3 and 2
+
+case dot_product_column32
+query:
+  SELECT Id, DOT_PRODUCT(Vec32, ARRAY<FLOAT32>[1, 1]) FROM Items WHERE Id < 5
+expect:
+  columns: Id INT64, FLOAT64
+  ["3",7.0]
+  ["1",1.0]
+  ["4",null]
+  ["2",1.0]
+
+case dot_product_param
+query:
+  SELECT Id, DOT_PRODUCT(Vec, @q) FROM Items WHERE Id < 4 ORDER BY DOT_PRODUCT(Vec, @q), Id
+params:
+  @q ARRAY<FLOAT64> = [0.6, 0.8]
+expect:
+  columns: Id INT64, FLOAT64
+  ["1",0.6]
+  ["2",0.8]
+  ["3",5.0]
+
+case dot_product_options
+query:
+  SELECT DOT_PRODUCT([1.0, 2.0], [3.0, 4.0], options => JSON '{}')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function DOT_PRODUCT Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON Signature: DOT_PRODUCT(ARRAY<INT64>, ARRAY<INT64>) Named argument `options` does not exist in signature Signature: DOT_PRODUCT(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Named argument `options` does not exist in signature Signature: DOT_PRODUCT(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Named argument `options` does not exist in signature [at 1:8]
+
+case cosine_distance_null_elem_second
+query:
+  SELECT COSINE_DISTANCE([1.0, 2.0], [3.0, NULL])
+expect:
+  error: OUT_OF_RANGE
+  message: NULL array element in second argument
+
+case cosine_distance_null_elem_both
+query:
+  SELECT COSINE_DISTANCE([1.0, NULL], [NULL, 4.0])
+expect:
+  error: OUT_OF_RANGE
+  message: NULL array element in second argument
+
+case cosine_distance_null_elem_and_mismatch
+query:
+  SELECT COSINE_DISTANCE([CAST(NULL AS FLOAT64)], [1.0, 2.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Array length mismatch: 1 and 2
+
+case cosine_distance_sum_overflow
+query:
+  SELECT COSINE_DISTANCE([1e308, 1e308], [1.0, 1.0])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1e+308 * 1e+308
+
+case cosine_distance_add_overflow
+query:
+  SELECT COSINE_DISTANCE([1.3e154, 1.3e154], [1.3e154, 1.3e154])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1.69e+308 + 1.69e+308
+
+case cosine_distance_add_overflow_zero
+query:
+  SELECT COSINE_DISTANCE([1.3e154, 1.3e154], [0.0, 0.0])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1.69e+308 + 1.69e+308
+
+case cosine_distance_float32_big
+query:
+  SELECT COSINE_DISTANCE(ARRAY<FLOAT32>[3e38, 3e38], ARRAY<FLOAT32>[3e38, -3e38])
+expect:
+  columns: FLOAT64
+  [1.0]
+
+case euclidean_distance_null_elem_second
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.0, 2.0], [3.0, NULL])
+expect:
+  error: OUT_OF_RANGE
+  message: NULL array element in second argument
+
+case euclidean_distance_null_elem_both
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.0, NULL], [NULL, 4.0])
+expect:
+  error: OUT_OF_RANGE
+  message: NULL array element in second argument
+
+case euclidean_distance_null_elem_and_mismatch
+query:
+  SELECT EUCLIDEAN_DISTANCE([CAST(NULL AS FLOAT64)], [1.0, 2.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Array length mismatch: 1 and 2
+
+case euclidean_distance_sum_overflow
+query:
+  SELECT EUCLIDEAN_DISTANCE([1e308, 1e308], [1.0, 1.0])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1e+308 * 1e+308
+
+case euclidean_distance_add_overflow
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.3e154, 1.3e154], [1.3e154, 1.3e154])
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case euclidean_distance_add_overflow_zero
+query:
+  SELECT EUCLIDEAN_DISTANCE([1.3e154, 1.3e154], [0.0, 0.0])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow: 1.69e+308 + 1.69e+308
+
+case euclidean_distance_float32_big
+query:
+  SELECT EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>[3e38, 3e38], ARRAY<FLOAT32>[3e38, -3e38])
+expect:
+  columns: FLOAT64
+  [6.0000000109955115e+38]
+
+case dot_product_null_elem_second
+query:
+  SELECT DOT_PRODUCT([1.0, 2.0], [3.0, NULL])
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute DOT_PRODUCT with a NULL element, since it is unclear if NULLs should be ignored, counted as a zero value, or another interpretation. The NULL element was found in the second array argument at OFFSET 1
+
+case dot_product_null_elem_both
+query:
+  SELECT DOT_PRODUCT([1.0, NULL], [NULL, 4.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute DOT_PRODUCT with a NULL element, since it is unclear if NULLs should be ignored, counted as a zero value, or another interpretation. The NULL element was found in the first array argument at OFFSET 1
+
+case dot_product_null_elem_and_mismatch
+query:
+  SELECT DOT_PRODUCT([CAST(NULL AS FLOAT64)], [1.0, 2.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Array arguments to DOT_PRODUCT must have equal length. The given arrays have lengths of 1 and 2
+
+case dot_product_sum_overflow
+query:
+  SELECT DOT_PRODUCT([1e308, 1e308], [1.0, 1.0])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow
+
+case dot_product_add_overflow
+query:
+  SELECT DOT_PRODUCT([1.3e154, 1.3e154], [1.3e154, 1.3e154])
+expect:
+  error: OUT_OF_RANGE
+  message: double overflow
+
+case dot_product_add_overflow_zero
+query:
+  SELECT DOT_PRODUCT([1.3e154, 1.3e154], [0.0, 0.0])
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case dot_product_float32_big
+query:
+  SELECT DOT_PRODUCT(ARRAY<FLOAT32>[3e38, 3e38], ARRAY<FLOAT32>[3e38, -3e38])
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case dot_product_int64_null_elem
+query:
+  SELECT DOT_PRODUCT([1, NULL], [1, 2])
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute DOT_PRODUCT with a NULL element, since it is unclear if NULLs should be ignored, counted as a zero value, or another interpretation. The NULL element was found in the first array argument at OFFSET 1
+
+case array_slice_null_elem_kept
+query:
+  SELECT ARRAY_SLICE([NULL, 1, NULL], -1, -1)
+expect:
+  columns: ARRAY<INT64>
+  [[null]]
+
+case dot_product_int64_overflow
+query:
+  SELECT DOT_PRODUCT([9223372036854775807], [2])
+expect:
+  columns: FLOAT64
+  [1.8446744073709552e+19]
+
+case dot_product_int64_sum_overflow
+query:
+  SELECT DOT_PRODUCT([9223372036854775807, 1], [1, 1])
+expect:
+  columns: FLOAT64
+  [9.223372036854776e+18]
+
+case cosine_distance_opposite
+query:
+  SELECT COSINE_DISTANCE([1.0, 0.0], [-1.0, 0.0])
+expect:
+  columns: FLOAT64
+  [2.0]
+
+case cosine_distance_same
+query:
+  SELECT COSINE_DISTANCE([0.6, 0.8], [0.6, 0.8])
+expect:
+  columns: FLOAT64
+  [0.0]
+
+case cosine_distance_both_zero
+query:
+  SELECT COSINE_DISTANCE([0.0, 0.0], [0.0, 0.0])
+expect:
+  error: OUT_OF_RANGE
+  message: Cannot compute cosine distance against zero vector
+
+case euclidean_distance_float32_precision
+query:
+  SELECT EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>[0.1, 0.2], ARRAY<FLOAT32>[0.3, 0.7])
+expect:
+  columns: FLOAT64
+  [0.5385164707519764]
+
+case dot_product_float32_precision
+query:
+  SELECT DOT_PRODUCT(ARRAY<FLOAT32>[0.1, 0.2], ARRAY<FLOAT32>[0.3, 0.7])
+expect:
+  columns: FLOAT64
+  [0.1700000013411045]
+
+case cosine_distance_float32_precision
+query:
+  SELECT COSINE_DISTANCE(ARRAY<FLOAT32>[0.1, 0.2], ARRAY<FLOAT32>[0.3, 0.7])
+expect:
+  columns: FLOAT64
+  [0.0017256256180713248]
+
+case cosine_distance_precision
+query:
+  SELECT COSINE_DISTANCE([0.1, 0.2, 0.3], [0.3, 0.7, 0.11])
+expect:
+  columns: FLOAT64
+  [0.29492634188499556]
+
+case euclidean_distance_precision
+query:
+  SELECT EUCLIDEAN_DISTANCE([0.1, 0.2, 0.3], [0.3, 0.7, 0.11])
+expect:
+  columns: FLOAT64
+  [0.5710516614107694]
+
+case dot_product_precision
+query:
+  SELECT DOT_PRODUCT([0.1, 0.2, 0.3], [0.3, 0.7, 0.11])
+expect:
+  columns: FLOAT64
+  [0.20299999999999999]
+
+case approx_cosine_distance_no_options
+query:
+  SELECT APPROX_COSINE_DISTANCE([1.0, 2.0], [3.0, 4.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: Argument `options` is required for function APPROX_COSINE_DISTANCE.
+
+case approx_cosine_distance_options
+query:
+  SELECT APPROX_COSINE_DISTANCE([1.0, 2.0], [3.0, 4.0], options => JSON '{"num_leaves_to_search": 10}')
+expect:
+  error: INVALID_ARGUMENT
+  message: The use of function APPROX_COSINE_DISTANCE is not supported in this query. This function can only be used to sort vectors in a table based solely on their approximate distances to another constant vector with an ORDER BY clause. The ORDER BY must be followed by a mandatory LIMIT clause. Please use COSINE_DISTANCE in all other cases.
+
+case approx_cosine_distance_column
+query:
+  SELECT Id FROM Items ORDER BY APPROX_COSINE_DISTANCE(Vec, [1.0, 1.0], options => JSON '{"num_leaves_to_search": 10}') LIMIT 2
+expect:
+  error: INVALID_ARGUMENT
+  message: No usable vector index can be found for this query that supports COSINE distance type on column Vec for function APPROX_COSINE_DISTANCE; also make sure that the vector index is not in backfilling, and the query has a filter that matches that of the vector index.
+
+case approx_euclidean_distance_no_options
+query:
+  SELECT APPROX_EUCLIDEAN_DISTANCE([1.0, 2.0], [3.0, 4.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: Argument `options` is required for function APPROX_EUCLIDEAN_DISTANCE.
+
+case approx_euclidean_distance_options
+query:
+  SELECT APPROX_EUCLIDEAN_DISTANCE([1.0, 2.0], [3.0, 4.0], options => JSON '{"num_leaves_to_search": 10}')
+expect:
+  error: INVALID_ARGUMENT
+  message: The use of function APPROX_EUCLIDEAN_DISTANCE is not supported in this query. This function can only be used to sort vectors in a table based solely on their approximate distances to another constant vector with an ORDER BY clause. The ORDER BY must be followed by a mandatory LIMIT clause. Please use EUCLIDEAN_DISTANCE in all other cases.
+
+case approx_euclidean_distance_column
+query:
+  SELECT Id FROM Items ORDER BY APPROX_EUCLIDEAN_DISTANCE(Vec, [1.0, 1.0], options => JSON '{"num_leaves_to_search": 10}') LIMIT 2
+expect:
+  error: INVALID_ARGUMENT
+  message: No usable vector index can be found for this query that supports EUCLIDEAN distance type on column Vec for function APPROX_EUCLIDEAN_DISTANCE; also make sure that the vector index is not in backfilling, and the query has a filter that matches that of the vector index.
+
+case approx_dot_product_no_options
+query:
+  SELECT APPROX_DOT_PRODUCT([1.0, 2.0], [3.0, 4.0])
+expect:
+  error: INVALID_ARGUMENT
+  message: Argument `options` is required for function APPROX_DOT_PRODUCT.
+
+case approx_dot_product_options
+query:
+  SELECT APPROX_DOT_PRODUCT([1.0, 2.0], [3.0, 4.0], options => JSON '{"num_leaves_to_search": 10}')
+expect:
+  error: INVALID_ARGUMENT
+  message: The use of function APPROX_DOT_PRODUCT is not supported in this query. This function can only be used to sort vectors in a table based solely on their approximate distances to another constant vector with an ORDER BY clause. The ORDER BY must be followed by a mandatory LIMIT clause. Please use DOT_PRODUCT in all other cases.
+
+case approx_dot_product_column
+query:
+  SELECT Id FROM Items ORDER BY APPROX_DOT_PRODUCT(Vec, [1.0, 1.0], options => JSON '{"num_leaves_to_search": 10}') LIMIT 2
+expect:
+  error: INVALID_ARGUMENT
+  message: No usable vector index can be found for this query that supports DOT_PRODUCT distance type on column Vec for function APPROX_DOT_PRODUCT; also make sure that the vector index is not in backfilling, and the query has a filter that matches that of the vector index.

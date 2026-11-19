@@ -1,0 +1,11 @@
+[package]
+name = "spanbolt-ddl"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+serde_json = "1"

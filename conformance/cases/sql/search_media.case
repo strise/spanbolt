@@ -1,0 +1,652 @@
+# Adverse-media shapes: quoted upper-cased entity texts joined with OR against mention text,
+# partitioned search indexes with STORING and WHERE, TOKENLIST_CONCAT over name and aliases.
+tags: sql search
+schema:
+  CREATE TABLE news_events (
+    id STRING(MAX) NOT NULL,
+    published_at TIMESTAMP NOT NULL,
+    archived BOOL,
+    language STRING(8),
+    publisher STRING(MAX),
+    paywall BOOL,
+  ) PRIMARY KEY (id);
+  CREATE TABLE news_events_entities (
+    id STRING(MAX) NOT NULL,
+    entity_id STRING(MAX) NOT NULL,
+    text STRING(1024) NOT NULL,
+    entity_type STRING(128) NOT NULL,
+    negative_ams_weight INT64,
+    text__tokens TOKENLIST AS (TOKENIZE_FULLTEXT(text)) HIDDEN,
+  ) PRIMARY KEY (id, entity_id), INTERLEAVE IN PARENT news_events ON DELETE CASCADE;
+  CREATE SEARCH INDEX news_events_entities_type_partitioned_search_index ON news_events_entities(text__tokens) STORING (negative_ams_weight) PARTITION BY entity_type WHERE negative_ams_weight IS NOT NULL;
+  CREATE SEARCH INDEX news_events_entities_id_type_partitioned_search_index ON news_events_entities(text__tokens) STORING (negative_ams_weight) PARTITION BY id, entity_type WHERE negative_ams_weight IS NOT NULL;
+  CREATE TABLE dow_jones_news_events (
+    id STRING(MAX) NOT NULL,
+    name STRING(MAX) NOT NULL,
+    aliases ARRAY<STRING(MAX)> NOT NULL,
+    published_at TIMESTAMP NOT NULL,
+    name__tokens TOKENLIST AS (TOKENIZE_FULLTEXT(name)) HIDDEN,
+    aliases__tokens TOKENLIST AS (TOKENIZE_FULLTEXT(aliases)) HIDDEN,
+  ) PRIMARY KEY (id);
+  CREATE SEARCH INDEX dow_jones_news_events_name_aliases_search_index ON dow_jones_news_events(name__tokens, aliases__tokens);
+  CREATE TABLE ams_articles (
+    article_id STRING(MAX) NOT NULL,
+    published_at TIMESTAMP NOT NULL,
+    title STRING(MAX),
+  ) PRIMARY KEY (article_id);
+  CREATE TABLE ams_entity_signals (
+    article_id STRING(MAX) NOT NULL,
+    entity_key STRING(MAX) NOT NULL,
+    surface STRING(MAX) NOT NULL,
+    entity_type STRING(8) NOT NULL,
+    gate FLOAT64 NOT NULL,
+    surface__tokens TOKENLIST AS (TOKENIZE_FULLTEXT(surface)) HIDDEN,
+  ) PRIMARY KEY (article_id, entity_key), INTERLEAVE IN PARENT ams_articles ON DELETE CASCADE;
+  CREATE SEARCH INDEX ams_entity_signals_surface_search_index ON ams_entity_signals(surface__tokens) STORING (gate) PARTITION BY entity_type
+insert news_events cols=id,published_at,archived,language,publisher,paywall:
+  ["e1", "2026-03-01T10:00:00Z", false, "no", "Testavisa", false]
+  ["e2", "2026-03-02T10:00:00Z", null, "en", "Test Times", true]
+  ["e3", "2026-03-03T10:00:00Z", true, "no", "Testavisa", false]
+  ["e4", "2026-03-04T10:00:00Z", false, "sv", "Testbladet", false]
+insert news_events_entities cols=id,entity_id,text,entity_type,negative_ams_weight:
+  ["e1", "x1", "Coca-Cola Testbryggeri", "ORG", 3]
+  ["e1", "x2", "Ola Testmann", "PER", 1]
+  ["e2", "x1", "COCA COLA", "ORG", 2]
+  ["e2", "x3", "Bjørn Åse Ærlig", "PER", null]
+  ["e3", "x2", "ola testmann", "PER", 5]
+  ["e4", "x4", "Bjorn Ase Aerlig", "PER", 4]
+  ["e4", "x1", "Coca Cola Sverige", "ORG", 0]
+insert dow_jones_news_events cols=id,name,aliases,published_at:
+  ["d1", "Coca-Cola Testbryggeri AS", ["Coke Test", "CCT"], "2026-02-01T00:00:00Z"]
+  ["d2", "Ola Testmann", [], "2026-02-02T00:00:00Z"]
+  ["d3", "Nordlys Holding", ["Northern Lights Holding"], "2026-02-03T00:00:00Z"]
+insert ams_articles cols=article_id,published_at,title:
+  ["a1", "2026-04-01T00:00:00Z", "Story one"]
+  ["a2", "2026-04-02T00:00:00Z", "Story two"]
+insert ams_entity_signals cols=article_id,entity_key,surface,entity_type,gate:
+  ["a1", "k1", "Coca Cola", "ORG", 0.7]
+  ["a1", "k2", "Ola Testmann", "PER", 0.9]
+  ["a2", "k1", "COCA-COLA", "ORG", 0.4]
+
+case matching_mentions
+query:
+  SELECT DISTINCT id FROM news_events_entities nee
+  WHERE SEARCH(text__tokens, @entityText)
+    AND negative_ams_weight IS NOT NULL
+    AND entity_type IN UNNEST(@entityTypes)
+params:
+  @entityText STRING = "\"COCA COLA\""
+  @entityTypes ARRAY<STRING> = ["ORG"]
+expect:
+  columns: id STRING
+  ["e2"]
+  ["e1"]
+  ["e4"]
+expect@spanner:
+  same
+
+case matching_mentions_or_texts
+query:
+  SELECT id, entity_id FROM news_events_entities nee
+  WHERE SEARCH(text__tokens, @entityText)
+    AND negative_ams_weight IS NOT NULL
+    AND entity_type IN UNNEST(@entityTypes)
+params:
+  @entityText STRING = "\"BJORN ASE AERLIG\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["PER", "ORG"]
+expect:
+  columns: id STRING, entity_id STRING
+  ["e3","x2"]
+  ["e1","x2"]
+  ["e4","x4"]
+expect@spanner:
+  same
+
+case matching_mentions_accented_text_fails
+query:
+  SELECT id FROM news_events_entities nee WHERE SEARCH(text__tokens, @entityText)
+params:
+  @entityText STRING = "\"BJØRN ÅSE ÆRLIG\" OR \"BJØRN ASE ÆRLIG\""
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"BJØRN ÅSE ÆRLIG" OR "BJØRN ASE ÆRLIG"`, has error(s): -Syntax error on column 6: Expecting '"
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case paged_events_by_mentions
+query:
+  WITH matched AS (
+    SELECT DISTINCT id
+    FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  ),
+  page AS (
+    SELECT ne.id, ne.published_at
+    FROM matched INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+    WHERE NOT ne.archived IS TRUE
+      AND ne.language IN UNNEST(@languages)
+    ORDER BY ne.published_at DESC, ne.id
+    LIMIT @limit
+    OFFSET @offset
+  ),
+  page_entities AS (
+    SELECT id, ARRAY_AGG(nee.entity_id ORDER BY nee.entity_id) AS entities
+    FROM news_events_entities nee
+    WHERE id IN (SELECT id FROM page)
+      AND SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY id
+  ),
+  final AS (
+    SELECT ne.id, ne.published_at, ne.publisher, page_entities.entities AS entities
+    FROM page_entities INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+  )
+  SELECT final.id, final.publisher, final.entities FROM final
+  ORDER BY final.published_at DESC, final.id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+  @languages ARRAY<STRING> = ["no", "en", "sv"]
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  columns: id STRING, publisher STRING, entities ARRAY<STRING>
+  ["e4","Testbladet",["x1"]]
+  ["e2","Test Times",["x1"]]
+  ["e1","Testavisa",["x1","x2"]]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is only supported in queries with query optimizer version 6 or above.
+
+case count_bounded
+query:
+  WITH grouped AS (
+    SELECT DISTINCT id
+    FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  ),
+  bounded AS (
+    SELECT id
+    FROM grouped INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+    WHERE NOT ne.archived IS TRUE
+      AND NOT id IN UNNEST(@excludedEvents)
+      AND NOT ne.paywall IS true
+    LIMIT @countCap
+  )
+  SELECT COUNT(id) AS count FROM bounded
+params:
+  @entityText STRING = "\"COCA COLA\""
+  @entityTypes ARRAY<STRING> = ["ORG"]
+  @excludedEvents ARRAY<STRING> = ["e9"]
+  @countCap INT64 = 100
+expect:
+  columns: count INT64
+  ["2"]
+expect@spanner:
+  same
+
+case get_by_with_left_join
+query:
+  WITH filtered_news_entities AS (
+    SELECT id, ARRAY_AGG(nee.entity_id) AS entities
+    FROM news_events_entities nee
+    WHERE id = @id
+    AND negative_ams_weight IS NOT NULL
+    AND SEARCH(text__tokens, @entityTexts)
+    AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY id
+  )
+  SELECT res.id, res.entities
+  FROM (
+    SELECT ne.id, COALESCE(fne.entities, []) AS entities
+    FROM news_events ne LEFT JOIN filtered_news_entities fne USING (id)
+    WHERE id = @id
+    ) AS res
+params:
+  @id STRING = "e1"
+  @entityTexts STRING = "\"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["PER"]
+expect:
+  columns: id STRING, entities ARRAY<STRING>
+  ["e1",["x2"]]
+expect@spanner:
+  same
+
+case force_partitioned_index_with_partition_filter
+query:
+  SELECT id, entity_id, negative_ams_weight FROM news_events_entities@{FORCE_INDEX=news_events_entities_type_partitioned_search_index}
+  WHERE SEARCH(text__tokens, 'coca') AND entity_type = 'ORG' AND negative_ams_weight IS NOT NULL
+expect:
+  columns: id STRING, entity_id STRING, negative_ams_weight INT64
+  ["e1","x1","3"]
+  ["e4","x1","0"]
+  ["e2","x1","2"]
+expect@spanner:
+  same
+
+case dow_jones_concat_search
+query:
+  SELECT id FROM dow_jones_news_events WHERE SEARCH(TOKENLIST_CONCAT([name__tokens, aliases__tokens]), @name)
+  ORDER BY published_at DESC LIMIT @limit OFFSET @offset
+params:
+  @name STRING = "Coke Test"
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  columns: id STRING
+  ["d1"]
+expect@spanner:
+  same
+
+case dow_jones_concat_raw_name_with_hyphen
+query:
+  SELECT id FROM dow_jones_news_events WHERE SEARCH(TOKENLIST_CONCAT([name__tokens, aliases__tokens]), @name)
+params:
+  @name STRING = "Coca-Cola Testbryggeri AS"
+expect:
+  columns: id STRING
+  ["d1"]
+expect@spanner:
+  same
+
+case dow_jones_concat_phrase_across_name_and_alias
+query:
+  SELECT id FROM dow_jones_news_events WHERE SEARCH(TOKENLIST_CONCAT([name__tokens, aliases__tokens]), @name)
+params:
+  @name STRING = "\"holding northern\""
+expect:
+  columns: id STRING
+expect@spanner:
+  same
+
+case dow_jones_concat_count
+query:
+  SELECT COUNT(id) AS count FROM (
+    SELECT id
+    FROM dow_jones_news_events
+    WHERE SEARCH(TOKENLIST_CONCAT([name__tokens, aliases__tokens]), @name)
+      AND NOT id IN UNNEST(@excludedEvents)
+      AND published_at >= @publishDateFrom
+    LIMIT @countCap
+  ) bounded
+params:
+  @name STRING = "holding OR testmann"
+  @excludedEvents ARRAY<STRING> = ["d2"]
+  @publishDateFrom TIMESTAMP = "2026-01-01T00:00:00Z"
+  @countCap INT64 = 100
+expect:
+  columns: count INT64
+  ["1"]
+expect@spanner:
+  same
+
+case dow_jones_alias_phrase_across_elements
+query:
+  SELECT id FROM dow_jones_news_events WHERE SEARCH(aliases__tokens, '"test cct"')
+expect:
+  columns: id STRING
+expect@spanner:
+  same
+
+case signals_array_subquery
+query:
+  SELECT ne.article_id,
+    ARRAY(
+      SELECT AS STRUCT s.entity_key, s.gate
+      FROM ams_entity_signals s
+      WHERE s.article_id = ne.article_id
+        AND SEARCH(s.surface__tokens, @entityTexts)
+        AND entity_type IN UNNEST(@entityTypes)
+    ) AS signals
+  FROM ams_articles ne
+  WHERE ne.article_id = @id
+params:
+  @id STRING = "a1"
+  @entityTexts STRING = "\"COCA COLA\""
+  @entityTypes ARRAY<STRING> = ["ORG"]
+expect:
+  columns: article_id STRING, signals ARRAY<STRUCT<entity_key STRING, gate FLOAT64>>
+  ["a1",[["k1",0.7]]]
+expect@spanner:
+  same
+
+case signals_grouped_search
+query:
+  WITH grouped AS (
+    SELECT article_id, ARRAY_AGG(STRUCT(nee.entity_key AS k, nee.gate AS g)) AS signals
+    FROM ams_entity_signals nee
+    WHERE SEARCH(nee.surface__tokens, @entityText)
+      AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY article_id
+  ),
+  final AS (
+    SELECT ne.article_id, ne.published_at, ARRAY_LENGTH(grouped.signals) AS n
+    FROM grouped INNER JOIN @{JOIN_METHOD=APPLY_JOIN} ams_articles ne USING (article_id)
+    WHERE TRUE
+    ORDER BY published_at DESC, article_id
+    LIMIT @limit
+    OFFSET @offset
+  )
+  SELECT article_id, n FROM final ORDER BY published_at DESC, article_id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  columns: article_id STRING, n INT64
+  ["a2","1"]
+  ["a1","2"]
+expect@spanner:
+  same
+
+# Prod rejected paged_events_by_mentions with "SEARCH is only supported in queries with query
+# optimizer version 6 or above". These variants pin the optimizer version and isolate the query parts.
+
+# diverges-from-emulator: the emulator rejects OPTIMIZER_VERSION; spanbolt accepts it like prod (see sql/hints/statement_hint_optimizer).
+case paged_events_optimizer_latest
+tags: oracle2
+query:
+  @{OPTIMIZER_VERSION=latest_version}
+  WITH matched AS (
+    SELECT DISTINCT id
+    FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  ),
+  page AS (
+    SELECT ne.id, ne.published_at
+    FROM matched INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+    WHERE NOT ne.archived IS TRUE
+      AND ne.language IN UNNEST(@languages)
+    ORDER BY ne.published_at DESC, ne.id
+    LIMIT @limit
+    OFFSET @offset
+  ),
+  page_entities AS (
+    SELECT id, ARRAY_AGG(nee.entity_id ORDER BY nee.entity_id) AS entities
+    FROM news_events_entities nee
+    WHERE id IN (SELECT id FROM page)
+      AND SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY id
+  ),
+  final AS (
+    SELECT ne.id, ne.published_at, ne.publisher, page_entities.entities AS entities
+    FROM page_entities INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+  )
+  SELECT final.id, final.publisher, final.entities FROM final
+  ORDER BY final.published_at DESC, final.id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+  @languages ARRAY<STRING> = ["no", "en", "sv"]
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: id STRING, publisher STRING, entities ARRAY<STRING>
+  ["e4","Testbladet",["x1"]]
+  ["e2","Test Times",["x1"]]
+  ["e1","Testavisa",["x1","x2"]]
+
+# diverges-from-emulator: the emulator rejects OPTIMIZER_VERSION; spanbolt accepts it like prod (see sql/hints/statement_hint_optimizer).
+case paged_events_optimizer_default
+tags: oracle2
+query:
+  @{OPTIMIZER_VERSION=default_version}
+  WITH matched AS (
+    SELECT DISTINCT id
+    FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  ),
+  page AS (
+    SELECT ne.id, ne.published_at
+    FROM matched INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+    WHERE NOT ne.archived IS TRUE
+      AND ne.language IN UNNEST(@languages)
+    ORDER BY ne.published_at DESC, ne.id
+    LIMIT @limit
+    OFFSET @offset
+  ),
+  page_entities AS (
+    SELECT id, ARRAY_AGG(nee.entity_id ORDER BY nee.entity_id) AS entities
+    FROM news_events_entities nee
+    WHERE id IN (SELECT id FROM page)
+      AND SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY id
+  ),
+  final AS (
+    SELECT ne.id, ne.published_at, ne.publisher, page_entities.entities AS entities
+    FROM page_entities INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+  )
+  SELECT final.id, final.publisher, final.entities FROM final
+  ORDER BY final.published_at DESC, final.id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+  @languages ARRAY<STRING> = ["no", "en", "sv"]
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: id STRING, publisher STRING, entities ARRAY<STRING>
+  ["e4","Testbladet",["x1"]]
+  ["e2","Test Times",["x1"]]
+  ["e1","Testavisa",["x1","x2"]]
+
+# diverges-from-emulator: the emulator rejects OPTIMIZER_VERSION; spanbolt accepts it like prod (see sql/hints/statement_hint_optimizer).
+case paged_events_optimizer_7
+tags: oracle2
+query:
+  @{OPTIMIZER_VERSION=7}
+  WITH matched AS (
+    SELECT DISTINCT id
+    FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  ),
+  page AS (
+    SELECT ne.id, ne.published_at
+    FROM matched INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+    WHERE NOT ne.archived IS TRUE
+      AND ne.language IN UNNEST(@languages)
+    ORDER BY ne.published_at DESC, ne.id
+    LIMIT @limit
+    OFFSET @offset
+  ),
+  page_entities AS (
+    SELECT id, ARRAY_AGG(nee.entity_id ORDER BY nee.entity_id) AS entities
+    FROM news_events_entities nee
+    WHERE id IN (SELECT id FROM page)
+      AND SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY id
+  ),
+  final AS (
+    SELECT ne.id, ne.published_at, ne.publisher, page_entities.entities AS entities
+    FROM page_entities INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+  )
+  SELECT final.id, final.publisher, final.entities FROM final
+  ORDER BY final.published_at DESC, final.id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+  @languages ARRAY<STRING> = ["no", "en", "sv"]
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: id STRING, publisher STRING, entities ARRAY<STRING>
+  ["e4","Testbladet",["x1"]]
+  ["e2","Test Times",["x1"]]
+  ["e1","Testavisa",["x1","x2"]]
+
+case paged_events_without_join_hints
+tags: oracle2
+query:
+  WITH matched AS (
+    SELECT DISTINCT id
+    FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  ),
+  page AS (
+    SELECT ne.id, ne.published_at
+    FROM matched INNER JOIN news_events ne USING (id)
+    WHERE NOT ne.archived IS TRUE
+      AND ne.language IN UNNEST(@languages)
+    ORDER BY ne.published_at DESC, ne.id
+    LIMIT @limit
+    OFFSET @offset
+  ),
+  page_entities AS (
+    SELECT id, ARRAY_AGG(nee.entity_id ORDER BY nee.entity_id) AS entities
+    FROM news_events_entities nee
+    WHERE id IN (SELECT id FROM page)
+      AND SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+    GROUP BY id
+  ),
+  final AS (
+    SELECT ne.id, ne.published_at, ne.publisher, page_entities.entities AS entities
+    FROM page_entities INNER JOIN news_events ne USING (id)
+  )
+  SELECT final.id, final.publisher, final.entities FROM final
+  ORDER BY final.published_at DESC, final.id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+  @languages ARRAY<STRING> = ["no", "en", "sv"]
+  @limit INT64 = 10
+  @offset INT64 = 0
+expect:
+  columns: id STRING, publisher STRING, entities ARRAY<STRING>
+  ["e4","Testbladet",["x1"]]
+  ["e2","Test Times",["x1"]]
+  ["e1","Testavisa",["x1","x2"]]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is only supported in queries with query optimizer version 6 or above.
+
+case matched_apply_join_news_events
+tags: oracle2
+query:
+  WITH matched AS (
+    SELECT DISTINCT id FROM news_events_entities nee
+    WHERE SEARCH(text__tokens, @entityText)
+      AND negative_ams_weight IS NOT NULL
+      AND entity_type IN UNNEST(@entityTypes)
+  )
+  SELECT ne.id FROM matched INNER JOIN @{JOIN_METHOD=APPLY_JOIN} news_events ne USING (id)
+  ORDER BY ne.id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+expect:
+  columns: id STRING
+  ["e1"]
+  ["e2"]
+  ["e3"]
+  ["e4"]
+expect@spanner:
+  same
+
+case search_with_id_in_subquery
+tags: oracle2
+query:
+  SELECT id, ARRAY_AGG(nee.entity_id ORDER BY nee.entity_id) AS entities
+  FROM news_events_entities nee
+  WHERE id IN (SELECT id FROM news_events WHERE NOT archived IS TRUE)
+    AND SEARCH(text__tokens, @entityText)
+    AND negative_ams_weight IS NOT NULL
+    AND entity_type IN UNNEST(@entityTypes)
+  GROUP BY id
+  ORDER BY id
+params:
+  @entityText STRING = "\"COCA COLA\" OR \"OLA TESTMANN\""
+  @entityTypes ARRAY<STRING> = ["ORG", "PER"]
+expect:
+  columns: id STRING, entities ARRAY<STRING>
+  ["e1",["x1","x2"]]
+  ["e2",["x1"]]
+  ["e4",["x1"]]
+expect@spanner:
+  same
+
+# matching_mentions_accented_text_fails with the partition and WHERE filters prod needs.
+case matching_mentions_accented_with_partition_filter
+tags: oracle2
+query:
+  SELECT DISTINCT id FROM news_events_entities nee
+  WHERE SEARCH(text__tokens, @entityText)
+    AND negative_ams_weight IS NOT NULL
+    AND entity_type IN UNNEST(@entityTypes)
+params:
+  @entityText STRING = "\"BJØRN ÅSE ÆRLIG\" OR \"BJØRN ASE ÆRLIG\" OR \"BJORN ASE AERLIG\""
+  @entityTypes ARRAY<STRING> = ["PER"]
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"BJØRN ÅSE ÆRLIG" OR "BJØRN ASE ÆRLIG" OR "BJORN ASE AERLIG"`, has error(s): -Syntax error on column 6: Expecting '"
+expect@spanner:
+  columns: id STRING
+  ["e4"]
+
+# Is a partition filter required (prod said "no appropriate search index" without one)?
+case matching_mentions_without_partition_filter
+tags: oracle2
+query:
+  SELECT DISTINCT id FROM news_events_entities nee
+  WHERE SEARCH(text__tokens, @entityText)
+    AND negative_ams_weight IS NOT NULL
+params:
+  @entityText STRING = "\"COCA COLA\""
+expect:
+  columns: id STRING
+  ["e2"]
+  ["e1"]
+  ["e4"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+# Is the index WHERE filter (negative_ams_weight IS NOT NULL) required?
+case matching_mentions_without_where_filter
+tags: oracle2
+query:
+  SELECT DISTINCT id FROM news_events_entities nee
+  WHERE SEARCH(text__tokens, @entityText)
+    AND entity_type IN UNNEST(@entityTypes)
+params:
+  @entityText STRING = "\"COCA COLA\""
+  @entityTypes ARRAY<STRING> = ["ORG"]
+expect:
+  columns: id STRING
+  ["e2"]
+  ["e1"]
+  ["e4"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.

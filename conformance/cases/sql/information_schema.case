@@ -1,0 +1,205 @@
+tags: sql information_schema
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case tables
+query:
+  SELECT TABLE_NAME, PARENT_TABLE_NAME, ON_DELETE_ACTION FROM INFORMATION_SCHEMA.TABLES
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') AND TABLE_TYPE = 'BASE TABLE'
+  ORDER BY TABLE_NAME
+expect:
+  columns: TABLE_NAME STRING, PARENT_TABLE_NAME STRING, ON_DELETE_ACTION STRING
+  ["Entities","Teams","CASCADE"]
+  ["Reviews","Entities","CASCADE"]
+  ["Signals",null,null]
+  ["Teams",null,null]
+  ["Users",null,null]
+
+case columns
+query:
+  SELECT COLUMN_NAME, ORDINAL_POSITION, SPANNER_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = '' AND TABLE_NAME = 'Entities' ORDER BY ORDINAL_POSITION
+expect:
+  columns: COLUMN_NAME STRING, ORDINAL_POSITION INT64, SPANNER_TYPE STRING, IS_NULLABLE STRING
+  ["TeamId","1","STRING(36)","NO"]
+  ["EntityId","2","STRING(36)","NO"]
+  ["Kind","3","STRING(32)","NO"]
+  ["Status","4","STRING(32)","YES"]
+  ["Name","5","STRING(MAX)","YES"]
+  ["Aliases","6","ARRAY<STRING(MAX)>","YES"]
+  ["Data","7","JSON","YES"]
+  ["Score","8","FLOAT64","YES"]
+  ["Version","9","INT64","NO"]
+  ["CreatedAt","10","TIMESTAMP","NO"]
+  ["UpdatedAt","11","TIMESTAMP","YES"]
+
+case indexes
+query:
+  SELECT TABLE_NAME, INDEX_NAME, INDEX_TYPE, IS_UNIQUE, IS_NULL_FILTERED, INDEX_STATE FROM INFORMATION_SCHEMA.INDEXES
+  WHERE TABLE_SCHEMA = '' ORDER BY TABLE_NAME, INDEX_NAME
+expect:
+  columns: TABLE_NAME STRING, INDEX_NAME STRING, INDEX_TYPE STRING, IS_UNIQUE BOOL, IS_NULL_FILTERED BOOL, INDEX_STATE STRING
+  ["Entities","EntitiesByKind","INDEX",false,false,"READ_WRITE"]
+  ["Entities","EntitiesByStatus","INDEX",false,true,"READ_WRITE"]
+  ["Entities","PRIMARY_KEY","PRIMARY_KEY",true,false,null]
+  ["Reviews","PRIMARY_KEY","PRIMARY_KEY",true,false,null]
+  ["Signals","PRIMARY_KEY","PRIMARY_KEY",true,false,null]
+  ["Teams","PRIMARY_KEY","PRIMARY_KEY",true,false,null]
+  ["Users","PRIMARY_KEY","PRIMARY_KEY",true,false,null]
+
+case index_count_precondition
+query:
+  SELECT count(*) FROM INFORMATION_SCHEMA.INDEXES WHERE TABLE_NAME = @t AND INDEX_NAME = @i
+params:
+  @t STRING = "Entities"
+  @i STRING = "EntitiesByKind"
+expect:
+  columns: INT64
+  ["1"]
+
+case index_columns
+query:
+  SELECT INDEX_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_ORDERING FROM INFORMATION_SCHEMA.INDEX_COLUMNS
+  WHERE TABLE_SCHEMA = '' AND TABLE_NAME = 'Entities' ORDER BY INDEX_NAME, ORDINAL_POSITION, COLUMN_NAME
+expect:
+  columns: INDEX_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64, COLUMN_ORDERING STRING
+  ["EntitiesByKind","TeamId","1","ASC"]
+  ["EntitiesByKind","Kind","2","ASC"]
+  ["EntitiesByStatus","Name",null,null]
+  ["EntitiesByStatus","Status","1","ASC"]
+  ["PRIMARY_KEY","TeamId","1","ASC"]
+  ["PRIMARY_KEY","EntityId","2","ASC"]
+
+case key_columns_via_constraints
+query:
+  SELECT kcu.TABLE_NAME, kcu.COLUMN_NAME, kcu.ORDINAL_POSITION
+  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+  JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+    ON kcu.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+  WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' AND tc.TABLE_SCHEMA = ''
+  ORDER BY kcu.TABLE_NAME, kcu.ORDINAL_POSITION
+expect:
+  columns: TABLE_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64
+  ["Entities","TeamId","1"]
+  ["Entities","EntityId","2"]
+  ["Reviews","TeamId","1"]
+  ["Reviews","EntityId","2"]
+  ["Reviews","ReviewId","3"]
+  ["Signals","EntityId","1"]
+  ["Signals","SignalType","2"]
+  ["Signals","ValidFrom","3"]
+  ["Teams","TeamId","1"]
+  ["Users","UserId","1"]
+
+case schemata
+query:
+  SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: SCHEMA_NAME STRING
+  [""]
+  ["INFORMATION_SCHEMA"]
+  ["SPANNER_SYS"]
+
+case union_tables_and_indexes
+query:
+  SELECT TABLE_NAME AS name, 'table' AS kind FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ''
+  UNION ALL
+  SELECT INDEX_NAME, 'index' FROM INFORMATION_SCHEMA.INDEXES WHERE TABLE_SCHEMA = '' AND INDEX_TYPE = 'INDEX'
+  ORDER BY name
+expect:
+  columns: name STRING, kind STRING
+  ["Entities","table"]
+  ["EntitiesByKind","index"]
+  ["EntitiesByStatus","index"]
+  ["Reviews","table"]
+  ["Signals","table"]
+  ["Teams","table"]
+  ["Users","table"]
+
+case database_options
+query:
+  SELECT OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.DATABASE_OPTIONS ORDER BY OPTION_NAME
+expect:
+  columns: OPTION_NAME STRING, OPTION_VALUE STRING
+  ["database_dialect","GOOGLE_STANDARD_SQL"]
+
+case column_options
+query:
+  SELECT TABLE_NAME, COLUMN_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.COLUMN_OPTIONS WHERE TABLE_SCHEMA = '' ORDER BY TABLE_NAME, COLUMN_NAME
+expect:
+  columns: TABLE_NAME STRING, COLUMN_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+
+case info_schema_in_rw_txn
+dml:
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
+expect:
+  columns: INT64
+  ["36"]
+

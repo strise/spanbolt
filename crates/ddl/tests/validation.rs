@@ -1,0 +1,495 @@
+//! Negative cases; expected texts were taken from emulator 1.5.59.
+
+use spanbolt_ddl::{DataCheck, DdlError, Schema, parse_statement};
+
+const BASE: &[&str] = &[
+    "CREATE TABLE P (id INT64 NOT NULL, s STRING(MAX), ts TIMESTAMP, a ARRAY<INT64>, j JSON) PRIMARY KEY (id)",
+    "CREATE TABLE C (id INT64 NOT NULL, c INT64 NOT NULL, v STRING(10)) PRIMARY KEY (id, c), INTERLEAVE IN PARENT P ON DELETE CASCADE",
+    "CREATE INDEX pi ON P(s)",
+    "CREATE TABLE F (id INT64 NOT NULL, pid INT64, CONSTRAINT fkf FOREIGN KEY (pid) REFERENCES P (id)) PRIMARY KEY (id)",
+    "CREATE TABLE R (id INT64 NOT NULL, x INT64, FOREIGN KEY (x) REFERENCES P (id)) PRIMARY KEY (id)",
+    "CREATE TABLE T (id INT64 NOT NULL, ts TIMESTAMP) PRIMARY KEY (id), ROW DELETION POLICY (OLDER_THAN(ts, INTERVAL 1 DAY))",
+    "CREATE TABLE G (id INT64 NOT NULL, x INT64 NOT NULL) PRIMARY KEY (id)",
+    "ALTER TABLE G ADD SYNONYM GS",
+    "CREATE TABLE H (id INT64 NOT NULL, a STRING(MAX), t TOKENLIST AS (TOKENIZE_FULLTEXT(a)) HIDDEN, n INT64) PRIMARY KEY (id)",
+    "CREATE SEARCH INDEX hs ON H(t)",
+    "CREATE CHANGE STREAM cs FOR G, H(a)",
+    "CREATE SCHEMA s",
+    "CREATE TABLE s.T (id INT64 NOT NULL) PRIMARY KEY (id)",
+    "CREATE VIEW v SQL SECURITY INVOKER AS SELECT F.id FROM F",
+];
+
+fn base() -> Schema {
+    let mut s = Schema::default();
+    for stmt in BASE {
+        s.apply(&parse_statement(stmt).unwrap())
+            .unwrap_or_else(|e| panic!("{stmt}: {e}"));
+    }
+    s
+}
+
+#[derive(Debug)]
+enum K {
+    Inv,
+    Pre,
+    Nf,
+    Dup,
+    Unimpl,
+}
+
+fn kind(e: &DdlError) -> (&'static str, &str) {
+    match e {
+        DdlError::Syntax(m) => ("Inv", m),
+        DdlError::Precondition(m) => ("Pre", m),
+        DdlError::NotFound(m) => ("Nf", m),
+        DdlError::AlreadyExists(m) => ("Dup", m),
+        DdlError::Unimplemented(m) => ("Unimpl", m),
+    }
+}
+
+#[test]
+fn rejects_like_the_emulator() {
+    use K::*;
+    let cases: &[(&str, K, &str)] = &[
+        (
+            "CREATE TABLE p (id INT64 NOT NULL) PRIMARY KEY (id)",
+            Dup,
+            "Duplicate name in schema: p.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, id STRING(MAX)) PRIMARY KEY (id)",
+            Pre,
+            "Duplicate column name D.id.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL) PRIMARY KEY (nope)",
+            Pre,
+            "Table D references nonexistent key column nope.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL) PRIMARY KEY (id, id)",
+            Inv,
+            "Table D references key column id more than once.",
+        ),
+        (
+            "CREATE TABLE D (id ARRAY<INT64> NOT NULL) PRIMARY KEY (id)",
+            Inv,
+            "Column D.id has type ARRAY, but is part of the primary key.",
+        ),
+        (
+            "CREATE TABLE D (id JSON NOT NULL) PRIMARY KEY (id)",
+            Inv,
+            "Column D.id has type JSON, but is part of the primary key.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL) PRIMARY KEY (id), INTERLEAVE IN PARENT Nope",
+            Nf,
+            "Table not found: Nope",
+        ),
+        (
+            "CREATE TABLE D (x INT64 NOT NULL) PRIMARY KEY (x), INTERLEAVE IN PARENT P",
+            Pre,
+            "Table D does not reference parent key column id.",
+        ),
+        (
+            "CREATE TABLE D (id STRING(MAX) NOT NULL) PRIMARY KEY (id), INTERLEAVE IN PARENT P",
+            Pre,
+            "Table D references parent key column id with incorrect type STRING (should be INT64).",
+        ),
+        (
+            "CREATE TABLE D (id INT64) PRIMARY KEY (id), INTERLEAVE IN PARENT P",
+            Pre,
+            "Table D references parent key column id that is not null, but child key is nullable.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x INT64, CONSTRAINT fk FOREIGN KEY (x) REFERENCES Nope (id)) PRIMARY KEY (id)",
+            Nf,
+            "Table not found: Nope",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x STRING(MAX), CONSTRAINT fk FOREIGN KEY (x) REFERENCES P (id)) PRIMARY KEY (id)",
+            Pre,
+            "The column types are different for column `x` of table `D` and column `id` of table `P` in foreign key `fk`.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x INT64, CONSTRAINT fk FOREIGN KEY (y) REFERENCES P (id)) PRIMARY KEY (id)",
+            Pre,
+            "Column `y` not found for table `D` in foreign key `fk`.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x INT64, CONSTRAINT fk FOREIGN KEY (x, id) REFERENCES P (id)) PRIMARY KEY (id)",
+            Pre,
+            "The number of columns are different for table `D` and table `P` in foreign key `fk`.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x INT64, CONSTRAINT fkf FOREIGN KEY (x) REFERENCES P (id)) PRIMARY KEY (id)",
+            Dup,
+            "Duplicate name in schema: fkf.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, j JSON, CONSTRAINT fj FOREIGN KEY (j) REFERENCES P (id)) PRIMARY KEY (id)",
+            Pre,
+            "Column `j` for foreign key `fj` on table `D` has an unsupported type.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, ts STRING(MAX)) PRIMARY KEY (id), ROW DELETION POLICY (OLDER_THAN(ts, INTERVAL 1 DAY))",
+            Inv,
+            "Cannot create ROW DELETION POLICY because column ts in table D is not of type TIMESTAMP.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x INT64 OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (id)",
+            Pre,
+            "Column D.x has invalid allow_commit_timestamp option.  Option only allowed on TIMESTAMP columns.",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, x STRING(0)) PRIMARY KEY (id)",
+            Inv,
+            "Bad length for column D.x: 0 : Allowed length range: [1, 2621440].",
+        ),
+        (
+            "CREATE TABLE D (id INT64 NOT NULL, t TOKENLIST) PRIMARY KEY (id)",
+            Inv,
+            "TOKENLIST column D.t must be HIDDEN.",
+        ),
+        (
+            "CREATE TABLE nos.T (id INT64 NOT NULL) PRIMARY KEY (id)",
+            Nf,
+            "Schema not found: nos",
+        ),
+        (
+            "CREATE INDEX pi ON P(ts)",
+            Dup,
+            "Duplicate name in schema: pi.",
+        ),
+        ("CREATE INDEX pi2 ON Nope(ts)", Nf, "Table not found: Nope"),
+        (
+            "CREATE INDEX pi2 ON P(nope)",
+            Inv,
+            "Index pi2 specifies key column nope which does not exist in the index's base table.",
+        ),
+        (
+            "CREATE INDEX pi2 ON P(a)",
+            Pre,
+            "Cannot reference ARRAY a in the creation of index pi2.",
+        ),
+        (
+            "CREATE INDEX pi2 ON P(s) STORING (s)",
+            Inv,
+            "Index pi2 specifies stored column s already specified as primary key.",
+        ),
+        (
+            "CREATE INDEX pi2 ON P(s) STORING (id)",
+            Pre,
+            "Index pi2 specifies stored column id which is a key of table P.",
+        ),
+        (
+            "CREATE INDEX pi2 ON P(s, s)",
+            Inv,
+            "Index pi2 specifies key column s twice.",
+        ),
+        (
+            "CREATE INDEX pi2 ON C(v), INTERLEAVE IN Nope",
+            Pre,
+            "Cannot interleave index pi2 within nonexistent table Nope.",
+        ),
+        (
+            "CREATE INDEX pi2 ON C(v), INTERLEAVE IN C",
+            Pre,
+            "Index pi2 specifies keys that are not a prefix of the keys of table C, yet is to be interleaved in C.",
+        ),
+        (
+            "CREATE INDEX ti2 ON s.T(id)",
+            Pre,
+            "Index ti2 does not match the schema of the indexed table s.T.",
+        ),
+        (
+            "CREATE SEARCH INDEX hs2 ON H(t) ORDER BY n",
+            Inv,
+            "Column n in search index hs2 must be NOT NULL.",
+        ),
+        (
+            "DROP TABLE P",
+            Pre,
+            "Cannot drop table P with interleaved tables: C.",
+        ),
+        ("DROP TABLE Nope", Nf, "Table not found: Nope"),
+        (
+            "DROP TABLE G",
+            Pre,
+            "Cannot drop table G. Table G is tracked by 1 Change Stream: cs. Tables explicitly tracked by a Change Stream cannot be dropped. Please drop the Change Stream or modify its FOR clause to stop tracking the table explicitly before dropping the table.",
+        ),
+        (
+            "DROP TABLE F",
+            Pre,
+            "Cannot drop TABLE `F` on which there are dependent views: v.",
+        ),
+        ("DROP INDEX Nope", Nf, "Index not found: Nope"),
+        (
+            "ALTER TABLE P DROP COLUMN s",
+            Pre,
+            "Cannot drop column s from table P because it is used by index pi.",
+        ),
+        (
+            "ALTER TABLE P DROP COLUMN id",
+            Inv,
+            "Cannot drop key column id from table P.",
+        ),
+        (
+            "ALTER TABLE P DROP COLUMN nope",
+            Nf,
+            "Column not found in table P: nope",
+        ),
+        (
+            "ALTER TABLE H DROP COLUMN a",
+            Pre,
+            "Cannot drop column H.a . Column H.a is tracked by 1 Change Stream: cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
+        ),
+        (
+            "ALTER TABLE T DROP COLUMN ts",
+            Inv,
+            "ROW DELETION POLICY will break if drop/alter column named ts in table T. Row Deletion Policy must be set on column of type TIMESTAMP.",
+        ),
+        (
+            "ALTER TABLE P ADD COLUMN s STRING(MAX)",
+            Pre,
+            "Duplicate column name P.s.",
+        ),
+        (
+            "ALTER TABLE P ALTER COLUMN s INT64",
+            Inv,
+            "Cannot change type of column `s` from `STRING` to `INT64`",
+        ),
+        (
+            "ALTER TABLE P ALTER COLUMN id INT64",
+            Inv,
+            "Cannot change key column P.id.",
+        ),
+        (
+            "ALTER TABLE P DROP CONSTRAINT nope",
+            Nf,
+            "nope is not a constraint in P",
+        ),
+        (
+            "ALTER TABLE P DROP ROW DELETION POLICY",
+            Inv,
+            "ROW DELETION POLICY does not exist on table P.",
+        ),
+        (
+            "ALTER TABLE T ADD ROW DELETION POLICY (OLDER_THAN(ts, INTERVAL 2 DAY))",
+            Inv,
+            "Cannot create ROW DELETION POLICY because there is already one on column named ts in table T.",
+        ),
+        (
+            "ALTER TABLE P SET ON DELETE CASCADE",
+            Inv,
+            "Cannot SET ON DELETE on table P that does not have an INTERLEAVE clause.",
+        ),
+        (
+            "ALTER TABLE G ADD SYNONYM GS3",
+            Inv,
+            "Cannot add a synonym to table G because the table already has a synonym GS.",
+        ),
+        (
+            "ALTER TABLE G DROP SYNONYM nope",
+            Inv,
+            "SYNONYM nope does not exist on table G.",
+        ),
+        (
+            "ALTER TABLE R ALTER COLUMN x SET OPTIONS (allow_commit_timestamp = true)",
+            Pre,
+            "Cannot set the commit_timestamp option for column `x` of table `R`. It is used by one or more foreign keys: ",
+        ),
+        (
+            "ALTER INDEX pi ADD STORED COLUMN id",
+            Pre,
+            "Column id is already existed in index pi.",
+        ),
+        (
+            "ALTER INDEX pi DROP STORED COLUMN ts",
+            Nf,
+            "Index pi does not have stored column ts.",
+        ),
+        (
+            "ALTER INDEX nope ADD STORED COLUMN ts",
+            Nf,
+            "Index not found: nope",
+        ),
+        ("RENAME TABLE G TO P", Dup, "Duplicate name in schema: P."),
+        (
+            "CREATE VIEW v SQL SECURITY INVOKER AS SELECT 1 AS x",
+            Dup,
+            "Duplicate name in schema: v.",
+        ),
+        (
+            "CREATE VIEW v2 AS SELECT 1 AS x",
+            Inv,
+            "View `v2` is missing the SQL SECURITY clause.",
+        ),
+        ("DROP VIEW nope", Nf, "View not found: nope"),
+        (
+            "DROP SCHEMA s",
+            Pre,
+            "Cannot drop schema s while it has dependencies.\nDependent tables:s.T",
+        ),
+        (
+            "CREATE SEQUENCE sq",
+            Inv,
+            "The sequence does not have a valid sequence kind. Please specify the sequence kind explicitly or set the database option `default_sequence_kind`.",
+        ),
+        ("DROP SEQUENCE nope", Nf, "Sequence not found: nope"),
+        (
+            "CREATE CHANGE STREAM cs2 FOR nope",
+            Pre,
+            "Change Stream cs2 cannot track nope because either Change Streams do not track database objects of this type, or this Table does not exist.",
+        ),
+        (
+            "CREATE CHANGE STREAM cs2 FOR G(nope)",
+            Pre,
+            "Change Stream cs2 cannot track column nope because it does not exist in Table G.",
+        ),
+        (
+            "DROP CHANGE STREAM nope",
+            Nf,
+            "Change Stream not found: nope",
+        ),
+        (
+            "CREATE TABLE SELECT (id INT64 NOT NULL) PRIMARY KEY (id)",
+            Inv,
+            "Error parsing Spanner DDL statement: CREATE TABLE SELECT (id INT64 NOT NULL) PRIMARY KEY (id) : Syntax error on line 1, column 14: Encountered 'SELECT' while parsing: identifier",
+        ),
+        (
+            "CREATE TABLE K (id INT64 NOT NULL) PRIMARY KEY (id) garbage",
+            Inv,
+            "Error parsing Spanner DDL statement: CREATE TABLE K (id INT64 NOT NULL) PRIMARY KEY (id) garbage : Syntax error on line 1, column 53: Expecting 'EOF' but found 'garbage'",
+        ),
+        (
+            "CREATE INDEX px ON P(s) WHERE ts IS NOT NULL",
+            Unimpl,
+            "Cannot null-filter column ts that is not in the index px.",
+        ),
+        (
+            "CREATE INDEX ci ON C(c2) STORING ()",
+            Inv,
+            "Encountered ')' while parsing: identifier",
+        ),
+    ];
+    let schema = base();
+    let mut failures = Vec::new();
+    for (sql, want_kind, want_msg) in cases {
+        let mut s = schema.clone();
+        let res = parse_statement(sql).and_then(|st| s.apply(&st));
+        match res {
+            Ok(()) => failures.push(format!("{sql}: expected error, got OK")),
+            Err(e) => {
+                let (k, m) = kind(&e);
+                if k != format!("{want_kind:?}") || !m.contains(want_msg) {
+                    failures.push(format!(
+                        "{sql}:\n  want {want_kind:?} {want_msg}\n  got  {k} {m}"
+                    ));
+                }
+                assert_eq!(s, schema, "failed statement changed the schema: {sql}");
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn version_bumps_only_on_success() {
+    let mut s = base();
+    let v = s.version;
+    assert!(
+        s.apply(&parse_statement("DROP TABLE Nope").unwrap())
+            .is_err()
+    );
+    assert_eq!(s.version, v);
+    s.apply(&parse_statement("DROP TABLE IF EXISTS Nope").unwrap())
+        .unwrap();
+    assert_eq!(s.version, v + 1);
+}
+
+#[test]
+fn add_not_null_column_is_a_data_check() {
+    let s = base();
+    let stmt = parse_statement("ALTER TABLE G ADD COLUMN x2 INT64 NOT NULL").unwrap();
+    assert_eq!(
+        s.data_checks(&stmt),
+        vec![DataCheck::TableEmpty {
+            table: "G".into(),
+            message: "Cannot add NOT NULL column G.x2 to existing table G.".into(),
+        }]
+    );
+    let with_default =
+        parse_statement("ALTER TABLE G ADD COLUMN x2 INT64 NOT NULL DEFAULT (0)").unwrap();
+    assert!(s.data_checks(&with_default).is_empty());
+}
+
+#[test]
+fn unnamed_constraints_get_generated_names() {
+    let s = base();
+    let r = s.table("R").unwrap();
+    assert!(r.foreign_keys[0].generated_name);
+    assert!(r.foreign_keys[0].name.starts_with("FK_R_P_"));
+    let mut s2 = s.clone();
+    let name = r.foreign_keys[0].name.clone();
+    s2.apply(&parse_statement(&format!("ALTER TABLE R DROP CONSTRAINT {name}")).unwrap())
+        .unwrap();
+    assert!(s2.table("R").unwrap().foreign_keys.is_empty());
+}
+
+#[test]
+fn rename_with_synonym_updates_references() {
+    let mut s = base();
+    s.apply(&parse_statement("ALTER TABLE P RENAME TO P2, ADD SYNONYM P").unwrap())
+        .unwrap();
+    assert_eq!(s.table("P2").unwrap().synonym.as_deref(), Some("P"));
+    assert_eq!(
+        s.table("C").unwrap().interleave.as_ref().unwrap().parent,
+        "P2"
+    );
+    assert_eq!(s.table("F").unwrap().foreign_keys[0].ref_table, "P2");
+    assert_eq!(s.index("pi").unwrap().table, "P2");
+    assert_eq!(s.resolve_table("p").unwrap().name, "P2");
+    s.apply(&parse_statement("ALTER TABLE P2 DROP SYNONYM P").unwrap())
+        .unwrap();
+    assert!(s.resolve_table("P").is_none());
+}
+
+#[test]
+fn null_filter_on_index_key_storing_or_table_key() {
+    let mut s = base();
+    for stmt in [
+        "CREATE INDEX f1 ON P(s) WHERE s IS NOT NULL",
+        "CREATE INDEX f2 ON P(s) STORING (ts) WHERE ts IS NOT NULL",
+        "CREATE INDEX f3 ON P(s) WHERE id IS NOT NULL",
+    ] {
+        s.apply(&parse_statement(stmt).unwrap())
+            .unwrap_or_else(|e| panic!("{stmt}: {e}"));
+    }
+}
+
+#[test]
+fn drop_stored_null_filter_column() {
+    let mut s = base();
+    let create = "CREATE INDEX f1 ON P(s) STORING (ts, a) WHERE ts IS NOT NULL AND a IS NOT NULL";
+    s.apply(&parse_statement(create).unwrap()).unwrap();
+    let before = s.index("f1").unwrap().clone();
+    // Production rejects it and leaves the index alone.
+    let drop_a = parse_statement("ALTER INDEX f1 DROP STORED COLUMN a").unwrap();
+    let e = s.apply(&drop_a).unwrap_err();
+    assert_eq!(
+        kind(&e),
+        ("Inv", "Cannot drop null filtered column a in index f1.")
+    );
+    assert_eq!(s.index("f1"), Some(&before));
+    // The emulator drops the column's conjunct with it, then the WHERE clause.
+    s.apply_emulator_compat(&drop_a).unwrap();
+    let f1 = s.index("f1").unwrap();
+    assert_eq!(f1.storing, ["ts"]);
+    assert_eq!(f1.filter.as_deref(), Some("ts IS NOT NULL"));
+    s.apply_emulator_compat(&parse_statement("ALTER INDEX f1 DROP STORED COLUMN ts").unwrap())
+        .unwrap();
+    let f1 = s.index("f1").unwrap();
+    assert!(f1.storing.is_empty());
+    assert_eq!(f1.filter, None);
+}

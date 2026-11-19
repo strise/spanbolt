@@ -1,0 +1,456 @@
+tags: mutations
+schema:
+  CREATE TABLE Parent (
+    P INT64 NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    Email STRING(MAX),
+  ) PRIMARY KEY (P);
+  CREATE UNIQUE INDEX ParentByEmail ON Parent(Email);
+  CREATE TABLE Child (
+    P INT64 NOT NULL,
+    C INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (P, C),
+    INTERLEAVE IN PARENT Parent ON DELETE CASCADE;
+  CREATE TABLE GrandChild (
+    P INT64 NOT NULL,
+    C INT64 NOT NULL,
+    G INT64 NOT NULL,
+  ) PRIMARY KEY (P, C, G),
+    INTERLEAVE IN PARENT Child ON DELETE CASCADE;
+  CREATE TABLE NoCascade (
+    P INT64 NOT NULL,
+    N INT64 NOT NULL,
+  ) PRIMARY KEY (P, N),
+    INTERLEAVE IN PARENT Parent ON DELETE NO ACTION;
+  CREATE TABLE Ref (
+    R INT64 NOT NULL,
+    P INT64,
+    CONSTRAINT FkParent FOREIGN KEY (P) REFERENCES Parent (P),
+  ) PRIMARY KEY (R);
+  CREATE TABLE Checked (
+    K INT64 NOT NULL,
+    Qty INT64,
+    Doubled INT64 AS (Qty * 2) STORED,
+    Status STRING(MAX) DEFAULT ('new'),
+    CONSTRAINT QtyPositive CHECK (Qty > 0),
+  ) PRIMARY KEY (K)
+insert Parent cols=P,Name,Email:
+  [1, "one", "one@example.com"]
+  [2, "two", "two@example.com"]
+insert Child cols=P,C,V:
+  [1, 1, "a"]
+  [1, 2, "b"]
+insert GrandChild cols=P,C,G:
+  [1, 1, 1]
+
+case not_null_insert
+insert Parent cols=P,Name:
+  [3, null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: Parent.Name in table: Parent
+
+case not_null_missing_column
+insert Parent cols=P:
+  [3]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table Parent does not specify a non-null value for NOT NULL column: Name
+
+case not_null_update
+update Parent cols=P,Name:
+  [1, null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: Parent.Name in table: Parent
+
+case duplicate_key_insert
+insert Parent cols=P,Name:
+  [1, "again"]
+expect:
+  error: ALREADY_EXISTS
+  message: Table Parent: Row {Int64(1)} already exists.
+
+case duplicate_key_same_mutation
+insert Parent cols=P,Name:
+  [5, "a"]
+  [5, "b"]
+expect:
+  error: ALREADY_EXISTS
+  message: Table Parent: Row {Int64(5)} already exists.
+
+case insert_or_update_existing
+insert_or_update Parent cols=P,Name:
+  [1, "renamed"]
+read Parent cols=P,Name,Email:
+  [1]
+expect:
+  columns: P INT64, Name STRING, Email STRING
+  ["1","renamed","one@example.com"]
+
+case replace_clears_unlisted_columns
+replace Parent cols=P,Name:
+  [1, "replaced"]
+expect:
+  ok
+read Parent cols=P,Name,Email:
+  [1]
+expect:
+  columns: P INT64, Name STRING, Email STRING
+  ["1","replaced",null]
+
+case replace_cascades_children
+replace Parent cols=P,Name:
+  [1, "replaced"]
+expect:
+  ok
+read Child cols=P,C:
+  all
+expect:
+  columns: P INT64, C INT64
+
+case update_missing_row
+update Parent cols=P,Name:
+  [99, "ghost"]
+expect:
+  error: NOT_FOUND
+  message: Table Parent: Row {Int64(99)} not found.
+
+case delete_missing_row_is_ok
+delete Parent:
+  [99]
+read Parent cols=P:
+  all
+expect:
+  columns: P INT64
+  ["1"]
+  ["2"]
+
+case unknown_table
+insert Nope cols=K:
+  [1]
+expect:
+  error: NOT_FOUND
+  message: Table not found: Nope
+
+case unknown_column
+insert Parent cols=P,Name,Nope:
+  [3, "x", 1]
+expect:
+  error: NOT_FOUND
+  message: Column not found in table Parent: Nope
+
+case duplicate_column_in_write
+insert Parent cols=P,Name,Name:
+  [3, "x", "y"]
+expect:
+  error: INVALID_ARGUMENT
+  message: Multiple values for column Name.
+
+case value_count_mismatch
+insert Parent cols=P,Name:
+  [3]
+expect:
+  error: INVALID_ARGUMENT
+  message: Mutation column and value size mismatch: Found: 2 columns and 1 values
+
+case missing_key_column
+insert Parent cols=Name:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table Parent does not specify a non-null value for NOT NULL column: P
+
+case missing_interleave_parent
+insert Child cols=P,C:
+  [42, 1]
+expect:
+  error: NOT_FOUND
+  message: Insert failed because key was not found in parent table: Parent Table: Parent Child Table: Child Key: {Int64(42)}
+
+case missing_grandparent
+insert GrandChild cols=P,C,G:
+  [1, 9, 1]
+expect:
+  error: NOT_FOUND
+  message: Insert failed because key was not found in parent table: Parent Table: Child Child Table: GrandChild Key: {Int64(1), Int64(9)}
+
+case parent_and_child_same_commit
+begin txn=t
+insert Parent cols=P,Name txn=t:
+  [7, "seven"]
+insert Child cols=P,C txn=t:
+  [7, 1]
+commit txn=t
+expect:
+  ok
+read Child cols=P,C:
+  range [7] .. [7]
+expect:
+  columns: P INT64, C INT64
+  ["7","1"]
+
+case child_before_parent_same_commit
+begin txn=t
+insert Child cols=P,C txn=t:
+  [8, 1]
+insert Parent cols=P,Name txn=t:
+  [8, "eight"]
+commit txn=t
+expect:
+  error: NOT_FOUND
+  message: Insert failed because key was not found in parent table: Parent Table: Parent Child Table: Child Key: {Int64(8)}
+read Child cols=P,C:
+  range [8] .. [8]
+expect:
+  columns: P INT64, C INT64
+
+case cascade_delete
+delete Parent:
+  [1]
+read Child cols=P,C:
+  all
+expect:
+  columns: P INT64, C INT64
+read GrandChild cols=P,C,G:
+  all
+expect:
+  columns: P INT64, C INT64, G INT64
+
+case cascade_delete_range
+delete Parent:
+  range [0] .. [10]
+read Parent cols=P:
+  all
+expect:
+  columns: P INT64
+read Child cols=P,C:
+  all
+expect:
+  columns: P INT64, C INT64
+
+case no_action_blocks_delete
+insert NoCascade cols=P,N:
+  [2, 1]
+delete Parent:
+  [2]
+expect:
+  error: FAILED_PRECONDITION
+  message: Delete failed because one or more keys exist within the child table: Parent Table: Parent Child Table: NoCascade Key: {Int64(2)}
+
+case no_action_child_deleted_first
+begin txn=t
+delete NoCascade txn=t:
+  [2, 1]
+delete Parent txn=t:
+  [2]
+commit txn=t
+read Parent cols=P:
+  all
+expect:
+  columns: P INT64
+  ["1"]
+
+case delete_child_keeps_parent
+delete Child:
+  [1, 1]
+read Child cols=P,C:
+  all
+expect:
+  columns: P INT64, C INT64
+  ["1","2"]
+read GrandChild cols=P,C,G:
+  all
+expect:
+  columns: P INT64, C INT64, G INT64
+
+case unique_index_violation
+insert Parent cols=P,Name,Email:
+  [3, "three", "one@example.com"]
+expect:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index ParentByEmail, duplicate key: {String("one@example.com")} in this transaction.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Unique index violation on index ParentByEmail at index key [one@example.com,1]. It conflicts with row [1] in table Parent.
+
+case unique_index_nulls_collide
+insert Parent cols=P,Name,Email:
+  [3, "three", null]
+  [4, "four", null]
+expect:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index ParentByEmail, duplicate key: {String(NULL)} in this transaction.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index ParentByEmail. Row [4] in table Parent duplicates key [<null>] created in this transaction.
+read Parent cols=P,Email:
+  all
+expect:
+  columns: P INT64, Email STRING
+  ["1","one@example.com"]
+  ["2","two@example.com"]
+expect@spanner:
+  same
+
+case unique_index_violation_on_update
+update Parent cols=P,Email:
+  [2, "one@example.com"]
+expect:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index ParentByEmail, duplicate key: {String("one@example.com")} in this transaction.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Unique index violation on index ParentByEmail at index key [one@example.com,1]. It conflicts with row [1] in table Parent.
+
+case unique_index_swap_in_one_commit
+begin txn=t
+update Parent cols=P,Email txn=t:
+  [1, "two@example.com"]
+update Parent cols=P,Email txn=t:
+  [2, "one@example.com"]
+commit txn=t
+read Parent cols=P,Email index=ParentByEmail:
+  all
+expect:
+  columns: P INT64, Email STRING
+  ["2","one@example.com"]
+  ["1","two@example.com"]
+
+case foreign_key_missing_referenced
+insert Ref cols=R,P:
+  [1, 42]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `FkParent` constraint violation on table `Ref`. Cannot find referenced key `{Int64(42)}` in table `Parent`.
+
+case foreign_key_null_ok
+insert Ref cols=R,P:
+  [1, null]
+read Ref cols=R,P:
+  all
+expect:
+  columns: R INT64, P INT64
+  ["1",null]
+
+case foreign_key_ok
+insert Ref cols=R,P:
+  [1, 2]
+read Ref cols=R,P:
+  all
+expect:
+  columns: R INT64, P INT64
+  ["1","2"]
+
+case foreign_key_blocks_delete
+insert Ref cols=R,P:
+  [1, 2]
+delete Parent:
+  [2]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `FkParent` constraint violation when deleting or updating referenced key `{Int64(2)}` in table `Parent`. A row with that key exists in the referencing table `Ref`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint violation when deleting or updating referenced row(s): referencing row(s) found in table `Ref`.
+
+case check_constraint_violation
+insert Checked cols=K,Qty:
+  [1, 0]
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `Checked`.`QtyPositive` is violated for key {Int64(1)}
+
+case check_constraint_ok_and_generated
+insert Checked cols=K,Qty:
+  [1, 21]
+read Checked cols=K,Qty,Doubled,Status:
+  all
+expect:
+  columns: K INT64, Qty INT64, Doubled INT64, Status STRING
+  ["1","21","42","new"]
+
+case write_generated_column
+insert Checked cols=K,Qty,Doubled:
+  [1, 2, 4]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write into generated column `Checked.Doubled`.
+
+case default_overridden
+insert Checked cols=K,Qty,Status:
+  [1, 1, "custom"]
+read Checked cols=K,Status:
+  all
+expect:
+  columns: K INT64, Status STRING
+  ["1","custom"]
+
+case default_explicit_null
+insert Checked cols=K,Qty,Status:
+  [1, 1, null]
+read Checked cols=K,Status:
+  all
+expect:
+  columns: K INT64, Status STRING
+  ["1",null]
+
+case delete_all_keyset
+delete GrandChild:
+  all
+read GrandChild cols=P,C,G:
+  all
+expect:
+  columns: P INT64, C INT64, G INT64
+
+case mutation_order_insert_then_delete
+begin txn=t
+insert Parent cols=P,Name txn=t:
+  [9, "nine"]
+delete Parent txn=t:
+  [9]
+commit txn=t
+read Parent cols=P:
+  [9]
+expect:
+  columns: P INT64
+
+case mutation_order_delete_then_insert
+begin txn=t
+delete Parent txn=t:
+  [2]
+insert Parent cols=P,Name txn=t:
+  [2, "again"]
+commit txn=t
+read Parent cols=P,Name:
+  [2]
+expect:
+  columns: P INT64, Name STRING
+  ["2","again"]
+
+case update_after_insert_same_commit
+begin txn=t
+insert Parent cols=P,Name txn=t:
+  [9, "nine"]
+update Parent cols=P,Name txn=t:
+  [9, "NINE"]
+commit txn=t
+expect:
+  ok
+read Parent cols=P,Name:
+  [9]
+expect:
+  columns: P INT64, Name STRING
+  ["9","NINE"]
+
+case insert_twice_same_commit
+begin txn=t
+insert Parent cols=P,Name txn=t:
+  [9, "nine"]
+insert Parent cols=P,Name txn=t:
+  [9, "nine"]
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Table Parent: Row {Int64(9)} already exists.

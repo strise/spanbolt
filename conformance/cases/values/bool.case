@@ -1,0 +1,65 @@
+tags: values bool
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case true
+insert V cols=K,B:
+  [1, true]
+read V cols=K,B:
+  [1]
+expect:
+  columns: K INT64, B BOOL
+  ["1",true]
+
+case false
+insert V cols=K,B:
+  [1, false]
+read V cols=K,B:
+  [1]
+expect:
+  columns: K INT64, B BOOL
+  ["1",false]
+
+case null
+insert V cols=K,B:
+  [1, null]
+read V cols=K,B:
+  [1]
+expect:
+  columns: K INT64, B BOOL
+  ["1",null]
+
+case string_into_bool
+insert V cols=K,B:
+  [1, "true"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse string_value: "true" as BOOL
+read V cols=K,B:
+  [1]
+expect:
+  columns: K INT64, B BOOL
+

@@ -1,0 +1,20 @@
+[package]
+name = "spanbolt-conformance"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Differential conformance harness: record expectations from the official emulator, check any Spanner gRPC endpoint against them."
+
+[[bin]]
+name = "spanbolt-conformance"
+path = "src/main.rs"
+
+[dependencies]
+spanbolt-proto.workspace = true
+base64.workspace = true
+clap.workspace = true
+prost-types.workspace = true
+regex = "1"
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+tokio.workspace = true
+tonic = { workspace = true, features = ["tls-ring", "tls-native-roots"] }

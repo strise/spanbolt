@@ -1,0 +1,210 @@
+# A DML statement that fails with a constraint error (duplicate key, NOT NULL, ...) invalidates
+# its read-write transaction: the emulator and production Spanner both refuse the commit with the
+# same error, so nothing the transaction did is written. Errors that are not constraint errors
+# (analysis errors, runtime errors) leave the transaction usable.
+tags: txn sql
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    V STRING(MAX) NOT NULL,
+  ) PRIMARY KEY (Id)
+insert T cols=Id,V:
+  [1, "one"]
+
+case batch_failure_then_commit
+begin txn=t
+batch txn=t:
+  INSERT INTO T (Id, V) VALUES (2, 'two');
+  INSERT INTO T (Id, V) VALUES (1, 'dup');
+  INSERT INTO T (Id, V) VALUES (3, 'three')
+expect:
+  counts: [1]
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case dml_failure_then_commit
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (2, 'two')
+expect:
+  count: 1
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case dml_failure_only_statement_then_commit
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case dml_not_null_failure_then_commit
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (2, 'two')
+expect:
+  count: 1
+dml txn=t:
+  UPDATE T SET V = NULL WHERE Id = 1
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: T.V in table: T
+commit txn=t
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: T.V in table: T
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case dml_failure_then_mutations_commit
+begin txn=t
+insert T cols=Id,V txn=t:
+  [5, "five"]
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case dml_failure_then_query
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+query txn=t:
+  SELECT Id FROM T
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+rollback txn=t
+
+case dml_failure_then_read
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+read T cols=Id,V txn=t:
+  all
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+rollback txn=t
+
+case dml_failure_then_dml
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (4, 'four')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case dml_failure_then_rollback
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (1, 'dup')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#Id:1}) due to previously existing row
+rollback txn=t
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+
+case batch_analysis_error_then_commit
+begin txn=t
+batch txn=t:
+  INSERT INTO T (Id, V) VALUES (2, 'two');
+  INSERT INTO T (Id, Nope) VALUES (3, 'three')
+expect:
+  counts: [1]
+  error: INVALID_ARGUMENT
+  message: Column Nope is not present in table T [at 1:20]
+commit txn=t
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+
+case dml_runtime_error_then_commit
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (2, 'two')
+expect:
+  count: 1
+dml txn=t:
+  UPDATE T SET V = CAST(1 / 0 AS STRING) WHERE Id = 1
+expect:
+  error: OUT_OF_RANGE
+  message: division by zero: 1 / 0
+commit txn=t
+read T cols=Id,V:
+  all
+expect:
+  columns: Id INT64, V STRING
+  ["1","one"]
+  ["2","two"]

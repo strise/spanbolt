@@ -1,0 +1,137 @@
+tags: values array
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case int_with_null
+insert V cols=K,AI:
+  [1, [1, null, 3]]
+read V cols=K,AI:
+  [1]
+expect:
+  columns: K INT64, AI ARRAY<INT64>
+  ["1",["1",null,"3"]]
+
+case empty
+insert V cols=K,AI:
+  [1, []]
+read V cols=K,AI:
+  [1]
+expect:
+  columns: K INT64, AI ARRAY<INT64>
+  ["1",[]]
+
+case null
+insert V cols=K,AI:
+  [1, null]
+read V cols=K,AI:
+  [1]
+expect:
+  columns: K INT64, AI ARRAY<INT64>
+  ["1",null]
+
+case strings
+insert V cols=K,AS_:
+  [1, ["a", null, ""]]
+read V cols=K,AS_:
+  [1]
+expect:
+  columns: K INT64, AS_ ARRAY<STRING>
+  ["1",["a",null,""]]
+
+case floats_nan
+insert V cols=K,AF:
+  [1, ["NaN", -0.0, 1.5]]
+read V cols=K,AF:
+  [1]
+expect:
+  columns: K INT64, AF ARRAY<FLOAT64>
+  ["1",["NaN",-0.0,1.5]]
+
+case numeric
+insert V cols=K,AN:
+  [1, ["1.50", "-0"]]
+read V cols=K,AN:
+  [1]
+expect:
+  columns: K INT64, AN ARRAY<NUMERIC>
+  ["1",["1.5","0"]]
+
+case json
+insert V cols=K,AJ:
+  [1, ["{\"b\":1,\"a\":2}", null]]
+read V cols=K,AJ:
+  [1]
+expect:
+  columns: K INT64, AJ ARRAY<JSON>
+  ["1",["{\"a\":2,\"b\":1}",null]]
+
+case bytes
+insert V cols=K,AY:
+  [1, ["AAE=", ""]]
+read V cols=K,AY:
+  [1]
+expect:
+  columns: K INT64, AY ARRAY<BYTES>
+  ["1",["AAE=",""]]
+
+case dates
+insert V cols=K,AD:
+  [1, ["2024-01-01", null]]
+read V cols=K,AD:
+  [1]
+expect:
+  columns: K INT64, AD ARRAY<DATE>
+  ["1",["2024-01-01",null]]
+
+case timestamps
+insert V cols=K,ATs:
+  [1, ["2024-01-01T00:00:00.5Z"]]
+read V cols=K,ATs:
+  [1]
+expect:
+  columns: K INT64, ATs ARRAY<TIMESTAMP>
+  ["1",["2024-01-01T00:00:00.5Z"]]
+
+case bools
+insert V cols=K,AB:
+  [1, [true, false, null]]
+read V cols=K,AB:
+  [1]
+expect:
+  columns: K INT64, AB ARRAY<BOOL>
+  ["1",[true,false,null]]
+
+case bad_element
+insert V cols=K,AI:
+  [1, ["1", "x"]]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer; When parsing array element #1: { string_value: "x" } in list_value { values { string_value: "1" } values { string_value: "x" } }
+read V cols=K,AI:
+  [1]
+expect:
+  columns: K INT64, AI ARRAY<INT64>
+

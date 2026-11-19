@@ -1,0 +1,6 @@
+target/
+.git
+.mcp-output/
+**/bazel-*
+*.snap
+dist/

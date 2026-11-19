@@ -1,0 +1,155 @@
+# A filtered index (CREATE INDEX ... WHERE c IS NOT NULL) has no entries for rows whose filter
+# columns are NULL; the filter is per filter column, not per key column like NULL_FILTERED.
+tags: read
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    A INT64,
+    B STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE INDEX TByAB ON T(A, B) WHERE B IS NOT NULL;
+  CREATE INDEX TByA ON T(A) STORING (B) WHERE B IS NOT NULL
+insert T cols=K,A,B:
+  [1, 10, "x"]
+  [2, 20, null]
+  [3, null, "z"]
+  [4, null, null]
+  [5, 10, null]
+
+case read_all
+read T cols=A,B,K index=TByAB:
+  all
+expect:
+  columns: A INT64, B STRING, K INT64
+  [null,"z","3"]
+  ["10","x","1"]
+expect@spanner:
+  same
+
+case read_point_null_filter_row
+read T cols=K index=TByA:
+  [20]
+expect:
+  columns: K INT64
+expect@spanner:
+  same
+
+case read_point
+read T cols=K index=TByA:
+  [10]
+expect:
+  columns: K INT64
+  ["1"]
+expect@spanner:
+  same
+
+case read_null_key_kept
+read T cols=K index=TByA:
+  [null]
+expect:
+  columns: K INT64
+  ["3"]
+expect@spanner:
+  same
+
+case query_force_index_no_filter
+# diverges-from-emulator: the emulator ignores the filter here and returns rows the index has no
+# entries for; production Spanner, like spanbolt, needs the WHERE clause to prove the filter columns
+# non-NULL before FORCE_INDEX can use a filtered index.
+tags: diverges-from-emulator
+query:
+  SELECT K, A, B FROM T@{FORCE_INDEX=TByAB}
+expect:
+  columns: K INT64, A INT64, B STRING
+  ["2","20",null]
+  ["4",null,null]
+  ["1","10","x"]
+  ["3",null,"z"]
+  ["5","10",null]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The index TByAB cannot be used because it filters nulls that are required to answer the query for column B.
+
+case query_force_index_check_disabled
+# diverges-from-emulator: the emulator ignores the filter here and returns rows the index has no
+# entries for; production Spanner, like spanbolt, needs the WHERE clause to prove the filter columns
+# non-NULL before FORCE_INDEX can use a filtered index.
+tags: diverges-from-emulator
+query:
+  SELECT K, A, B FROM T@{FORCE_INDEX=TByAB, spanner_emulator.disable_query_null_filtered_index_check=true}
+expect:
+  columns: K INT64, A INT64, B STRING
+  ["2","20",null]
+  ["4",null,null]
+  ["1","10","x"]
+  ["3",null,"z"]
+  ["5","10",null]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The index TByAB cannot be used because it filters nulls that are required to answer the query for column B.
+
+case query_force_index_is_not_null
+query:
+  SELECT K, A, B FROM T@{FORCE_INDEX=TByAB} WHERE B IS NOT NULL
+expect:
+  columns: K INT64, A INT64, B STRING
+  ["3",null,"z"]
+  ["1","10","x"]
+expect@spanner:
+  same
+
+case query_no_hint_keeps_null_filter_rows
+query:
+  SELECT K FROM T WHERE A = 10
+expect:
+  columns: K INT64
+  ["5"]
+  ["1"]
+expect@spanner:
+  same
+
+case query_no_hint_null_key
+query:
+  SELECT K FROM T WHERE A IS NULL
+expect:
+  columns: K INT64
+  ["3"]
+  ["4"]
+expect@spanner:
+  same
+
+case information_schema
+query:
+  SELECT INDEX_NAME, IS_NULL_FILTERED FROM INFORMATION_SCHEMA.INDEXES WHERE TABLE_NAME = 'T' ORDER BY INDEX_NAME
+expect:
+  columns: INDEX_NAME STRING, IS_NULL_FILTERED BOOL
+  ["PRIMARY_KEY",false]
+  ["TByA",false]
+  ["TByAB",false]
+expect@spanner:
+  same
+
+case information_schema_columns
+query:
+  SELECT INDEX_NAME, COLUMN_NAME, IS_NULLABLE FROM INFORMATION_SCHEMA.INDEX_COLUMNS WHERE TABLE_NAME = 'T' AND INDEX_NAME != 'PRIMARY_KEY' ORDER BY INDEX_NAME, COLUMN_NAME
+expect:
+  columns: INDEX_NAME STRING, COLUMN_NAME STRING, IS_NULLABLE STRING
+  ["TByA","A","YES"]
+  ["TByA","B","NO"]
+  ["TByAB","A","YES"]
+  ["TByAB","B","NO"]
+expect@spanner:
+  same
+
+case update_into_and_out_of_filter
+update T cols=K,B:
+  [2, "w"]
+  [1, null]
+read T cols=K,A index=TByA:
+  all
+expect:
+  columns: K INT64, A INT64
+  ["3",null]
+  ["2","20"]
+expect@spanner:
+  same

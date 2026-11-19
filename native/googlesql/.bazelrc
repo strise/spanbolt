@@ -1,0 +1,28 @@
+# Mirrors googlesql's .bazelrc (C++20, clang warning suppressions).
+common --enable_platform_specific_config
+build --cxxopt=-std=c++20 --host_cxxopt=-std=c++20
+build --java_runtime_version=remotejdk_11
+build --cxxopt=-Wno-module-import-in-extern-c
+build --cxxopt=-Wno-deprecated-declarations
+build --cxxopt=-Wno-range-loop-analysis
+build --cxxopt=-Wno-inconsistent-missing-override
+build --cxxopt=-Wno-char-subscripts
+build --cxxopt=-Wno-enum-compare-switch
+build --cxxopt=-Wno-defaulted-function-deleted
+build --cxxopt=-Wno-unused-private-field
+build --cxxopt=-Wno-return-std-move
+build --cxxopt=-Wno-reorder-ctor
+build --cxxopt=-Wno-unused-const-variable
+build --cxxopt=-Wno-unused-function
+build --cxxopt=-Wno-macro-redefined
+build --cxxopt=-Wno-unused-command-line-argument
+build:macos --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
+build:macos --features=-layering_check
+build -c opt
+# Shared across checkouts so the googlesql build is paid once per machine.
+build --disk_cache=~/.cache/spanbolt-bazel-disk
+# GCC 13+ makes -Wchanges-meaning an error; googlesql's property_graph.h trips it.
+build:linux --cxxopt=-Wno-changes-meaning --host_cxxopt=-Wno-changes-meaning
+# googlesql-sys/build.rs and scripts/package-shim.sh read generated protos from bazel-bin; Bazel only
+# fetches top-level outputs from the disk cache by default.
+build --remote_download_outputs=all

@@ -1,0 +1,4 @@
+{
+  global: gsql_*;
+  local: *;
+};

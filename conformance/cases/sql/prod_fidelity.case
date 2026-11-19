@@ -1,0 +1,330 @@
+# Cases where the emulator and production Spanner are known or suspected to differ:
+# window functions, QUALIFY, NULLS FIRST/LAST, non-ASCII and escaped search text, SCORE/SNIPPET.
+# `expect:` is recorded from the emulator; `expect@spanner:` from real Spanner (`record --oracle spanner`).
+tags: sql oracle
+schema:
+  CREATE TABLE Items (
+    Id INT64 NOT NULL,
+    Grp STRING(16),
+    Val INT64,
+    Body STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX ItemsSearch ON Items(Body_Tokens)
+insert Items cols=Id,Grp,Val,Body:
+  [1, "a", 10, "Tromsø kommune signerte avtalen"]
+  [2, "a", 20, "Ærlig talt: Ålesund og Tromsø"]
+  [3, "a", 20, "Straße in München"]
+  [4, "b", null, "He said \"hello\" to O'Brien"]
+  [5, "b", 5, "e-mail: post@example.no, tel. +47 22 33 44 55"]
+  [6, null, 7, "naïve café résumé"]
+
+case window_rank_dense_rank
+query:
+  SELECT Id, RANK() OVER (ORDER BY Val DESC) AS r, DENSE_RANK() OVER (ORDER BY Val DESC) AS dr FROM Items WHERE Val IS NOT NULL ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported analytic scan: multiple analytic functions aren't supported
+
+case window_partition_sum
+query:
+  SELECT Id, SUM(Val) OVER (PARTITION BY Grp) AS s, COUNT(*) OVER (PARTITION BY Grp) AS n FROM Items ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported analytic scan: multiple analytic functions aren't supported
+
+case window_running_sum_rows
+query:
+  SELECT Id, SUM(Val) OVER (ORDER BY Id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS s FROM Items ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: SUM.
+
+case window_lag_lead
+query:
+  SELECT Id, LAG(Val) OVER (ORDER BY Id) AS prev, LEAD(Val, 2, -1) OVER (ORDER BY Id) AS next2 FROM Items ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported analytic scan: multiple analytic functions aren't supported
+
+case window_first_last_value
+query:
+  SELECT Id, FIRST_VALUE(Id) OVER (PARTITION BY Grp ORDER BY Id) AS f, LAST_VALUE(Id) OVER (PARTITION BY Grp ORDER BY Id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS l FROM Items ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported analytic scan: multiple analytic functions aren't supported
+
+case window_row_number_partition
+query:
+  SELECT Id, ROW_NUMBER() OVER (PARTITION BY Grp ORDER BY Val DESC, Id) AS rn FROM Items ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: ROW_NUMBER.
+
+case window_ntile_percent_rank
+query:
+  SELECT Id, NTILE(2) OVER (ORDER BY Id) AS t, PERCENT_RANK() OVER (ORDER BY Id) AS pr FROM Items ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported analytic scan: multiple analytic functions aren't supported
+
+case window_named_window
+query:
+  SELECT Id, ROW_NUMBER() OVER w AS rn FROM Items WINDOW w AS (ORDER BY Id DESC) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: ROW_NUMBER.
+
+case qualify_row_number
+query:
+  SELECT Id, Grp FROM Items WHERE TRUE QUALIFY ROW_NUMBER() OVER (PARTITION BY Grp ORDER BY Id DESC) = 1 ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: QUALIFY is not supported [at 1:38]
+expect@spanner:
+  same
+
+case order_nulls_last
+query:
+  SELECT Id, Val FROM Items ORDER BY Val NULLS LAST, Id
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:40]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Non default sort order of NULL values is not supported. Sort expressions in `ORDER BY` clause should use `NULLS FIRST` option with ascending order and `NULLS LAST` option with descending order.
+
+case order_desc_nulls_first
+query:
+  SELECT Id, Val FROM Items ORDER BY Val DESC NULLS FIRST, Id
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:45]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Non default sort order of NULL values is not supported. Sort expressions in `ORDER BY` clause should use `NULLS FIRST` option with ascending order and `NULLS LAST` option with descending order.
+
+case order_default_nulls
+query:
+  SELECT Id, Grp FROM Items ORDER BY Grp DESC, Id
+expect:
+  columns: Id INT64, Grp STRING
+  ["4","b"]
+  ["5","b"]
+  ["1","a"]
+  ["2","a"]
+  ["3","a"]
+  ["6",null]
+expect@spanner:
+  same
+
+case search_non_ascii_term
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, 'tromsø') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case search_non_ascii_uppercase
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, 'ÆRLIG ålesund') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case search_eszett
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, 'strasse') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case search_diacritics
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, 'naive cafe') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case search_escaped_quote_phrase
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, '"said hello"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  same
+
+case search_apostrophe
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, @q) ORDER BY Id
+params:
+  @q STRING = "o'brien"
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  same
+
+case search_email_punctuation
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, 'post@example.no') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+expect@spanner:
+  same
+
+case search_phone_digits
+query:
+  SELECT Id FROM Items WHERE SEARCH(Body_Tokens, '"22 33 44"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+expect@spanner:
+  same
+
+case score_non_ascii_order
+query:
+  SELECT Id, SCORE(Body_Tokens, 'tromsø') > 0 AS scored FROM Items WHERE SEARCH(Body_Tokens, 'tromsø') ORDER BY SCORE(Body_Tokens, 'tromsø') DESC, Id
+expect:
+  columns: Id INT64, scored BOOL
+expect@spanner:
+  columns: Id INT64, scored BOOL
+  ["1",true]
+  ["2",true]
+
+case snippet_non_ascii
+query:
+  SELECT Id, SNIPPET(Body, 'tromsø') AS s FROM Items WHERE Id IN (1, 2) ORDER BY Id
+expect:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Tromsø kommune signerte avtalen\"}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Ærlig talt: Ålesund og Tromsø\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":7}],\"snippet\":\"Tromsø kommune signerte avtalen\",\"source_begin\":1,\"source_end\":32}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[{\"begin\":24,\"end\":30}],\"snippet\":\"Ærlig talt: Ålesund og Tromsø\",\"source_begin\":1,\"source_end\":30}]}"]
+
+case snippet_escaped_quote
+query:
+  SELECT Id, SNIPPET(Body, 'hello') AS s FROM Items WHERE Id = 4
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":15,\"start_position\":10}],\"snippet\":\"He said \\\"hello\\\" to O'Brien\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":10,\"end\":15}],\"snippet\":\"He said \\\"hello\\\" to O'Brien\",\"source_begin\":1,\"source_end\":27}]}"]
+
+case array_agg_order_by_nulls_last
+query:
+  SELECT ARRAY_AGG(Val IGNORE NULLS ORDER BY Val DESC) AS v, ARRAY_AGG(Id ORDER BY Val NULLS LAST, Id) AS ids FROM Items
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:86]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Non default sort order of NULL values is not supported. Sort expressions in `ORDER BY` clause should use `NULLS FIRST` option with ascending order and `NULLS LAST` option with descending order.
+
+# Prod's NULLS error says ASC NULLS FIRST and DESC NULLS LAST (the default orders) are allowed.
+
+case order_asc_nulls_first_default
+tags: oracle2
+query:
+  SELECT Id, Val FROM Items ORDER BY Val ASC NULLS FIRST, Id
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:44]
+expect@spanner:
+  columns: Id INT64, Val INT64
+  ["4",null]
+  ["5","5"]
+  ["6","7"]
+  ["1","10"]
+  ["2","20"]
+  ["3","20"]
+
+case order_desc_nulls_last_default
+tags: oracle2
+query:
+  SELECT Id, Val FROM Items ORDER BY Val DESC NULLS LAST, Id
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:45]
+expect@spanner:
+  columns: Id INT64, Val INT64
+  ["2","20"]
+  ["3","20"]
+  ["1","10"]
+  ["6","7"]
+  ["5","5"]
+  ["4",null]
+
+case order_nulls_first_no_direction
+tags: oracle2
+query:
+  SELECT Id, Val FROM Items ORDER BY Val NULLS FIRST, Id
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:40]
+expect@spanner:
+  columns: Id INT64, Val INT64
+  ["4",null]
+  ["5","5"]
+  ["6","7"]
+  ["1","10"]
+  ["2","20"]
+  ["3","20"]
+
+case array_agg_order_desc_nulls_last
+tags: oracle2
+query:
+  SELECT ARRAY_AGG(Id ORDER BY Val DESC NULLS LAST, Id) AS ids FROM Items
+expect:
+  error: INVALID_ARGUMENT
+  message: NULLS FIRST and NULLS LAST are not supported [at 1:39]
+expect@spanner:
+  columns: ids ARRAY<INT64>
+  [["2","3","1","6","5","4"]]
+
+case window_single_rank
+tags: oracle2
+query:
+  SELECT Id, RANK() OVER (ORDER BY Val DESC) AS r FROM Items WHERE Val IS NOT NULL ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:12]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: RANK.

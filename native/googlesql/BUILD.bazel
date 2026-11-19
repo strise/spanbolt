@@ -1,0 +1,64 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+# ICU's common data without the per-locale names, currencies, units, collation tailorings, break
+# dictionaries, transliterators and codepage converters (32 MB down to 4.4 MB). It defines
+# icudt76_dat inside :shim, which the linker sees before ICU's archives, so libicudata.a (the full
+# data) is never linked. See tools/icu_data.py.
+genrule(
+    name = "icu_data",
+    srcs = ["@icu//:source/data/in/icudt76l.dat"],
+    outs = ["icu_data.c"],
+    cmd = "python3 $(location tools/icu_data.py) $< $@",
+    tools = ["tools/icu_data.py"],
+)
+
+cc_library(
+    name = "shim",
+    srcs = [
+        "shim/googlesql_shim.cc",
+        "shim/spanner_functions.cc",
+        ":icu_data",
+        "shim/spanner_functions.h",
+    ],
+    hdrs = ["shim/googlesql_shim.h"],
+    deps = [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@com_google_googlesql//googlesql/public:analyzer",
+        "@com_google_googlesql//googlesql/public:analyzer_options",
+        "@com_google_googlesql//googlesql/public:builtin_function_options",
+        "@com_google_googlesql//googlesql/public:function",
+        "@com_google_googlesql//googlesql/public:language_options",
+        "@com_google_googlesql//googlesql/public:multi_catalog",
+        "@com_google_googlesql//googlesql/public:options_cc_proto",
+        "@com_google_googlesql//googlesql/public:simple_catalog",
+        "@com_google_googlesql//googlesql/public:type",
+        "@com_google_googlesql//googlesql/resolved_ast",
+        "@com_google_googlesql//googlesql/resolved_ast:resolved_node_kind_cc_proto",
+        "@com_googlesource_code_re2//:re2",
+        "@json",
+    ],
+    alwayslink = True,
+)
+
+# Shared library exposing only the gsql_* C ABI.
+cc_binary(
+    name = "libgooglesql_shim.so",
+    linkopts = select({
+        "@platforms//os:macos": [
+            "-Wl,-exported_symbol,_gsql_*",
+            "-Wl,-dead_strip",
+            "-Wl,-install_name,@rpath/libgooglesql_shim.dylib",
+        ],
+        "//conditions:default": [
+            "-Wl,--version-script=$(location shim/exports.lds)",
+            "-Wl,--gc-sections",
+        ],
+    }),
+    additional_linker_inputs = ["shim/exports.lds"],
+    linkshared = True,
+    deps = [":shim"],
+)

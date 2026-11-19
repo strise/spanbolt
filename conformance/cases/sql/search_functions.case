@@ -1,0 +1,804 @@
+# Tokenizer options, rquery operators and edge cases, SNIPPET, SEARCH_SUBSTRING, dialects,
+# TOKEN/TOKENIZE_NUMBER/TOKENIZE_BOOL/TOKENIZE_JSON columns and argument validation.
+tags: sql search
+schema:
+  CREATE TABLE Docs (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Parts ARRAY<STRING(MAX)>,
+    Code STRING(MAX),
+    Amount INT64,
+    Ratio FLOAT64,
+    Flag BOOL,
+    Meta JSON,
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body, language_tag => 'no', content_type => 'text/plain', token_category => 'small')) HIDDEN,
+    Parts_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Parts)) HIDDEN,
+    Body_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Body, ngram_size_min => 2, ngram_size_max => 5, relative_search_types => ['word_prefix', 'value_suffix', 'phrase'])) HIDDEN,
+    Code_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Code, support_relative_search => true)) HIDDEN,
+    Code_Ngrams TOKENLIST AS (TOKENIZE_NGRAMS(Code)) HIDDEN,
+    Code_Token TOKENLIST AS (TOKEN(Code)) HIDDEN,
+    Amount_Tokens TOKENLIST AS (TOKENIZE_NUMBER(Amount, comparison_type => 'all', min => 0, max => 1000, granularity => 10)) HIDDEN,
+    Ratio_Tokens TOKENLIST AS (TOKENIZE_NUMBER(Ratio, algorithm => 'floatingpoint')) HIDDEN,
+    Flag_Tokens TOKENLIST AS (TOKENIZE_BOOL(Flag)) HIDDEN,
+    Meta_Tokens TOKENLIST AS (TOKENIZE_JSON(Meta)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DocsSearch ON Docs(Body_Tokens, Parts_Tokens, Body_Substr) STORING (Amount) PARTITION BY Flag ORDER BY Id;
+  CREATE SEARCH INDEX DocsCodes ON Docs(Code_Token, Amount_Tokens, Flag_Tokens, Meta_Tokens)
+insert Docs cols=Id,Body,Parts,Code,Amount,Ratio,Flag,Meta:
+  [1, "Cloud Spanner emulator runs on Google Cloud", ["cloud spanner", "emulator"], "ABC-123/x", 10, 0.5, true, {"a": 1}]
+  [2, "The quick brown fox jumps over the lazy dog", ["quick fox", "lazy dog"], "XYZ.987", 500, 1.25, false, null]
+  [3, "Spanner: the emulator is not Spanner itself.", [], "abc", 999, -2.0, true, {"b": [1, 2]}]
+  [4, "", null, null, null, null, null, null]
+  [5, null, ["", "solo"], "", 0, 0.0, false, {}]
+
+case and_operator
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner emulator')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case or_pipe
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'fox|google')
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case not_operator
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner -cloud')
+expect:
+  columns: Id INT64
+  ["3"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case double_negation
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '--cloud')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case phrase_in_quotes
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '"lazy dog"')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case phrase_with_or_term
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '"quick brown|red fox"')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case connected_phrase_order
+query:
+  SELECT Id, SEARCH(Body_Tokens, 'spanner-emulator') AS a, SEARCH(Body_Tokens, 'emulator-spanner') AS b FROM Docs WHERE Id IN (1, 3)
+expect:
+  columns: Id INT64, a BOOL, b BOOL
+  ["1",true,false]
+  ["3",false,false]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case around_operator
+query:
+  SELECT Id, SEARCH(Body_Tokens, 'quick AROUND(1) fox') AS a1, SEARCH(Body_Tokens, 'quick AROUND(2) fox') AS a2, SEARCH(Body_Tokens, 'fox AROUND(3) quick') AS a3 FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, a1 BOOL, a2 BOOL, a3 BOOL
+  ["2",true,true,true]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case around_chain_mixed_distances
+query:
+  SELECT Id, SEARCH(Body_Tokens, 'the AROUND(1) fox AROUND(9) dog') AS r FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, r BOOL
+  ["2",true]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case around_with_phrase
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '"lazy dog" AROUND(4) jumps')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case around_with_not_is_internal
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '-fox AROUND(2) dog')
+expect:
+  error: INTERNAL
+  message: GOOGLESQL_RET_CHECK failure (backend/query/search/search_evaluator.cc:152) !in_phrase NOT nodes cannot appear in phrases
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case around_needs_number
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(two) fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(two) fox`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case around_missing_space
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(2)fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(2)fox`, has error(s): -Syntax error on column 16: Expecting '<SEPARATOR>
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case around_unclosed
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(2 fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(2 fox`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case parentheses_rejected
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner (cloud | fox)')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `spanner (cloud | fox)`, has error(s): -Encountered error on column 9 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case trailing_separators_trimmed
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '!!emulator?? ')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case only_separators
+query:
+  SELECT Id, SEARCH(Body_Tokens, '?!*') AS r FROM Docs WHERE Id = 1
+expect:
+  columns: Id INT64, r BOOL
+  ["1",false]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case lowercase_or_is_a_term
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'fox or dog')
+expect:
+  columns: Id INT64
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case numbers_in_query
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, 'solo') OR SEARCH(Body_Tokens, '42')
+expect:
+  columns: Id INT64
+  ["5"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case array_phrase_within_element
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, '"cloud spanner"')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case array_phrase_across_elements
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, '"spanner emulator"')
+expect:
+  columns: Id INT64
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case array_around_across_elements
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, 'spanner AROUND(5) emulator')
+expect:
+  columns: Id INT64
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case empty_and_null_sources
+query:
+  SELECT Id, SEARCH(Body_Tokens, 'x') AS b, SEARCH(Parts_Tokens, 'x') AS p FROM Docs WHERE Id IN (4, 5)
+expect:
+  columns: Id INT64, b BOOL, p BOOL
+  ["4",false,null]
+  ["5",null,false]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case words_dialect
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'Spanner -emulator', dialect => 'words')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case words_phrase_dialect
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'the lazy dog', dialect => 'words_phrase')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case rquery_dialect_explicit
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'lazy OR cloud', dialect => 'rquery', enhance_query => true)
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case bad_dialect
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'lazy', dialect => 'klingon')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid dialect: klingon
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case score_counts_repeats
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner cloud') AS s FROM Docs ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",3.0]
+  ["2",0.0]
+  ["3",2.0]
+  ["4",0.0]
+  ["5",0.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SCORE is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case score_words_phrase
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner emulator', dialect => 'words_phrase') AS s FROM Docs WHERE Id IN (1, 3) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["3",0.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SCORE is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case score_bytes_query
+query:
+  SELECT Id, SCORE(Body_Tokens, b'spanner') AS s FROM Docs WHERE Id = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid search query type: BYTES.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SCORE\n Argument types: TOKENLIST, BYTES\n Signature: SCORE(TOKENLIST, STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [enhance_query_options => JSON], [options => JSON], [dictionary => STRING])\n Argument 2: Unable to coerce type BYTES to expected type STRING [at 1:12]
+
+case search_substring_default
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'pann')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_short_needs_whole_word
+query:
+  SELECT Id, SEARCH_SUBSTRING(Body_Substr, 'o') AS o, SEARCH_SUBSTRING(Body_Substr, 'on') AS on2 FROM Docs WHERE Id IN (1, 2) ORDER BY Id
+expect:
+  columns: Id INT64, o BOOL, on2 BOOL
+  ["1",false,true]
+  ["2",false,false]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH_SUBSTRING can only be used in a WHERE clause.
+
+case search_substring_multiple
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'emul span')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_word_prefix
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'jum', relative_search_type => 'word_prefix')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_value_suffix
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'cloud', relative_search_type => 'value_suffix')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_phrase
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'lazy do', relative_search_type => 'phrase')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_prefix_multiword_null
+query:
+  SELECT Id, SEARCH_SUBSTRING(Body_Substr, 'lazy dog', relative_search_type => 'word_prefix') AS r FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, r BOOL
+  ["2",null]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH_SUBSTRING can only be used in a WHERE clause.
+
+case search_substring_unsupported_type
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'fox', relative_search_type => 'word_suffix')
+expect:
+  error: INVALID_ARGUMENT
+  message: The referenced substring TOKENLIST is not tokenized with 'word_suffix' support.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_invalid_type
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'fox', relative_search_type => 'middle')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid relative_search_type: 'middle'.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_substring_all_types
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Code_Substr, '123', relative_search_type => 'word_suffix')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING cannot be used because there is no search index indexing the column Code_Substr, or the query is executed with base table only hint.
+
+case search_substring_on_fulltext_error
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Tokens, 'fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: SEARCH_SUBSTRING function's first argument must be a TOKENLIST column generated by TOKENIZE_SUBSTRING
+expect@spanner:
+  same
+
+case search_on_substring_error
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Substr, 'fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: SEARCH function's first argument must be a TOKENLIST column generated by TOKENIZE_FULLTEXT
+expect@spanner:
+  same
+
+case search_on_token_error
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Code_Token, 'abc')
+expect:
+  error: INVALID_ARGUMENT
+  message: SEARCH function's first argument must be a TOKENLIST column generated by TOKENIZE_FULLTEXT
+expect@spanner:
+  same
+
+case token_array_includes
+query:
+  SELECT Id FROM Docs WHERE Code = 'abc'
+expect:
+  columns: Id INT64
+  ["3"]
+expect@spanner:
+  same
+
+case search_ngrams_on_substring_tokens
+query:
+  SELECT Id FROM Docs WHERE SEARCH_NGRAMS(Body_Substr, 'emulatr')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH_NGRAMS is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case search_ngrams_code
+query:
+  SELECT Id, SEARCH_NGRAMS(Code_Ngrams, 'abc') AS a, SEARCH_NGRAMS(Code_Ngrams, 'xyz987') AS b FROM Docs WHERE Id IN (1, 2, 3, 5) ORDER BY Id
+expect:
+  columns: Id INT64, a BOOL, b BOOL
+  ["1",true,false]
+  ["2",false,false]
+  ["3",true,false]
+  ["5",false,false]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH_NGRAMS can only be used in a WHERE clause.
+
+case score_ngrams_on_substring
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Substr, 'lazy dogs') AS s FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, s FLOAT64
+  ["2",0.15]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["2",0.1590909090909091]
+
+case score_ngrams_on_fulltext_error
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tokens, 'lazy') AS s FROM Docs WHERE Id = 2
+expect:
+  error: INVALID_ARGUMENT
+  message: SCORE_NGRAMS function's first argument must be a TOKENLIST column generated by TOKENIZE_SUBSTRING or TOKENIZE_NGRAMS
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SCORE_NGRAMS function can only be used with TOKENLIST values generated by TOKENIZE_SUBSTRING or TOKENIZE_NGRAMS
+
+case score_ngrams_empty_document
+query:
+  SELECT Id, SCORE_NGRAMS(Code_Ngrams, 'abc') AS s FROM Docs WHERE Id = 5
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",0.0]
+expect@spanner:
+  same
+
+case tokenlist_concat_mixed_error
+query:
+  SELECT Id FROM Docs WHERE SEARCH(TOKENLIST_CONCAT([Body_Tokens, Body_Substr]), 'fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: All elements to TOKENLIST_CONCAT must be produced by the same kind of tokenization function.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: All elements to TOKENLIST_CONCAT must be produced by the same kind of tokenization function. [at 1:51]
+
+case tokenlist_concat_with_null
+query:
+  SELECT Id FROM Docs WHERE SEARCH(TOKENLIST_CONCAT([Body_Tokens, Parts_Tokens]), 'solo OR fox')
+expect:
+  columns: Id INT64
+  ["5"]
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.
+
+case tokenize_in_query
+query:
+  SELECT SEARCH(TOKENIZE_FULLTEXT('Hello, World! Ærlig'), 'world') AS a, SEARCH(TOKENIZE_FULLTEXT(['a b', 'c']), '"b c"') AS b, SCORE(TOKENIZE_FULLTEXT('a a a'), 'a') AS c
+expect:
+  columns: a BOOL, b BOOL, c FLOAT64
+  [true,false,3.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case tokenize_ngrams_bad_sizes
+query:
+  SELECT SEARCH_NGRAMS(TOKENIZE_NGRAMS('abc', ngram_size_min => 3, ngram_size_max => 2), 'abc') AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: ngram_size_min cannot be greater than ngram_size_max.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid use of TOKENIZE_NGRAMS: ngram_size_min cannot be greater than ngram_size_max. [at 1:22]
+
+case tokenize_ngrams_too_large
+query:
+  SELECT SEARCH_NGRAMS(TOKENIZE_NGRAMS('abc', ngram_size_max => 13), 'abc') AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: ngram_size_max cannot be greater than 12.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid use of TOKENIZE_NGRAMS: ngram_size_max cannot be greater than 12.
+
+case tokenize_substring_conflicting_args
+query:
+  SELECT SEARCH_SUBSTRING(TOKENIZE_SUBSTRING('abc', support_relative_search => true, relative_search_types => ['all']), 'abc') AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: TOKENIZE_SUBSTRING: only one of 'support_relative_search' and 'relative_search_types' can be specified.
+expect@spanner:
+  same
+
+case tokenize_number_bad_algorithm
+query:
+  SELECT TOKENIZE_NUMBER(5, algorithm => 'magic') IS NULL AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: TOKENIZE_NUMBER: Algorithm is not supported: 'magic'; supported algorithms are: 'auto', 'logtree', 'prefixtree', 'floatingpoint' (floatingpoint is supported only for floating point types)
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: unsupported algorithm 'magic'; supported algorithms are 'auto', 'logtree', 'prefixtree', or 'floatingpoint' (floatingpoint is supported only for floating point types)
+
+case tokenize_number_min_max
+query:
+  SELECT TOKENIZE_NUMBER(5, min => 10, max => 1) IS NULL AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: TOKENIZE_NUMBER: min must be less than max, got: 10 and 1
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TOKENIZE_NUMBER: min must be less than max, got: 10 and 1 [at 1:8]
+
+case tokenize_number_float_granularity
+query:
+  SELECT TOKENIZE_NUMBER(1.5, min => 0.0, max => 1.0, granularity => 2.0) IS NULL AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: TOKENIZE_NUMBER: granularity (2.000000) must be less than or equal to the difference between min and max (0.000000, 1.000000)
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: min is not allowed for algorithm IEEE_FP
+
+case tokenize_number_fp_on_int
+query:
+  SELECT TOKENIZE_NUMBER(5, algorithm => 'floatingpoint') IS NULL AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: TOKENIZE_NUMBER: algorithm 'floatingpoint' can only be used to tokenize floating point values
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: algorithm 'floatingpoint' can only be used to tokenize floating point values
+
+case select_tokenlist_rejected
+query:
+  SELECT TOKENIZE_FULLTEXT('abc') AS t
+expect:
+  error: INVALID_ARGUMENT
+  message~: ^TOKENLIST is an internal-only type and cannot be returned to the user by SQL query
+expect@spanner:
+  same
+
+case snippet_default
+query:
+  SELECT Id, SNIPPET(Body, 'spanner') AS s FROM Docs WHERE Id IN (1, 3)
+expect:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"end_position\":14,\"start_position\":7}],\"snippet\":\"Cloud Spanner emulator runs on Google Cloud\"}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[{\"end_position\":8,\"start_position\":1},{\"end_position\":37,\"start_position\":30}],\"snippet\":\"Spanner: the emulator is not Spanner itself.\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":14}],\"snippet\":\"Cloud Spanner emulator runs on Google Cloud\",\"source_begin\":1,\"source_end\":44}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":8},{\"begin\":30,\"end\":37}],\"snippet\":\"Spanner: the emulator is not Spanner itself\",\"source_begin\":1,\"source_end\":44}]}"]
+
+case snippet_multiple_terms
+query:
+  SELECT Id, SNIPPET(Body, 'quick dog') AS s FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[{\"end_position\":10,\"start_position\":5},{\"end_position\":44,\"start_position\":41}],\"snippet\":\"The quick brown fox jumps over the lazy dog\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":10},{\"begin\":41,\"end\":44}],\"snippet\":\"The quick brown fox jumps over the lazy dog\",\"source_begin\":1,\"source_end\":44}]}"]
+
+case snippet_no_match_prefix
+query:
+  SELECT Id, SNIPPET(Body, 'zebra', max_snippet_width => 20) AS s FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"The quick brown fox\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"The quick brown\",\"source_begin\":1,\"source_end\":16}]}"]
+
+case snippet_width_truncates
+query:
+  SELECT Id, SNIPPET(Body, 'lazy', max_snippet_width => 15) AS s FROM Docs WHERE Id = 2
+expect:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[{\"end_position\":9,\"start_position\":5}],\"snippet\":\"the lazy dog\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":9}],\"snippet\":\"the lazy dog\",\"source_begin\":32,\"source_end\":44}]}"]
+
+case snippet_null_and_empty
+query:
+  SELECT Id, SNIPPET(Body, 'x') AS s FROM Docs WHERE Id IN (4, 5)
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}"]
+  ["5",null]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[]}"]
+  ["5",null]
+
+case snippet_bad_width
+query:
+  SELECT SNIPPET('abc', 'abc', max_snippet_width => 0) AS s
+expect:
+  error: INVALID_ARGUMENT
+  message: SNIPPET has out of range value for max_snippet_length argument.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SNIPPET has out of range value for max_snippet_width argument.
+
+case snippet_bad_content_type
+query:
+  SELECT SNIPPET('abc', 'abc', content_type => 'text/markdown') AS s
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid use of SNIPPET: content_type. 'text/markdown' is not a supported content type. Supported options:[text/html, text/plain]
+expect@spanner:
+  same
+
+case snippet_html_content_type
+query:
+  SELECT SNIPPET('<b>Spanner</b> rocks', 'spanner', content_type => 'text/html') AS s
+expect:
+  columns: s JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":11,\"start_position\":4}],\"snippet\":\"<b>Spanner</b> rocks\"}]}"]
+expect@spanner:
+  columns: s JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":8}],\"snippet\":\"Spanner rocks\",\"source_begin\":4,\"source_end\":21}]}"]
+
+case force_search_index_rw
+begin txn=t
+query txn=t:
+  SELECT Id FROM Docs@{FORCE_INDEX=DocsSearch} WHERE Flag = true
+expect:
+  error: INVALID_ARGUMENT
+  message: The index DocsSearch cannot be used because it is a SEARCH index type which is not supported for transactional queries by default
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The search index DocsSearch cannot be used in transactional queries by default.
+rollback txn=t
+
+case force_search_index_ro
+query:
+  SELECT Id, Amount FROM Docs@{FORCE_INDEX=DocsSearch} WHERE SEARCH(Body_Tokens, 'spanner') AND Flag = true
+expect:
+  columns: Id INT64, Amount INT64
+  ["3","999"]
+  ["1","10"]
+expect@spanner:
+  same
+
+# DocsSearch is PARTITION BY Flag. Prod rejected SEARCH without a Flag filter ("no
+# appropriate search index"); these check that a partition filter makes the index usable.
+
+case partition_filter_equality
+tags: oracle2
+query:
+  SELECT Id FROM Docs WHERE Flag = true AND SEARCH(Body_Tokens, 'spanner emulator') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+expect@spanner:
+  same
+
+case partition_filter_false
+tags: oracle2
+query:
+  SELECT Id FROM Docs WHERE Flag = false AND SEARCH(Body_Tokens, 'fox | google') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case partition_filter_in_list
+tags: oracle2
+query:
+  SELECT Id FROM Docs WHERE Flag IN (true, false) AND SEARCH(Body_Tokens, 'spanner') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+expect@spanner:
+  same
+
+case partition_filter_score
+tags: oracle2
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner cloud') AS s FROM Docs WHERE Flag = true AND SEARCH(Body_Tokens, 'spanner cloud') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",2.9443299770355225]
+
+case partition_filter_search_substring
+tags: oracle2
+query:
+  SELECT Id FROM Docs WHERE Flag = true AND SEARCH_SUBSTRING(Body_Substr, 'pann') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+expect@spanner:
+  same

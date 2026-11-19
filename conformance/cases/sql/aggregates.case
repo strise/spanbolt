@@ -1,0 +1,340 @@
+tags: sql aggregate
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case count_group_by
+query:
+  SELECT TeamId, COUNT(*) AS count FROM Entities GROUP BY TeamId
+expect:
+  columns: TeamId STRING, count INT64
+  ["t2","2"]
+  ["t1","4"]
+expect@spanner:
+  same
+
+case count_group_by_two
+query:
+  SELECT TeamId, Kind, COUNT(*) AS n FROM Entities GROUP BY TeamId, Kind
+expect:
+  columns: TeamId STRING, Kind STRING, n INT64
+  ["t1","person","1"]
+  ["t2","person","1"]
+  ["t1","company","3"]
+  ["t2","company","1"]
+expect@spanner:
+  same
+
+case group_join_filter_unnest
+query:
+  SELECT t.CustomerId, e.Kind, COUNT(*) AS n
+  FROM Entities e JOIN Teams t ON t.TeamId = e.TeamId
+  WHERE t.CustomerId IN UNNEST(@c)
+  GROUP BY t.CustomerId, e.Kind
+params:
+  @c ARRAY<STRING> = ["c1"]
+expect:
+  columns: CustomerId STRING, Kind STRING, n INT64
+  ["c1","person","2"]
+  ["c1","company","4"]
+expect@spanner:
+  same
+
+case array_agg_struct
+# diverges-from-emulator: ARRAY_AGG without ORDER BY has no defined element order; spanbolt aggregates in primary-key order.
+tags: diverges-from-emulator
+query:
+  SELECT EntityId, ARRAY_AGG(STRUCT(SignalType, Confidence)) AS signals FROM Signals GROUP BY EntityId
+expect:
+  columns: EntityId STRING, signals ARRAY<STRUCT<SignalType STRING, Confidence FLOAT64>>
+  ["e3",[["news",0.6]]]
+  ["e1",[["news",0.4],["news",0.8],["sanction",1.0]]]
+  ["e5",[["pep",0.9]]]
+expect@spanner:
+  columns: EntityId STRING, signals ARRAY<STRUCT<SignalType STRING, Confidence FLOAT64>>
+  ["e1",[["news",0.8],["news",0.4],["sanction",1.0]]]
+  ["e3",[["news",0.6]]]
+  ["e5",[["pep",0.9]]]
+
+case array_agg_order_by
+query:
+  SELECT EntityId, ARRAY_AGG(ValidFrom ORDER BY ValidFrom) AS dates FROM Signals GROUP BY EntityId
+expect:
+  columns: EntityId STRING, dates ARRAY<TIMESTAMP>
+  ["e3",["2024-05-02T00:00:00Z"]]
+  ["e1",["2024-04-01T00:00:00Z","2024-05-01T00:00:00Z","2024-05-20T00:00:00Z"]]
+  ["e5",["2024-01-01T00:00:00Z"]]
+expect@spanner:
+  same
+
+case array_agg_latest_offset
+query:
+  SELECT EntityId, ARRAY_AGG(SignalType ORDER BY ValidFrom DESC LIMIT 1)[OFFSET(0)] AS latest FROM Signals GROUP BY EntityId
+expect:
+  columns: EntityId STRING, latest STRING
+  ["e1","news"]
+  ["e3","news"]
+  ["e5","pep"]
+expect@spanner:
+  same
+
+case array_agg_struct_first
+query:
+  SELECT TeamId, EntityId, ARRAY_AGG(STRUCT(CreatedBy, CreatedAt) ORDER BY CreatedAt ASC LIMIT 1)[OFFSET(0)].CreatedBy AS first_by
+  FROM Reviews GROUP BY TeamId, EntityId
+expect:
+  columns: TeamId STRING, EntityId STRING, first_by STRING
+  ["t1","e1","u1"]
+  ["t1","e3","u1"]
+  ["t2","e5","u3"]
+expect@spanner:
+  same
+
+case array_agg_distinct_ignore_nulls
+query:
+  SELECT TeamId, ARRAY_AGG(DISTINCT Status IGNORE NULLS ORDER BY Status) AS statuses FROM Entities GROUP BY TeamId
+expect:
+  columns: TeamId STRING, statuses ARRAY<STRING>
+  ["t2",["active","pending"]]
+  ["t1",["active","archived"]]
+expect@spanner:
+  same
+
+case array_agg_with_nulls
+query:
+  SELECT ARRAY_AGG(Status ORDER BY EntityId) AS s FROM Entities WHERE TeamId = 't1'
+expect:
+  columns: s ARRAY<STRING>
+  [["active","active","archived",null]]
+expect@spanner:
+  same
+
+case array_agg_tie_break
+query:
+  SELECT TeamId, ARRAY_AGG(CreatedBy ORDER BY CreatedAt DESC, ReviewId DESC LIMIT 1)[OFFSET(0)] AS last_by FROM Reviews GROUP BY TeamId
+expect:
+  columns: TeamId STRING, last_by STRING
+  ["t1","u1"]
+  ["t2","u3"]
+expect@spanner:
+  same
+
+case min_max_sum_avg
+query:
+  SELECT MIN(Score) AS mn, MAX(Score) AS mx, SUM(Score) AS s, AVG(Score) AS a, COUNT(Score) AS c, COUNT(*) AS n FROM Entities
+expect:
+  columns: mn FLOAT64, mx FLOAT64, s FLOAT64, a FLOAT64, c INT64, n INT64
+  [0.1,1.25,3.5,0.7,"5","6"]
+expect@spanner:
+  same
+
+case sum_int_and_avg_int
+query:
+  SELECT SUM(Version) AS s, AVG(Version) AS a FROM Entities
+expect:
+  columns: s INT64, a FLOAT64
+  ["13",2.1666666666666665]
+expect@spanner:
+  same
+
+case having
+query:
+  SELECT EntityId, COUNT(*) AS n FROM Signals GROUP BY EntityId HAVING COUNT(*) > 1
+expect:
+  columns: EntityId STRING, n INT64
+  ["e1","3"]
+expect@spanner:
+  same
+
+case group_by_expression
+query:
+  SELECT EntityId, IF(SignalType IN UNNEST(@types), '', SignalType) AS bucket,
+    DIV(UNIX_DATE(DATE(ValidFrom, 'UTC')), @window_days) AS win, MAX(Confidence) AS c
+  FROM Signals
+  GROUP BY EntityId, bucket, win
+params:
+  @types ARRAY<STRING> = ["news"]
+  @window_days INT64 = 30
+expect:
+  columns: EntityId STRING, bucket STRING, win INT64, c FLOAT64
+  ["e1","","662",0.4]
+  ["e3","","661",0.6]
+  ["e1","","661",0.8]
+  ["e1","sanction","660",1.0]
+  ["e5","pep","657",0.9]
+expect@spanner:
+  same
+
+case decay_score_two_level
+query:
+  SELECT EntityId, SUM(contribution) AS score FROM (
+    SELECT s.EntityId, s.SignalType,
+      MAX(s.Confidence * POW(0.5, GREATEST(TIMESTAMP_DIFF(@now, s.ValidFrom, SECOND), 0) / (30 * 86400))) AS contribution
+    FROM Signals s GROUP BY s.EntityId, s.SignalType)
+  GROUP BY EntityId
+  ORDER BY score DESC, EntityId
+  LIMIT @limit
+params:
+  @now TIMESTAMP = "2024-06-01T00:00:00Z"
+  @limit INT64 = 2
+expect:
+  columns: EntityId STRING, score FLOAT64
+  ["e1",0.6351539794822598]
+  ["e3",0.3]
+expect@spanner:
+  same
+
+case format_date_month
+query:
+  SELECT FORMAT_TIMESTAMP('%Y-%m', CreatedAt, 'UTC') AS month, COUNT(*) AS n FROM Entities GROUP BY month
+expect:
+  columns: month STRING, n INT64
+  ["2024-02","2"]
+  ["2024-04","1"]
+  ["2024-01","2"]
+  ["2024-03","1"]
+expect@spanner:
+  same
+
+case date_trunc_month
+query:
+  SELECT CAST(DATE_TRUNC(DATE(CreatedAt), MONTH) AS STRING) AS month, COUNT(*) AS n FROM Entities GROUP BY month
+expect:
+  columns: month STRING, n INT64
+  ["2024-02-01","2"]
+  ["2024-01-01","2"]
+  ["2024-03-01","2"]
+expect@spanner:
+  same
+
+case count_of_subquery
+query:
+  SELECT COUNT(EntityId) AS count FROM (SELECT EntityId FROM Entities WHERE Kind = 'company')
+expect:
+  columns: count INT64
+  ["4"]
+expect@spanner:
+  same
+
+case aggregate_over_case
+query:
+  SELECT MAX(CASE WHEN Outcome IS NOT NULL THEN CreatedAt END) AS last_decided FROM Reviews
+expect:
+  columns: last_decided TIMESTAMP
+  ["2024-02-11T00:00:00Z"]
+expect@spanner:
+  same
+
+case countif_logical
+query:
+  SELECT COUNTIF(Score > 0.5) AS high, LOGICAL_AND(Version > 0) AS all_pos, LOGICAL_OR(Status IS NULL) AS any_null FROM Entities
+expect:
+  columns: high INT64, all_pos BOOL, any_null BOOL
+  ["3",true,true]
+expect@spanner:
+  same
+
+case string_agg
+query:
+  SELECT TeamId, STRING_AGG(EntityId, ',' ORDER BY EntityId) AS ids FROM Entities GROUP BY TeamId
+expect:
+  columns: TeamId STRING, ids STRING
+  ["t2","e1,e5"]
+  ["t1","e1,e2,e3,e4"]
+expect@spanner:
+  same
+
+case any_value_and_min_owner
+query:
+  SELECT Kind, MIN(EntityId) AS owner FROM Entities GROUP BY Kind
+expect:
+  columns: Kind STRING, owner STRING
+  ["person","e2"]
+  ["company","e1"]
+expect@spanner:
+  same
+
+case aggregate_empty_input
+query:
+  SELECT COUNT(*) AS n, SUM(Version) AS s, ARRAY_AGG(EntityId) AS a FROM Entities WHERE FALSE
+expect:
+  columns: n INT64, s INT64, a ARRAY<STRING>
+  ["0",null,null]
+expect@spanner:
+  same
+
+case non_grouped_column
+query:
+  SELECT TeamId, Kind FROM Entities GROUP BY TeamId
+expect:
+  error: INVALID_ARGUMENT
+  message: SELECT list expression references column Kind which is neither grouped nor aggregated [at 1:16]
+expect@spanner:
+  same
+

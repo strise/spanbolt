@@ -1,0 +1,9 @@
+# syntax=docker/dockerfile:1.7
+# spanbolt with a pre-seeded snapshot, loaded at start through SPANBOLT_SNAPSHOT.
+# The build context is a directory holding seed.snap (the repo root ignores *.snap):
+#   docker build -f Dockerfile.seeded -t spanbolt-seeded ./seed
+# Making seed.snap: docs/docker.md, "Pre-seeded images".
+ARG BASE=spanbolt:latest
+FROM ${BASE}
+COPY seed.snap /opt/spanbolt/seed.snap
+ENV SPANBOLT_SNAPSHOT=/opt/spanbolt/seed.snap

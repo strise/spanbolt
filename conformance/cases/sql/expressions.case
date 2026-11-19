@@ -1,0 +1,243 @@
+tags: sql expression
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case case_when
+query:
+  SELECT EntityId,
+    CASE WHEN Score >= 0.75 THEN 'high' WHEN Score >= 0.5 THEN 'mid' ELSE 'low' END AS band
+  FROM Entities WHERE TeamId = 't1'
+expect:
+  columns: EntityId STRING, band STRING
+  ["e3","low"]
+  ["e1","high"]
+  ["e4","high"]
+  ["e2","mid"]
+
+case case_in_order_by
+query:
+  SELECT EntityId, Status FROM Entities WHERE TeamId = 't1'
+  ORDER BY CASE Status WHEN 'active' THEN 0 WHEN 'archived' THEN 1 ELSE 2 END, EntityId
+expect:
+  columns: EntityId STRING, Status STRING
+  ["e1","active"]
+  ["e2","active"]
+  ["e3","archived"]
+  ["e4",null]
+
+case if_ifnull_coalesce_nullif
+query:
+  SELECT IF(Score > 1, 'big', 'small') AS a, IFNULL(Status, 'none') AS b, COALESCE(UpdatedAt, CreatedAt) AS c, NULLIF(Kind, 'company') AS d
+  FROM Entities WHERE TeamId = 't1' AND EntityId = 'e4'
+expect:
+  columns: a STRING, b STRING, c TIMESTAMP, d STRING
+  ["big","none","2024-03-15T00:00:00Z",null]
+
+case coalesce_param_subquery
+query:
+  SELECT COALESCE(@scope, (SELECT Name FROM Teams WHERE TeamId = @k)) AS scope
+params:
+  @scope STRING = null
+  @k STRING = "t2"
+expect:
+  columns: scope STRING
+  ["Beta"]
+
+case cast_basic
+query:
+  SELECT CAST(7 AS STRING) AS s, CAST('42' AS INT64) AS i, CAST(1.9 AS INT64) AS r, CAST(-1.5 AS INT64) AS r2, CAST(TRUE AS INT64) AS b
+expect:
+  columns: s STRING, i INT64, r INT64, r2 INT64, b INT64
+  ["7","42","2","-2","1"]
+
+case cast_invalid
+query:
+  SELECT CAST('abc' AS INT64)
+expect:
+  error: OUT_OF_RANGE
+  message: Bad int64 value: abc
+
+case safe_cast
+query:
+  SELECT SAFE_CAST('abc' AS INT64) AS a, SAFE_CAST('2024-02-30' AS DATE) AS b, SAFE_CAST('1.5' AS NUMERIC) AS c
+expect:
+  columns: a INT64, b DATE, c NUMERIC
+  [null,null,"1.5"]
+
+case cast_timestamp_string
+query:
+  SELECT CAST(TIMESTAMP '2024-01-02 03:04:05.123+01' AS STRING) AS s, CAST('2024-01-02T03:04:05Z' AS TIMESTAMP) AS t
+expect:
+  columns: s STRING, t TIMESTAMP
+  ["2024-01-01 18:04:05.123-08","2024-01-02T03:04:05Z"]
+
+case cast_float_string
+query:
+  SELECT CAST(0.1 AS STRING) AS a, CAST(1e20 AS STRING) AS b, CAST(CAST('NaN' AS FLOAT64) AS STRING) AS c
+expect:
+  columns: a STRING, b STRING, c STRING
+  ["0.1","1e+20","nan"]
+
+case numeric_arithmetic
+query:
+  SELECT NUMERIC '1.1' + NUMERIC '2.2' AS a, NUMERIC '10' / 3 AS b, CAST(NUMERIC '2.5' AS INT64) AS c
+expect:
+  columns: a NUMERIC, b NUMERIC, c INT64
+  ["3.3","3.333333333","3"]
+
+case numeric_overflow
+query:
+  SELECT NUMERIC '99999999999999999999999999999' * 10
+expect:
+  error: OUT_OF_RANGE
+  message: numeric overflow: 99999999999999999999999999999 * 10
+
+case float_special
+query:
+  SELECT IEEE_DIVIDE(1, 0) AS inf, IEEE_DIVIDE(0, 0) AS nan, -0.0 AS negz, IS_NAN(IEEE_DIVIDE(0, 0)) AS isnan
+expect:
+  columns: inf FLOAT64, nan FLOAT64, negz FLOAT64, isnan BOOL
+  ["Infinity","NaN",-0.0,true]
+
+case math_functions
+query:
+  SELECT MOD(-7, 3) AS m, DIV(-7, 2) AS d, ROUND(2.5) AS r, ROUND(-2.5) AS r2, TRUNC(1.99) AS t, ABS(-3) AS a, SIGN(-2) AS s, GREATEST(1, 3, 2) AS g, LEAST(1, NULL) AS l, POW(2, 10) AS p, SQRT(2) AS q
+expect:
+  columns: m INT64, d INT64, r FLOAT64, r2 FLOAT64, t FLOAT64, a INT64, s INT64, g INT64, l INT64, p FLOAT64, q FLOAT64
+  ["-1","-3",3.0,-3.0,1.0,"3","-1","3",null,1024.0,1.4142135623730951]
+
+case safe_divide
+query:
+  SELECT SAFE_DIVIDE(1, 0) AS a, SAFE_DIVIDE(7, 2) AS b
+expect:
+  columns: a FLOAT64, b FLOAT64
+  [null,3.5]
+
+case between_and_in_list
+query:
+  SELECT EntityId FROM Entities WHERE Version BETWEEN 2 AND 3 OR Kind IN ('person')
+expect:
+  columns: EntityId STRING
+  ["e5"]
+  ["e3"]
+  ["e2"]
+  ["e1"]
+
+case null_logic
+query:
+  SELECT NULL AND FALSE AS a, NULL OR TRUE AS b, NULL IS NULL AS d, 1 IS DISTINCT FROM NULL AS e
+expect:
+  columns: a BOOL, b BOOL, d BOOL, e BOOL
+  [false,true,true,true]
+
+case partition_fingerprint
+query:
+  SELECT EntityId FROM Entities WHERE MOD(ABS(FARM_FINGERPRINT(EntityId)), @partitionCount) = @partitionIndex
+params:
+  @partitionCount INT64 = 2
+  @partitionIndex INT64 = 0
+expect:
+  columns: EntityId STRING
+  ["e1"]
+  ["e1"]
+  ["e4"]
+  ["e3"]
+
+case hash_functions
+query:
+  SELECT FARM_FINGERPRINT('abc') AS f, TO_HEX(SHA256('abc')) AS s256, TO_HEX(SHA1('abc')) AS s1, TO_HEX(MD5('')) AS m, TO_HEX(SHA512(b'')) AS s512
+expect:
+  columns: f INT64, s256 STRING, s1 STRING, m STRING, s512 STRING
+  ["2640714258260161385","ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","a9993e364706816aba3e25717850c26c9cd0d89d","d41d8cd98f00b204e9800998ecf8427e","cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"]
+
+case derived_id
+query:
+  SELECT TO_HEX(SHA1(CONCAT(@team_id, '_', tag))) AS id FROM UNNEST(['x', 'y']) AS tag
+params:
+  @team_id STRING = "t1"
+expect:
+  columns: id STRING
+  ["7ae1f2ceb3831ad38fca8463e4dc328c3f618131"]
+  ["67a6dbfd20485f6b89afa8307ce4ca0bb7edb70b"]
+
+case bytes_functions
+query:
+  SELECT TO_BASE64(b'\x00\xff') AS b64, FROM_BASE64('AP8=') AS raw, FROM_HEX('00ff') AS h, BYTE_LENGTH('æ') AS bl, CHAR_LENGTH('æ') AS cl
+expect:
+  columns: b64 STRING, raw BYTES, h BYTES, bl INT64, cl INT64
+  ["AP8=","AP8=","AP8=","2","1"]
+
+case bit_functions
+query:
+  SELECT 5 & 3 AS a, 5 | 3 AS o, 5 ^ 3 AS x, 1 << 62 AS sl, -8 >> 1 AS sr, BIT_COUNT(255) AS bc
+expect:
+  columns: a INT64, o INT64, x INT64, sl INT64, sr INT64, bc INT64
+  ["1","7","6","4611686018427387904","9223372036854775804","8"]
+

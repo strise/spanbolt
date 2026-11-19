@@ -1,0 +1,15 @@
+[package]
+name = "spanbolt-storage"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+spanbolt-ddl.workspace = true
+base64.workspace = true
+imbl.workspace = true
+prost-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+zstd.workspace = true

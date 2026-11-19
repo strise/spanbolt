@@ -1,0 +1,642 @@
+//! INSERT, UPDATE and DELETE (with THEN RETURN), applied to the transaction's private view.
+
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use googlesql_sys::proto::any_resolved_expr_proto::Node as E;
+use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
+use googlesql_sys::proto::resolved_insert_stmt_enums::InsertMode;
+use googlesql_sys::proto::*;
+use spanbolt_proto::spanner as pb;
+use spanbolt_storage::key::encode_key;
+use spanbolt_storage::{
+    Code, Error, KeySet, Mutation, Result, TableId, TableMeta, Timestamp, Value, WriteKind,
+};
+use spanbolt_txn::ReadWriteTxn;
+
+use crate::catalog::SqlCatalog;
+use crate::engine::metadata;
+use crate::exec::{BoxOp, Cx, Env, Eval, Row};
+use crate::plan::{Planner, Scope, call_base, col_type, fn_name};
+use crate::prepared::Prepared;
+use crate::types::{Type, unimplemented};
+use crate::validate::Node;
+
+/// A value written by DML: an expression, the commit timestamp, or NULL (DEFAULT without one).
+enum Val {
+    Expr(Eval),
+    CommitTs,
+    /// The DEFAULT keyword: the column's default, or NULL without one.
+    Default,
+}
+
+enum Source {
+    Values(Vec<Vec<Val>>),
+    Query { op: BoxOp, positions: Vec<usize> },
+}
+
+enum Kind {
+    Insert {
+        mode: WriteKind,
+        ignore: bool,
+        columns: Vec<usize>,
+        source: Source,
+    },
+    Update {
+        scan: BoxOp,
+        sets: Vec<(usize, Val)>,
+    },
+    Delete {
+        scan: BoxOp,
+    },
+}
+
+struct Returning {
+    exprs: Vec<Eval>,
+    /// Positions in `row ++ computed ++ [action]`.
+    positions: Vec<usize>,
+}
+
+pub struct DmlPlan {
+    table: TableId,
+    kind: Kind,
+    returning: Option<Returning>,
+    /// The statement reads other rows through subqueries (not partitionable).
+    has_subquery: bool,
+}
+
+fn nid(c: &Option<ResolvedColumnProto>) -> i64 {
+    c.as_ref().and_then(|c| c.column_id).unwrap_or(-1)
+}
+
+fn is_pct(e: &AnyResolvedExprProto) -> bool {
+    call_base(e).is_some_and(|b| fn_name(b) == "pending_commit_timestamp")
+}
+
+fn value(p: &mut Planner, dv: Option<&ResolvedDmlValueProto>, scope: &Scope) -> Result<Val> {
+    let e = dv
+        .and_then(|d| d.value.as_ref())
+        .ok_or_else(|| Error::internal("DML value without expression"))?;
+    if is_pct(e) {
+        return Ok(Val::CommitTs);
+    }
+    if let Some(E::ResolvedDmldefaultNode(_)) = e.node {
+        return Ok(Val::Default);
+    }
+    Ok(Val::Expr(p.expr(e, scope)?))
+}
+
+fn has_default(p: &Planner, table: TableId, col: usize) -> bool {
+    let tm = p.cat.storage.table(table);
+    p.cat
+        .schema
+        .table(&tm.name)
+        .and_then(|t| t.columns.get(col))
+        .is_some_and(|c| c.default.is_some() || c.generated.is_some())
+}
+
+fn table_layout(ts: &ResolvedTableScanProto, n: usize) -> Vec<i64> {
+    let mut layout: Vec<i64> = (0..n).map(|c| -1_000_000 - c as i64).collect();
+    if let Some(base) = &ts.parent {
+        for (c, &i) in base.column_list.iter().zip(&ts.column_index_list) {
+            if let Some(slot) = layout.get_mut(i as usize) {
+                *slot = c.column_id.unwrap_or(-1);
+            }
+        }
+    }
+    layout
+}
+
+type Fields = Vec<(String, Type)>;
+
+fn returning(
+    p: &mut Planner,
+    r: &Option<ResolvedReturningClauseProto>,
+    layout: &[i64],
+) -> Result<(Option<Returning>, Fields)> {
+    let Some(r) = r else {
+        return Ok((None, Vec::new()));
+    };
+    let scope = Scope {
+        cols: layout,
+        up: Some(&Scope::TOP),
+    };
+    let mut ids: Vec<i64> = layout.to_vec();
+    let mut exprs = Vec::new();
+    for cc in &r.expr_list {
+        let e = cc
+            .expr
+            .as_ref()
+            .ok_or_else(|| Error::internal("returning without expr"))?;
+        exprs.push(p.expr(e, &scope)?);
+        ids.push(nid(&cc.column));
+    }
+    if let Some(a) = &r.action_column {
+        ids.push(nid(&a.column));
+    }
+    let mut positions = Vec::new();
+    let mut fields = Vec::new();
+    for oc in &r.output_column_list {
+        let c = oc
+            .column
+            .as_ref()
+            .ok_or_else(|| Error::internal("output without column"))?;
+        let id = c.column_id.unwrap_or(-1);
+        positions.push(
+            ids.iter()
+                .position(|&x| x == id)
+                .ok_or_else(|| Error::internal("THEN RETURN column not found"))?,
+        );
+        fields.push((oc.name.clone().unwrap_or_default(), col_type(c)?));
+    }
+    Ok((Some(Returning { exprs, positions }), fields))
+}
+
+fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fields)> {
+    if let Some(b) = &ins.parent {
+        crate::validate::hints(Node::Insert, &b.hint_list)?;
+    }
+    if ins.on_conflict_clause.is_some() {
+        return Err(unimplemented("INSERT ... ON CONFLICT"));
+    }
+    let ts = ins
+        .table_scan
+        .as_ref()
+        .ok_or_else(|| Error::internal("insert without table"))?;
+    let (_, _, table) = p.dml_scan(ts, None)?;
+    let ncols = p.cat.storage.table(table).columns.len();
+    let layout = table_layout(ts, ncols);
+    let columns: Vec<usize> = ins
+        .insert_column_list
+        .iter()
+        .map(|c| {
+            let id = c.column_id.unwrap_or(-1);
+            layout
+                .iter()
+                .position(|&l| l == id)
+                .ok_or_else(|| Error::internal("insert column not in table"))
+        })
+        .collect::<Result<_>>()?;
+    let (mode, ignore) = match ins.insert_mode.and_then(|m| InsertMode::try_from(m).ok()) {
+        Some(InsertMode::OrIgnore) => (WriteKind::Insert, true),
+        Some(InsertMode::OrUpdate) => (WriteKind::InsertOrUpdate, false),
+        Some(InsertMode::OrReplace) => (WriteKind::Replace, false),
+        _ => (WriteKind::Insert, false),
+    };
+    let source = if let Some(q) = &ins.query {
+        let planned = p.scan(q, &Scope::TOP)?;
+        let ids: Vec<i64> = ins
+            .query_output_column_list
+            .iter()
+            .map(|c| c.column_id.unwrap_or(-1))
+            .collect();
+        let positions = crate::plan::positions(&planned.layout, &ids)?;
+        Source::Query {
+            op: planned.op,
+            positions,
+        }
+    } else {
+        let mut rows = Vec::new();
+        for r in &ins.row_list {
+            let mut vals = Vec::new();
+            for (i, v) in r.value_list.iter().enumerate() {
+                let _ = i;
+                vals.push(value(p, Some(v), &Scope::TOP)?);
+            }
+            rows.push(vals);
+        }
+        Source::Values(rows)
+    };
+    let (ret, fields) = returning(p, &ins.returning, &layout)?;
+    Ok((
+        DmlPlan {
+            table,
+            kind: Kind::Insert {
+                mode,
+                ignore,
+                columns,
+                source,
+            },
+            returning: ret,
+            has_subquery: false,
+        },
+        fields,
+    ))
+}
+
+fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fields)> {
+    if let Some(b) = &up.parent {
+        crate::validate::hints(Node::Update, &b.hint_list)?;
+    }
+    if up.from_scan.is_some() || up.array_offset_column.is_some() {
+        return Err(unimplemented("UPDATE with FROM or nested updates"));
+    }
+    let ts = up
+        .table_scan
+        .as_ref()
+        .ok_or_else(|| Error::internal("update without table"))?;
+    let (scan, layout, table) = p.dml_scan(ts, up.where_expr.as_deref())?;
+    let tm = p.cat.storage.table(table).clone();
+    let scope = Scope {
+        cols: &layout,
+        up: Some(&Scope::TOP),
+    };
+    let mut sets = Vec::new();
+    for item in &up.update_item_list {
+        if !item.update_item_element_list.is_empty()
+            || !item.delete_list.is_empty()
+            || !item.update_list.is_empty()
+            || !item.insert_list.is_empty()
+        {
+            return Err(unimplemented("Nested UPDATE items"));
+        }
+        let target = item
+            .target
+            .as_ref()
+            .ok_or_else(|| Error::internal("update without target"))?;
+        let id = match target.node.as_ref() {
+            Some(E::ResolvedColumnRefNode(c)) => nid(&c.column),
+            _ => return Err(unimplemented("UPDATE of a nested field")),
+        };
+        let col = layout
+            .iter()
+            .position(|&l| l == id)
+            .ok_or_else(|| Error::internal("update target not in table"))?;
+        if tm.is_key_column(col) {
+            return Err(Error::invalid_argument(
+                "Cannot modify a primary key column with UPDATE",
+            ));
+        }
+        let val = value(p, item.set_value.as_ref(), &scope)?;
+        if matches!(val, Val::Default) && has_default(p, table, col) {
+            return Err(unimplemented("DEFAULT values in DML"));
+        }
+        sets.push((col, val));
+    }
+    let (ret, fields) = returning(p, &up.returning, &layout)?;
+    Ok((
+        DmlPlan {
+            table,
+            kind: Kind::Update { scan, sets },
+            returning: ret,
+            has_subquery: false,
+        },
+        fields,
+    ))
+}
+
+fn delete(p: &mut Planner, del: &ResolvedDeleteStmtProto) -> Result<(DmlPlan, Fields)> {
+    if let Some(b) = &del.parent {
+        crate::validate::hints(Node::Delete, &b.hint_list)?;
+    }
+    if del.using_scan.is_some() || del.array_offset_column.is_some() {
+        return Err(unimplemented("DELETE with USING or nested deletes"));
+    }
+    let ts = del
+        .table_scan
+        .as_ref()
+        .ok_or_else(|| Error::internal("delete without table"))?;
+    let (scan, layout, table) = p.dml_scan(ts, del.where_expr.as_deref())?;
+    let (ret, fields) = returning(p, &del.returning, &layout)?;
+    Ok((
+        DmlPlan {
+            table,
+            kind: Kind::Delete { scan },
+            returning: ret,
+            has_subquery: false,
+        },
+        fields,
+    ))
+}
+
+pub fn plan(p: &mut Planner, node: &StmtNode) -> Result<(DmlPlan, Fields)> {
+    let before = p.subqueries;
+    let (mut plan, fields) = match node {
+        StmtNode::ResolvedInsertStmtNode(ins) => insert(p, ins)?,
+        StmtNode::ResolvedUpdateStmtNode(up) => update(p, up)?,
+        StmtNode::ResolvedDeleteStmtNode(del) => delete(p, del)?,
+        _ => return Err(unimplemented("This statement kind")),
+    };
+    plan.has_subquery = p.subqueries > before;
+    Ok((plan, fields))
+}
+
+fn check_commit_ts(tm: &TableMeta, col: usize) -> Result<()> {
+    if tm.columns[col].allow_commit_timestamp {
+        return Ok(());
+    }
+    Err(Error::constraint(
+        Code::FailedPrecondition,
+        format!(
+            "Cannot write commit timestamp because the allow_commit_timestamp column option is not set to true for column {}.{}, or for all corresponding shared key columns in this table's interleaved table hierarchy.",
+            tm.name, tm.columns[col].name
+        ),
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Evaluates one row's written values, appending them to `row` (whose length is the cell
+/// offset) and recording commit-timestamp cells as `(r, cell)`.
+fn eval_vals(
+    cx: &Cx,
+    env: &Env,
+    vals: &[(usize, &Val)],
+    tm: &TableMeta,
+    r: usize,
+    row: &mut Vec<Value>,
+    ts_cells: &mut Vec<(usize, usize)>,
+    defaults: &mut Vec<(usize, usize)>,
+) -> Result<()> {
+    for (col, v) in vals {
+        match v {
+            Val::Expr(e) => row.push(e(cx, env)?),
+            Val::Default => {
+                defaults.push((r, row.len()));
+                row.push(Value::Null);
+            }
+            Val::CommitTs => {
+                check_commit_ts(tm, *col)?;
+                ts_cells.push((r, row.len()));
+                row.push(Value::Null);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn pk_debug(tm: &TableMeta, key: &[Value]) -> String {
+    let parts: Vec<String> = tm
+        .pk
+        .iter()
+        .zip(key)
+        .map(|(&c, v)| {
+            let shown = match v {
+                Value::String(s) => format!("\"{s}\""),
+                Value::Null => "NULL".to_string(),
+                other => crate::cast::to_string(other)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            };
+            format!("pk#{}:{shown}", tm.columns[c].name)
+        })
+        .collect();
+    format!("({{{}}})", parts.join(", "))
+}
+
+pub fn execute(
+    cat: &SqlCatalog,
+    d: &DmlPlan,
+    p: &Prepared,
+    params: &[Value],
+    rw: &ReadWriteTxn,
+    now: Timestamp,
+    partitioned: bool,
+) -> Result<pb::ResultSet> {
+    if partitioned {
+        if let Kind::Insert { .. } = d.kind {
+            return Err(Error::invalid_argument(
+                "INSERT is not supported for Partitioned DML",
+            ));
+        }
+        if d.has_subquery {
+            return Err(Error::invalid_argument(
+                "Partitioned DML only supports fully partitionable statements.",
+            ));
+        }
+    }
+    let state = rw.current_state()?;
+    let tm = state.catalog.table(d.table).clone();
+    let cx = Cx {
+        state: &state,
+        cat,
+        params,
+        now,
+        rw: Some(rw),
+        with: RefCell::new(Vec::new()),
+        memo: RefCell::new(HashMap::new()),
+    };
+    let top = Env::EMPTY;
+    let pk_of = |row: &[Value]| -> Vec<Value> { tm.pk.iter().map(|&c| row[c].clone()).collect() };
+    // THEN RETURN rows: deleted rows as they were; inserted/updated ones read back afterwards.
+    let mut affected: Vec<(Vec<Value>, &'static str)> = Vec::new();
+    let mut keys_after: Vec<(Vec<Value>, &'static str)> = Vec::new();
+    let count;
+    match &d.kind {
+        Kind::Insert {
+            mode,
+            ignore,
+            columns,
+            source,
+        } => {
+            let mut rows: Vec<Vec<Value>> = Vec::new();
+            let mut ts_cells = Vec::new();
+            let mut defaults: Vec<(usize, usize)> = Vec::new();
+            match source {
+                Source::Values(vrows) => {
+                    for (r, vr) in vrows.iter().enumerate() {
+                        let vals: Vec<(usize, &Val)> =
+                            columns.iter().copied().zip(vr.iter()).collect();
+                        let mut row = Vec::with_capacity(vals.len());
+                        eval_vals(
+                            &cx,
+                            &top,
+                            &vals,
+                            &tm,
+                            r,
+                            &mut row,
+                            &mut ts_cells,
+                            &mut defaults,
+                        )?;
+                        rows.push(row);
+                    }
+                }
+                Source::Query { op, positions } => {
+                    for r in op.open(&cx, &top)? {
+                        let r = r?;
+                        rows.push(
+                            positions
+                                .iter()
+                                .map(|&i| r.get(i).cloned().unwrap_or(Value::Null))
+                                .collect(),
+                        );
+                    }
+                }
+            }
+            let key_pos: Vec<Option<usize>> = tm
+                .pk
+                .iter()
+                .map(|k| columns.iter().position(|c| c == k))
+                .collect();
+            let mut seen: HashSet<Vec<u8>> = HashSet::new();
+            let mut kept_rows = Vec::new();
+            let mut kept_cells = Vec::new();
+            let mut kept_defaults: Vec<Vec<usize>> = Vec::new();
+            for (r, row) in rows.into_iter().enumerate() {
+                let key: Vec<Value> = key_pos
+                    .iter()
+                    .map(|p| p.map_or(Value::Null, |i| row[i].clone()))
+                    .collect();
+                let enc = encode_key(&key, &tm.pk_desc)?;
+                let exists = state.tables[d.table].get(&enc[..]).is_some() || seen.contains(&enc);
+                if exists && *mode == WriteKind::Insert {
+                    if *ignore {
+                        continue;
+                    }
+                    return Err(Error::constraint(
+                        Code::AlreadyExists,
+                        format!(
+                            "Failed to insert row with primary key {} due to previously existing row",
+                            pk_debug(&tm, &key)
+                        ),
+                    ));
+                }
+                seen.insert(enc);
+                let action = if exists { "UPDATE" } else { "INSERT" };
+                let new_r = kept_rows.len();
+                kept_cells.extend(
+                    ts_cells
+                        .iter()
+                        .filter(|(cr, _)| *cr == r)
+                        .map(|&(_, c)| (new_r, c)),
+                );
+                keys_after.push((key, action));
+                kept_defaults.push(
+                    defaults
+                        .iter()
+                        .filter(|(dr, _)| *dr == r)
+                        .map(|&(_, c)| c)
+                        .collect(),
+                );
+                kept_rows.push(row);
+            }
+            count = kept_rows.len();
+            if kept_defaults.iter().all(|d| d.is_empty()) {
+                if !kept_rows.is_empty() {
+                    rw.apply_dml(vec![Mutation::Write {
+                        kind: *mode,
+                        table: d.table,
+                        columns: columns.clone(),
+                        rows: kept_rows,
+                        commit_ts_cells: kept_cells,
+                    }])?;
+                }
+            } else {
+                // Rows naming DEFAULT omit those columns so storage fills the defaults.
+                let mut muts = Vec::new();
+                for (r, (row, defs)) in kept_rows.into_iter().zip(kept_defaults).enumerate() {
+                    let keep: Vec<usize> =
+                        (0..columns.len()).filter(|i| !defs.contains(i)).collect();
+                    let cells = kept_cells
+                        .iter()
+                        .filter(|(cr, _)| *cr == r)
+                        .filter_map(|&(_, c)| keep.iter().position(|&k| k == c).map(|p| (0, p)))
+                        .collect();
+                    muts.push(Mutation::Write {
+                        kind: *mode,
+                        table: d.table,
+                        columns: keep.iter().map(|&i| columns[i]).collect(),
+                        rows: vec![keep.iter().map(|&i| row[i].clone()).collect()],
+                        commit_ts_cells: cells,
+                    });
+                }
+                rw.apply_dml(muts)?;
+            }
+        }
+        Kind::Update { scan, sets } => {
+            let olds: Vec<Row> = scan.open(&cx, &top)?.collect::<Result<_>>()?;
+            let mut columns: Vec<usize> = tm.pk.clone();
+            columns.extend(sets.iter().map(|(c, _)| *c));
+            let vals: Vec<(usize, &Val)> = sets.iter().map(|(c, v)| (*c, v)).collect();
+            let mut rows = Vec::with_capacity(olds.len());
+            let mut ts_cells = Vec::new();
+            for (r, old) in olds.iter().enumerate() {
+                let env = Env {
+                    row: old,
+                    up: Some(&top),
+                };
+                let mut row = pk_of(old);
+                eval_vals(
+                    &cx,
+                    &env,
+                    &vals,
+                    &tm,
+                    r,
+                    &mut row,
+                    &mut ts_cells,
+                    &mut Vec::new(),
+                )?;
+                keys_after.push((pk_of(old), "UPDATE"));
+                rows.push(row);
+            }
+            count = rows.len();
+            if !rows.is_empty() {
+                rw.apply_dml(vec![Mutation::Write {
+                    kind: WriteKind::Update,
+                    table: d.table,
+                    columns,
+                    rows,
+                    commit_ts_cells: ts_cells,
+                }])?;
+            }
+        }
+        Kind::Delete { scan } => {
+            let olds: Vec<Row> = scan.open(&cx, &top)?.collect::<Result<_>>()?;
+            count = olds.len();
+            if !olds.is_empty() {
+                let keys = olds.iter().map(|o| pk_of(o)).collect();
+                rw.apply_dml(vec![Mutation::Delete {
+                    table: d.table,
+                    keys: KeySet::keys(keys),
+                }])?;
+            }
+            affected = olds.into_iter().map(|o| (o, "DELETE")).collect();
+        }
+    }
+    let mut out_rows = Vec::new();
+    if let Some(ret) = &d.returning {
+        if !keys_after.is_empty() {
+            let after = rw.current_state()?;
+            for (key, action) in keys_after {
+                let enc = encode_key(&key, &tm.pk_desc)?;
+                if let Some(row) = after.tables[d.table].get(&enc[..]) {
+                    affected.push((row.to_vec(), action));
+                }
+            }
+        }
+        for (row, action) in affected {
+            let env = Env {
+                row: &row,
+                up: Some(&top),
+            };
+            let mut ext = row.clone();
+            for e in &ret.exprs {
+                ext.push(e(&cx, &env)?);
+            }
+            ext.push(Value::String(Arc::from(action)));
+            out_rows.push(prost_types::ListValue {
+                values: ret
+                    .positions
+                    .iter()
+                    .map(|&i| ext.get(i).cloned().unwrap_or(Value::Null).to_proto())
+                    .collect(),
+            });
+        }
+    }
+    let rc = if partitioned {
+        pb::result_set_stats::RowCount::RowCountLowerBound(count as i64)
+    } else {
+        pb::result_set_stats::RowCount::RowCountExact(count as i64)
+    };
+    Ok(pb::ResultSet {
+        metadata: Some(metadata(&p.fields)),
+        rows: out_rows,
+        stats: Some(pb::ResultSetStats {
+            query_plan: None,
+            query_stats: None,
+            row_count: Some(rc),
+        }),
+        ..Default::default()
+    })
+}

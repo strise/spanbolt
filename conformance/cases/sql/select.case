@@ -1,0 +1,295 @@
+tags: sql select
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case point_by_key
+query:
+  SELECT EntityId, Name, Version FROM Entities WHERE TeamId = @team AND EntityId = @id
+params:
+  @team STRING = "t1"
+  @id STRING = "e1"
+expect:
+  columns: EntityId STRING, Name STRING, Version INT64
+  ["e1","Acme AS","3"]
+
+case in_unnest_param
+query:
+  SELECT TeamId, EntityId FROM Entities WHERE EntityId IN UNNEST(@ids)
+params:
+  @ids ARRAY<STRING> = ["e1", "e5", "nope"]
+expect:
+  columns: TeamId STRING, EntityId STRING
+  ["t1","e1"]
+  ["t2","e5"]
+  ["t2","e1"]
+
+case not_in_unnest
+query:
+  SELECT EntityId FROM Entities WHERE TeamId = 't1' AND NOT EntityId IN UNNEST(@excluded)
+params:
+  @excluded ARRAY<STRING> = ["e2"]
+expect:
+  columns: EntityId STRING
+  ["e1"]
+  ["e4"]
+  ["e3"]
+
+case in_unnest_empty_array
+query:
+  SELECT EntityId FROM Entities WHERE EntityId IN UNNEST(@ids)
+params:
+  @ids ARRAY<STRING> = []
+expect:
+  columns: EntityId STRING
+
+case in_unnest_null_array
+query:
+  SELECT EntityId FROM Entities WHERE EntityId IN UNNEST(@ids)
+params:
+  @ids ARRAY<STRING> = null
+expect:
+  columns: EntityId STRING
+
+case order_desc_tiebreak
+query:
+  SELECT TeamId, EntityId, CreatedAt FROM Entities ORDER BY CreatedAt DESC, TeamId, EntityId
+expect:
+  columns: TeamId STRING, EntityId STRING, CreatedAt TIMESTAMP
+  ["t2","e5","2024-04-01T00:00:00Z"]
+  ["t1","e4","2024-03-15T00:00:00Z"]
+  ["t1","e3","2024-02-10T08:00:00Z"]
+  ["t2","e1","2024-02-02T00:00:00Z"]
+  ["t1","e2","2024-01-06T00:00:00Z"]
+  ["t1","e1","2024-01-05T10:00:00Z"]
+
+case latest_version_before
+query:
+  SELECT EntityId, Version FROM Entities
+  WHERE TeamId = @team AND Version > 0 AND CreatedAt <= @time
+  ORDER BY Version DESC
+  LIMIT 1
+params:
+  @team STRING = "t1"
+  @time TIMESTAMP = "2024-02-28T00:00:00Z"
+expect:
+  columns: EntityId STRING, Version INT64
+  ["e1","3"]
+
+case keyset_page
+query:
+  SELECT e.EntityId FROM Entities e
+  WHERE e.TeamId = @team AND e.EntityId > @after
+  ORDER BY e.EntityId
+  LIMIT @page_size
+params:
+  @team STRING = "t1"
+  @after STRING = "e1"
+  @page_size INT64 = 2
+expect:
+  columns: EntityId STRING
+  ["e2"]
+  ["e3"]
+
+case limit_offset
+query:
+  SELECT EntityId FROM Entities WHERE TeamId = 't1' ORDER BY EntityId LIMIT 2 OFFSET 1
+expect:
+  columns: EntityId STRING
+  ["e2"]
+  ["e3"]
+
+case is_null_or_not_equal
+query:
+  SELECT EntityId FROM Entities WHERE TeamId = 't1' AND (Status IS NULL OR Status != @cancelled)
+params:
+  @cancelled STRING = "archived"
+expect:
+  columns: EntityId STRING
+  ["e4"]
+  ["e2"]
+  ["e1"]
+
+case or_groups
+query:
+  SELECT TeamId, EntityId FROM Entities
+  WHERE (TeamId = @t0 AND Kind = @k0) OR (TeamId = @t1 AND Kind = @k1)
+params:
+  @t0 STRING = "t1"
+  @k0 STRING = "person"
+  @t1 STRING = "t2"
+  @k1 STRING = "company"
+expect:
+  columns: TeamId STRING, EntityId STRING
+  ["t2","e1"]
+  ["t1","e2"]
+
+case like_lower
+query:
+  SELECT EntityId, Name FROM Entities WHERE LOWER(Name) LIKE @name
+params:
+  @name STRING = "%nordmann%"
+expect:
+  columns: EntityId STRING, Name STRING
+  ["e5","Ola Nordmann"]
+  ["e2","Kari Nordmann"]
+
+case where_true_dynamic
+query:
+  SELECT COUNT(*) AS n FROM Entities WHERE TRUE AND 1 = 1 AND Kind = 'company'
+expect:
+  columns: n INT64
+  ["4"]
+
+case timestamp_param_compare
+query:
+  SELECT EntityId FROM Entities WHERE UpdatedAt > @now
+params:
+  @now TIMESTAMP = "2024-02-01T00:00:00Z"
+expect:
+  columns: EntityId STRING
+  ["e3"]
+  ["e1"]
+
+case select_star
+query:
+  SELECT * FROM Users
+expect:
+  columns: UserId STRING, Email STRING, Name STRING
+  ["u2","bob@example.com",null]
+  ["u1","ann@example.com","Ann"]
+  ["u4","dan@example.com","Dan"]
+
+case select_distinct
+query:
+  SELECT DISTINCT Kind FROM Entities
+expect:
+  columns: Kind STRING
+  ["person"]
+  ["company"]
+
+case null_param_equality
+query:
+  SELECT EntityId FROM Entities WHERE Status = @s
+params:
+  @s STRING = null
+expect:
+  columns: EntityId STRING
+
+case bool_param
+query:
+  SELECT @b AS b, NOT @b AS nb
+params:
+  @b BOOL = true
+expect:
+  columns: b BOOL, nb BOOL
+  [true,false]
+
+case missing_param
+query:
+  SELECT EntityId FROM Entities WHERE TeamId = @team
+expect:
+  error: INVALID_ARGUMENT
+  message: Incomplete query parameters team
+
+case unknown_column
+query:
+  SELECT Nope FROM Entities
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Nope; Did you mean Name? [at 1:8]
+
+case type_mismatch
+query:
+  SELECT EntityId FROM Entities WHERE Version = 'x'
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for operator = for argument types: INT64, STRING Signature: T1 = T1 Unable to find common supertype for templated argument <T1> Input types for <T1>: {INT64, STRING} Signature: JSON = JSON Argument 1: Unable to coerce type INT64 to expected type JSON Signature: JSON = JSON Argument 2: Unable to coerce type STRING to expected type JSON [at 1:37]
+
+case division_by_zero
+query:
+  SELECT 1 / 0
+expect:
+  error: OUT_OF_RANGE
+  message: division by zero: 1 / 0
+
+case int_overflow
+query:
+  SELECT 9223372036854775807 + 1
+expect:
+  error: OUT_OF_RANGE
+  message: int64 overflow: 9223372036854775807 + 1
+
+case syntax_error
+query:
+  SELEC 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected identifier "SELEC" [at 1:1]
+

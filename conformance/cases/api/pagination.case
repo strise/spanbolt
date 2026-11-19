@@ -1,0 +1,24 @@
+# List* pagination: page_size / page_token. Each case's database starts with the harness's
+# own session.
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+
+case list_sessions_pages_of_two
+list_sessions create=4 page_size=2
+expect:
+  counts: [2,2,1]
+
+case list_sessions_page_size_larger_than_total
+list_sessions create=2 page_size=50
+expect:
+  counts: [3]
+
+case list_sessions_default_page_size
+list_sessions create=3
+expect:
+  counts: [4]
+
+case list_sessions_page_size_one
+list_sessions create=2 page_size=1
+expect:
+  counts: [1,1,1]

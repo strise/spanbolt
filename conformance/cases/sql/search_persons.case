@@ -1,0 +1,298 @@
+# Private-person name search: an escaped bare SEARCH() parameter combined with filters,
+# paging and a TO_JSON projection with addresses.
+tags: sql search
+schema:
+  CREATE TABLE persons (
+    person_id STRING(128) NOT NULL,
+    name STRING(256),
+    nin STRING(256),
+    birth_date DATE,
+    birth_year INT64,
+    registry_kind STRING(256),
+    updated TIMESTAMP NOT NULL,
+    name_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(name)) HIDDEN,
+    team_id STRING(MAX),
+  ) PRIMARY KEY (person_id);
+  CREATE TABLE address (
+    person_id STRING(128) NOT NULL,
+    address_id STRING(128) NOT NULL,
+    city STRING(MAX),
+  ) PRIMARY KEY (person_id, address_id), INTERLEAVE IN PARENT persons ON DELETE CASCADE;
+  CREATE SEARCH INDEX persons_search_idx ON persons(name_tokens)
+insert persons cols=person_id,name,nin,birth_date,birth_year,registry_kind,updated,team_id:
+  ["p1", "Ola Testmann", "01010000001", "1980-01-01", 1980, "folkeregister", "2026-01-01T00:00:00Z", "t1"]
+  ["p2", "Kari Nordmann-Hansen", "01010000002", "1975-05-17", 1975, "folkeregister", "2026-01-01T00:00:00Z", "t1"]
+  ["p3", "Åse Øvrebø", "01010000003", "1990-12-24", 1990, "manual", "2026-01-01T00:00:00Z", "t1"]
+  ["p4", "Ola Nordmann", null, null, 1999, "manual", "2026-01-01T00:00:00Z", "t2"]
+  ["p5", "Per O'Testsen jr.", null, "2001-02-03", 2001, "manual", "2026-01-01T00:00:00Z", "t1"]
+  ["p6", null, null, null, null, "manual", "2026-01-01T00:00:00Z", "t1"]
+  ["p7", "OLA   testmann", null, null, 1960, "folkeregister", "2026-01-01T00:00:00Z", "t2"]
+insert address cols=person_id,address_id,city:
+  ["p1", "a1", "Oslo"]
+  ["p1", "a2", "Bergen"]
+  ["p2", "a1", "Tromsø"]
+
+case name_two_terms
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "Ola Testmann"
+expect:
+  columns: person_id STRING
+  ["p7"]
+  ["p1"]
+expect@spanner:
+  same
+
+case name_single_term
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "ola"
+expect:
+  columns: person_id STRING
+  ["p1"]
+  ["p4"]
+  ["p7"]
+expect@spanner:
+  same
+
+case name_hyphen_replaced_by_space
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "Nordmann Hansen, Kari"
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `Nordmann Hansen, Kari`, has error(s): -Syntax error on column 18: Expecting 'AROUND(
+expect@spanner:
+  columns: person_id STRING
+  ["p2"]
+
+case name_hyphenated_connected_phrase
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "Nordmann-Hansen"
+expect:
+  columns: person_id STRING
+  ["p2"]
+expect@spanner:
+  same
+
+case name_escaped_dot_trailing
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "Per jr\\."
+expect:
+  columns: person_id STRING
+  ["p5"]
+expect@spanner:
+  same
+
+case name_apostrophe_connector
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "O'Testsen"
+expect:
+  columns: person_id STRING
+  ["p5"]
+expect@spanner:
+  same
+
+case name_norwegian_letters_fail_to_parse
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "Åse Øvrebø"
+expect:
+  columns: person_id STRING
+expect@spanner:
+  columns: person_id STRING
+  ["p3"]
+
+case name_double_space_rejected
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "Ola  Testmann"
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `Ola Testmann`, has error(s): -Syntax error on column 6: Expecting 'AROUND(
+expect@spanner:
+  columns: person_id STRING
+  ["p1"]
+  ["p7"]
+
+case name_with_filters
+query:
+  SELECT p.person_id FROM persons p
+  WHERE SEARCH(p.name_tokens, @nameQuery) AND p.registry_kind = @registryKind AND p.birth_year >= @birthYearFrom AND p.team_id = @teamScope
+params:
+  @nameQuery STRING = "ola"
+  @registryKind STRING = "folkeregister"
+  @birthYearFrom INT64 = 1970
+  @teamScope STRING = "t1"
+expect:
+  columns: person_id STRING
+  ["p1"]
+expect@spanner:
+  same
+
+case name_with_exists_address
+query:
+  SELECT p.person_id FROM persons p
+  WHERE SEARCH(p.name_tokens, @nameQuery) AND EXISTS (SELECT 1 FROM address a WHERE a.person_id = p.person_id AND a.city = @city)
+params:
+  @nameQuery STRING = "kari"
+  @city STRING = "Tromsø"
+expect:
+  columns: person_id STRING
+  ["p2"]
+expect@spanner:
+  same
+
+case name_search_to_json_paged
+query:
+  SELECT TO_JSON(
+    (SELECT AS STRUCT p.person_id, p.name, p.birth_year,
+       ARRAY(
+         SELECT AS STRUCT a.address_id, a.city
+         FROM address a
+         WHERE a.person_id = p.person_id
+         ORDER BY a.address_id
+       ) AS addresses
+    )
+  ) AS json
+  FROM persons p
+  WHERE SEARCH(p.name_tokens, @nameQuery)
+  ORDER BY p.birth_year DESC, p.person_id LIMIT @pageSize OFFSET @offset
+params:
+  @nameQuery STRING = "ola"
+  @pageSize INT64 = 2
+  @offset INT64 = 0
+expect:
+  columns: json JSON
+  ["{\"addresses\":[],\"birth_year\":1999,\"name\":\"Ola Nordmann\",\"person_id\":\"p4\"}"]
+  ["{\"addresses\":[{\"address_id\":\"a1\",\"city\":\"Oslo\"},{\"address_id\":\"a2\",\"city\":\"Bergen\"}],\"birth_year\":1980,\"name\":\"Ola Testmann\",\"person_id\":\"p1\"}"]
+expect@spanner:
+  same
+
+case name_search_count
+query:
+  SELECT COUNT(*) AS count FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery) AND p.team_id = @teamScope
+params:
+  @nameQuery STRING = "testmann"
+  @teamScope STRING = "t2"
+expect:
+  columns: count INT64
+  ["1"]
+expect@spanner:
+  same
+
+case name_or_operator
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "testmann OR nordmann"
+expect:
+  columns: person_id STRING
+  ["p4"]
+  ["p7"]
+  ["p2"]
+  ["p1"]
+expect@spanner:
+  same
+
+case name_exclusion
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, @nameQuery)
+params:
+  @nameQuery STRING = "ola -testmann"
+expect:
+  columns: person_id STRING
+  ["p4"]
+expect@spanner:
+  same
+
+case name_null_rows_and_null_query
+query:
+  SELECT p.person_id, SEARCH(p.name_tokens, @nameQuery) AS hit FROM persons p WHERE p.person_id IN ('p1', 'p6')
+params:
+  @nameQuery STRING = null
+expect:
+  columns: person_id STRING, hit BOOL
+  ["p6",null]
+  ["p1",null]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case name_in_read_write_transaction
+begin txn=t
+query txn=t:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, 'ola')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid use of search related function: SQL Search functions are not supported for transactional queries by default
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH cannot be used in transactional queries by default.
+rollback txn=t
+
+case name_in_read_write_transaction_with_hint
+begin txn=t
+query txn=t:
+  @{allow_search_indexes_in_transaction=true} SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, 'ola')
+expect:
+  columns: person_id STRING
+  ["p1"]
+  ["p4"]
+  ["p7"]
+expect@spanner:
+  same
+rollback txn=t
+
+case name_update_regenerates_tokens
+update persons cols=person_id,name:
+  ["p6", "Nils Nyhet"]
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, 'nyhet')
+expect:
+  columns: person_id STRING
+  ["p6"]
+expect@spanner:
+  same
+
+case name_dml_update_regenerates_tokens
+dml:
+  UPDATE persons SET name = 'Ola Omdøpt' WHERE person_id = 'p1'
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, 'omd')
+expect:
+  columns: person_id STRING
+expect@spanner:
+  same
+query:
+  SELECT p.person_id FROM persons p WHERE SEARCH(p.name_tokens, 'ola testmann')
+expect:
+  columns: person_id STRING
+  ["p7"]
+expect@spanner:
+  same
+
+case dml_delete_with_search_in_read_write
+dml:
+  DELETE FROM persons p WHERE SEARCH(p.name_tokens, 'nordmann')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid use of search related function: SQL Search functions are not supported for transactional queries by default
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: SEARCH cannot be used in transactional queries by default.

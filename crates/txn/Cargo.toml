@@ -1,0 +1,14 @@
+[package]
+name = "spanbolt-txn"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+spanbolt-ddl.workspace = true
+spanbolt-storage.workspace = true
+arc-swap.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+prost-types.workspace = true

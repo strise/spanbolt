@@ -1,0 +1,444 @@
+tags: read
+schema:
+  CREATE TABLE T (
+    A INT64 NOT NULL,
+    B STRING(MAX) NOT NULL,
+    V INT64,
+    W STRING(MAX),
+  ) PRIMARY KEY (A, B);
+  CREATE INDEX TByV ON T(V);
+  CREATE INDEX TByVDesc ON T(V DESC) STORING (W);
+  CREATE UNIQUE NULL_FILTERED INDEX TByW ON T(W);
+  CREATE INDEX TByWV ON T(W, V)
+insert T cols=A,B,V,W:
+  [1, "a", 10, "x"]
+  [1, "b", 20, null]
+  [1, "c", null, "y"]
+  [2, "a", 10, "z"]
+  [3, "a", 30, "w"]
+  [3, "b", 5, null]
+
+case all_rows
+read T cols=A,B,V:
+  all
+expect:
+  columns: A INT64, B STRING, V INT64
+  ["1","a","10"]
+  ["1","b","20"]
+  ["1","c",null]
+  ["2","a","10"]
+  ["3","a","30"]
+  ["3","b","5"]
+expect@spanner:
+  same
+
+case point_keys
+read T cols=A,B,V:
+  [1, "b"]
+  [3, "a"]
+expect:
+  columns: A INT64, B STRING, V INT64
+  ["1","b","20"]
+  ["3","a","30"]
+expect@spanner:
+  same
+
+case point_keys_unsorted_input
+read T cols=A,B:
+  [3, "a"]
+  [1, "a"]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["3","a"]
+expect@spanner:
+  same
+
+case point_key_duplicate
+read T cols=A,B:
+  [1, "a"]
+  [1, "a"]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+expect@spanner:
+  same
+
+case point_key_missing
+read T cols=A,B:
+  [9, "z"]
+expect:
+  columns: A INT64, B STRING
+expect@spanner:
+  same
+
+case prefix_range_closed
+read T cols=A,B:
+  range [1] .. [1]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["1","c"]
+expect@spanner:
+  same
+
+case range_closed_open
+read T cols=A,B:
+  range [1] ..< [3]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["1","c"]
+  ["2","a"]
+expect@spanner:
+  same
+
+case range_open_closed
+read T cols=A,B:
+  range [1] <.. [3]
+expect:
+  columns: A INT64, B STRING
+  ["2","a"]
+  ["3","a"]
+  ["3","b"]
+expect@spanner:
+  same
+
+case range_open_open
+read T cols=A,B:
+  range [1] <..< [3]
+expect:
+  columns: A INT64, B STRING
+  ["2","a"]
+expect@spanner:
+  same
+
+case range_full_keys
+read T cols=A,B:
+  range [1, "b"] .. [3, "a"]
+expect:
+  columns: A INT64, B STRING
+  ["1","b"]
+  ["1","c"]
+  ["2","a"]
+  ["3","a"]
+expect@spanner:
+  same
+
+case range_mixed_prefix
+read T cols=A,B:
+  range [1, "b"] ..< [2]
+expect:
+  columns: A INT64, B STRING
+  ["1","b"]
+  ["1","c"]
+expect@spanner:
+  same
+
+case range_empty_start
+read T cols=A,B:
+  range [] .. [1, "b"]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+expect@spanner:
+  same
+
+case range_empty_both
+read T cols=A,B:
+  range [] .. []
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["1","c"]
+  ["2","a"]
+  ["3","a"]
+  ["3","b"]
+expect@spanner:
+  same
+
+case range_inverted
+read T cols=A,B:
+  range [3] .. [1]
+expect:
+  columns: A INT64, B STRING
+expect@spanner:
+  same
+
+case overlapping_ranges
+read T cols=A,B:
+  range [1] .. [2]
+  range [2] .. [3]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["1","c"]
+  ["2","a"]
+  ["3","a"]
+  ["3","b"]
+expect@spanner:
+  same
+
+case keys_and_ranges
+read T cols=A,B:
+  [3, "b"]
+  range [1, "a"] .. [1, "b"]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["3","b"]
+expect@spanner:
+  same
+
+case all_plus_key
+read T cols=A,B:
+  all
+  [1, "a"]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["1","c"]
+  ["2","a"]
+  ["3","a"]
+  ["3","b"]
+expect@spanner:
+  same
+
+case limit
+read T cols=A,B limit=2:
+  all
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+expect@spanner:
+  same
+
+case limit_with_ranges
+read T cols=A,B limit=3:
+  range [2] .. [3]
+  range [1] .. [1]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["1","b"]
+  ["1","c"]
+expect@spanner:
+  same
+
+case column_order
+read T cols=V,B,A:
+  [1, "a"]
+expect:
+  columns: V INT64, B STRING, A INT64
+  ["10","a","1"]
+expect@spanner:
+  same
+
+case unknown_column
+read T cols=A,Nope:
+  all
+expect:
+  error: NOT_FOUND
+  message: Column not found in table T: Nope
+expect@spanner:
+  same
+
+case unknown_table
+read Nope cols=A:
+  all
+expect:
+  error: NOT_FOUND
+  message: Table not found: Nope
+expect@spanner:
+  same
+
+case no_columns_in_key_too_long
+read T cols=A:
+  [1, "a", "extra"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected 2 key parts, found 3 key parts. Supplied key: values { string_value: "1" } values { string_value: "a" } values { string_value: "extra" }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected: 2. Got: ["1","a","extra"]
+
+case key_wrong_type
+read T cols=A:
+  ["one", "a"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse one as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column A in table T: Expected INT64.
+
+case index_all
+read T cols=V,A,B index=TByV:
+  all
+expect:
+  columns: V INT64, A INT64, B STRING
+  [null,"1","c"]
+  ["5","3","b"]
+  ["10","1","a"]
+  ["10","2","a"]
+  ["20","1","b"]
+  ["30","3","a"]
+expect@spanner:
+  same
+
+case index_point
+read T cols=A,B index=TByV:
+  [10]
+expect:
+  columns: A INT64, B STRING
+  ["1","a"]
+  ["2","a"]
+expect@spanner:
+  same
+
+case index_null_key
+read T cols=A,B index=TByV:
+  [null]
+expect:
+  columns: A INT64, B STRING
+  ["1","c"]
+expect@spanner:
+  same
+
+case index_range
+read T cols=V,A,B index=TByV:
+  range [5] ..< [20]
+expect:
+  columns: V INT64, A INT64, B STRING
+  ["5","3","b"]
+  ["10","1","a"]
+  ["10","2","a"]
+expect@spanner:
+  same
+
+case index_full_key_point
+read T cols=A,B index=TByV:
+  [10, 2, "a"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for TByV. Expected 1 key parts, found 3 key parts. Supplied key: values { string_value: "10" } values { string_value: "2" } values { string_value: "a" }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for TByV. Expected: 1. Got: ["10","2","a"]
+
+case index_desc_order
+read T cols=V,W index=TByVDesc:
+  all
+expect:
+  columns: V INT64, W STRING
+  ["30","w"]
+  ["20",null]
+  ["10","x"]
+  ["10","z"]
+  ["5",null]
+  [null,"y"]
+expect@spanner:
+  same
+
+case index_desc_range
+read T cols=V index=TByVDesc:
+  range [20] .. [10]
+expect:
+  columns: V INT64
+  ["20"]
+  ["10"]
+  ["10"]
+expect@spanner:
+  same
+
+case index_storing_column
+read T cols=W index=TByVDesc:
+  range [30] .. [10]
+expect:
+  columns: W STRING
+  ["w"]
+  [null]
+  ["x"]
+  ["z"]
+expect@spanner:
+  same
+
+case index_non_covered_column
+read T cols=W index=TByV:
+  all
+expect:
+  error: NOT_FOUND
+  message: Index 'TByV' which indexes 'T' does not have a column named W. Reads with an index can only query columns present in the index (see https://cloud.google.com/spanner/docs/secondary-indexes#read-with-index).
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Reading non-indexed columns using an index is not supported. Consider adding W to the index using a STORING clause.
+
+case index_null_filtered
+read T cols=W,A,B index=TByW:
+  all
+expect:
+  columns: W STRING, A INT64, B STRING
+  ["w","3","a"]
+  ["x","1","a"]
+  ["y","1","c"]
+  ["z","2","a"]
+expect@spanner:
+  same
+
+case index_null_filtered_point
+read T cols=A,B index=TByW:
+  ["y"]
+expect:
+  columns: A INT64, B STRING
+  ["1","c"]
+expect@spanner:
+  same
+
+case index_composite_prefix
+read T cols=W,V index=TByWV:
+  [null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for TByWV. Expected 2 key parts, found 1 key parts. Supplied key: values { null_value: NULL_VALUE }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for TByWV. Expected: 2. Got: [null]
+
+case index_limit
+read T cols=V index=TByV limit=2:
+  all
+expect:
+  columns: V INT64
+  [null]
+  ["5"]
+expect@spanner:
+  same
+
+case index_unknown
+read T cols=A index=Nope:
+  all
+expect:
+  error: NOT_FOUND
+  message: No index 'Nope' was found for table 'T'.
+expect@spanner:
+  error: NOT_FOUND
+  message: Index not found on table T: Nope
+
+case index_wrong_table
+read T cols=A index=TByV:
+  [1]
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column V in table _Index_TByV: Expected INT64.

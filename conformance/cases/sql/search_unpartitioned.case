@@ -1,0 +1,527 @@
+# The search_functions.case queries that prod rejected with "no appropriate search index"
+# (its DocsSearch is PARTITION BY Flag), rerun over unpartitioned search indexes so prod's rquery,
+# dialect, SEARCH_SUBSTRING and SEARCH_NGRAMS semantics get recorded. Same data as search_functions.case.
+tags: sql search oracle2
+schema:
+  CREATE TABLE Docs (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Parts ARRAY<STRING(MAX)>,
+    Code STRING(MAX),
+    Amount INT64,
+    Ratio FLOAT64,
+    Flag BOOL,
+    Meta JSON,
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body, language_tag => 'no', content_type => 'text/plain', token_category => 'small')) HIDDEN,
+    Parts_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Parts)) HIDDEN,
+    Body_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Body, ngram_size_min => 2, ngram_size_max => 5, relative_search_types => ['word_prefix', 'value_suffix', 'phrase'])) HIDDEN,
+    Code_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Code, support_relative_search => true)) HIDDEN,
+    Code_Ngrams TOKENLIST AS (TOKENIZE_NGRAMS(Code)) HIDDEN,
+    Code_Token TOKENLIST AS (TOKEN(Code)) HIDDEN,
+    Amount_Tokens TOKENLIST AS (TOKENIZE_NUMBER(Amount, comparison_type => 'all', min => 0, max => 1000, granularity => 10)) HIDDEN,
+    Ratio_Tokens TOKENLIST AS (TOKENIZE_NUMBER(Ratio, algorithm => 'floatingpoint')) HIDDEN,
+    Flag_Tokens TOKENLIST AS (TOKENIZE_BOOL(Flag)) HIDDEN,
+    Meta_Tokens TOKENLIST AS (TOKENIZE_JSON(Meta)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DocsSearch ON Docs(Body_Tokens, Parts_Tokens, Body_Substr) STORING (Amount);
+  CREATE SEARCH INDEX DocsCodes ON Docs(Code_Token, Code_Substr, Code_Ngrams, Amount_Tokens, Flag_Tokens, Meta_Tokens)
+insert Docs cols=Id,Body,Parts,Code,Amount,Ratio,Flag,Meta:
+  [1, "Cloud Spanner emulator runs on Google Cloud", ["cloud spanner", "emulator"], "ABC-123/x", 10, 0.5, true, {"a": 1}]
+  [2, "The quick brown fox jumps over the lazy dog", ["quick fox", "lazy dog"], "XYZ.987", 500, 1.25, false, null]
+  [3, "Spanner: the emulator is not Spanner itself.", [], "abc", 999, -2.0, true, {"b": [1, 2]}]
+  [4, "", null, null, null, null, null, null]
+  [5, null, ["", "solo"], "", 0, 0.0, false, {}]
+
+
+case and_operator
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner emulator')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  same
+
+case or_pipe
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'fox|google')
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case not_operator
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner -cloud')
+expect:
+  columns: Id INT64
+  ["3"]
+expect@spanner:
+  same
+
+case double_negation
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '--cloud')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  columns: Id INT64
+
+case phrase_in_quotes
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '"lazy dog"')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case phrase_with_or_term
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '"quick brown|red fox"')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case around_with_phrase
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '"lazy dog" AROUND(4) jumps')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case around_with_not_is_internal
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '-fox AROUND(2) dog')
+expect:
+  error: INTERNAL
+  message: GOOGLESQL_RET_CHECK failure (backend/query/search/search_evaluator.cc:152) !in_phrase NOT nodes cannot appear in phrases
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid use of negation found in search query. Negation may not be used within AROUND.
+
+case around_needs_number
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(two) fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(two) fox`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  columns: Id INT64
+
+case around_missing_space
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(2)fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(2)fox`, has error(s): -Syntax error on column 16: Expecting '<SEPARATOR>
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case around_unclosed
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(2 fox')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(2 fox`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case parentheses_rejected
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner (cloud | fox)')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `spanner (cloud | fox)`, has error(s): -Encountered error on column 9 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+
+case trailing_separators_trimmed
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '!!emulator?? ')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  same
+
+case lowercase_or_is_a_term
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'fox or dog')
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case numbers_in_query
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, 'solo') OR SEARCH(Body_Tokens, '42')
+expect:
+  columns: Id INT64
+  ["5"]
+expect@spanner:
+  same
+
+case array_phrase_within_element
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, '"cloud spanner"')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case array_phrase_across_elements
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, '"spanner emulator"')
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case array_around_across_elements
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Parts_Tokens, 'spanner AROUND(5) emulator')
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case words_dialect
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'Spanner -emulator', dialect => 'words')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  same
+
+case words_phrase_dialect
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'the lazy dog', dialect => 'words_phrase')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case rquery_dialect_explicit
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'lazy OR cloud', dialect => 'rquery', enhance_query => true)
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case bad_dialect
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'lazy', dialect => 'klingon')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid dialect: klingon
+expect@spanner:
+  same
+
+case score_counts_repeats
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner cloud') AS s FROM Docs ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",3.0]
+  ["2",0.0]
+  ["3",2.0]
+  ["4",0.0]
+  ["5",0.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: ESCORER_SCORE: This function may only be used with a compatible SEARCH predicate
+
+case score_words_phrase
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner emulator', dialect => 'words_phrase') AS s FROM Docs WHERE Id IN (1, 3) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["3",0.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: ESCORER_SCORE: This function may only be used with a compatible SEARCH predicate
+
+case search_substring_default
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'pann')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  same
+
+case search_substring_multiple
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'emul span')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  same
+
+case search_substring_word_prefix
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'jum', relative_search_type => 'word_prefix')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case search_substring_value_suffix
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'cloud', relative_search_type => 'value_suffix')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_substring_phrase
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'lazy do', relative_search_type => 'phrase')
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case search_substring_unsupported_type
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'fox', relative_search_type => 'word_suffix')
+expect:
+  error: INVALID_ARGUMENT
+  message: The referenced substring TOKENLIST is not tokenized with 'word_suffix' support.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The referenced substring TOKENLIST is not tokenized with `word_suffix` support.
+
+case search_substring_invalid_type
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'fox', relative_search_type => 'middle')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid relative_search_type: 'middle'.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid relative_search_type: 'middle'. Valid relative_search_type values: ['value_prefix', 'value_suffix', 'word_prefix', 'word_suffix', 'phrase']
+
+case search_substring_all_types
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Code_Substr, '123', relative_search_type => 'word_suffix')
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_ngrams_on_substring_tokens
+query:
+  SELECT Id FROM Docs WHERE SEARCH_NGRAMS(Body_Substr, 'emulatr')
+expect:
+  columns: Id INT64
+  ["3"]
+  ["1"]
+expect@spanner:
+  same
+
+case tokenlist_concat_with_null
+query:
+  SELECT Id FROM Docs WHERE SEARCH(TOKENLIST_CONCAT([Body_Tokens, Parts_Tokens]), 'solo OR fox')
+expect:
+  columns: Id INT64
+  ["5"]
+  ["2"]
+expect@spanner:
+  same
+
+# The search_functions.case steps that called SEARCH-family functions in the SELECT list, which prod
+# rejects ("can only be used in a WHERE clause"), rewritten as WHERE predicates.
+
+case where_connected_phrase_order
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'spanner-emulator') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case where_connected_phrase_reversed
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'emulator-spanner') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case where_around_1
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'quick AROUND(1) fox') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case where_around_reversed
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'fox AROUND(3) quick') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case where_around_chain_mixed_distances
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'the AROUND(1) fox AROUND(9) dog') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case where_only_separators
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, '?!*') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case where_empty_and_null_sources
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'x') OR SEARCH(Parts_Tokens, 'solo') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+expect@spanner:
+  same
+
+case where_search_substring_short_term
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'o') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case where_search_substring_two_chars
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'on') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case where_search_substring_prefix_multiword
+query:
+  SELECT Id FROM Docs WHERE SEARCH_SUBSTRING(Body_Substr, 'lazy dog', relative_search_type => 'word_prefix') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case where_search_ngrams_code
+query:
+  SELECT Id FROM Docs WHERE SEARCH_NGRAMS(Code_Ngrams, 'abc') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+
+case where_search_ngrams_no_match
+query:
+  SELECT Id FROM Docs WHERE SEARCH_NGRAMS(Code_Ngrams, 'xyz987') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case where_null_query
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, @q) ORDER BY Id
+params:
+  @q STRING = null
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+# SCORE next to a matching SEARCH predicate, which prod requires.
+
+case score_with_search_predicate
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner cloud') AS s FROM Docs WHERE SEARCH(Body_Tokens, 'spanner cloud') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",2.9443299770355225]
+
+case score_or_query_with_search_predicate
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner OR cloud') AS s FROM Docs WHERE SEARCH(Body_Tokens, 'spanner OR cloud') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",3.0]
+  ["3",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",2.9443299770355225]
+  ["3",1.673880696296692]
+
+case score_repeats_single_term
+query:
+  SELECT Id, SCORE(Body_Tokens, 'spanner') AS s FROM Docs WHERE SEARCH(Body_Tokens, 'spanner') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["3",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["3",1.6450823545455933]
+
+case score_ngrams_with_search_ngrams
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Substr, 'emulatr') AS s FROM Docs WHERE SEARCH_NGRAMS(Body_Substr, 'emulatr') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.10256410256410256]
+  ["3",0.10810810810810811]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.11904761904761904]
+  ["3",0.13157894736842105]

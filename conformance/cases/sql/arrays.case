@@ -1,0 +1,268 @@
+tags: sql array
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case unnest_with_offset_zip
+query:
+  SELECT signal_type, w, h
+  FROM UNNEST(@types) AS signal_type WITH OFFSET AS i
+  JOIN UNNEST(@weights) AS w WITH OFFSET AS j ON i = j
+  JOIN UNNEST(@half_lives) AS h WITH OFFSET AS k ON i = k
+params:
+  @types ARRAY<STRING> = ["news", "pep"]
+  @weights ARRAY<FLOAT64> = [0.5, 2.0]
+  @half_lives ARRAY<FLOAT64> = [30.0, 365.0]
+expect:
+  columns: signal_type STRING, w FLOAT64, h FLOAT64
+  ["pep",2.0,365.0]
+  ["news",0.5,30.0]
+
+case unnest_param_as_rows
+query:
+  SELECT id FROM UNNEST(@ids) AS id ORDER BY id
+params:
+  @ids ARRAY<STRING> = ["b", "a", "c"]
+expect:
+  columns: id STRING
+  ["a"]
+  ["b"]
+  ["c"]
+
+case unnest_with_offset_order
+query:
+  SELECT x, off FROM UNNEST(@xs) AS x WITH OFFSET AS off ORDER BY off
+params:
+  @xs ARRAY<INT64> = [30, 10, 20]
+expect:
+  columns: x INT64, off INT64
+  ["30","0"]
+  ["10","1"]
+  ["20","2"]
+
+case unnest_struct_param
+query:
+  SELECT r.id, r.v FROM UNNEST(@rows) AS r ORDER BY r.id
+params:
+  @rows ARRAY<STRUCT<id STRING, v INT64>> = [["x", 1], ["y", null]]
+expect:
+  columns: id STRING, v INT64
+  ["x","1"]
+  ["y",null]
+
+case struct_param_fields
+query:
+  SELECT @p.id AS id, @p.score AS score
+params:
+  @p STRUCT<id STRING, score FLOAT64> = ["a", 1.5]
+expect:
+  columns: id STRING, score FLOAT64
+  ["a",1.5]
+
+case unnest_struct_join_table
+query:
+  SELECT k.team, k.id, e.Name FROM UNNEST(@keys) AS k
+  JOIN Entities e ON e.TeamId = k.team AND e.EntityId = k.id
+params:
+  @keys ARRAY<STRUCT<team STRING, id STRING>> = [["t1", "e1"], ["t2", "e5"], ["t3", "zz"]]
+expect:
+  columns: team STRING, id STRING, Name STRING
+  ["t2","e5","Ola Nordmann"]
+  ["t1","e1","Acme AS"]
+
+case array_select_as_struct
+query:
+  SELECT e.EntityId,
+    ARRAY(SELECT AS STRUCT r.ReviewId, r.Outcome FROM Reviews r
+          WHERE r.TeamId = e.TeamId AND r.EntityId = e.EntityId ORDER BY r.ReviewId) AS reviews
+  FROM Entities e WHERE e.TeamId = 't1'
+expect:
+  columns: EntityId STRING, reviews ARRAY<STRUCT<ReviewId INT64, Outcome STRING>>
+  ["e3",[["1","rejected"]]]
+  ["e1",[["1","approved"],["2",null]]]
+  ["e4",[]]
+  ["e2",[]]
+
+case array_subquery_scalar
+query:
+  SELECT t.TeamId, ARRAY(SELECT e.EntityId FROM Entities e WHERE e.TeamId = t.TeamId ORDER BY e.EntityId) AS ids FROM Teams t
+expect:
+  columns: TeamId STRING, ids ARRAY<STRING>
+  ["t1",["e1","e2","e3","e4"]]
+  ["t2",["e1","e5"]]
+  ["t3",[]]
+
+case typed_empty_struct_array
+query:
+  SELECT ARRAY(SELECT CAST(NULL AS STRUCT<id STRING, name STRING, created TIMESTAMP>) LIMIT 0) AS empty
+expect:
+  columns: empty ARRAY<STRUCT<id STRING, name STRING, created TIMESTAMP>>
+  [[]]
+
+case exists_unnest_column
+query:
+  SELECT EntityId FROM Entities e
+  WHERE EXISTS (SELECT 1 FROM UNNEST(e.Aliases) a WHERE STARTS_WITH(LOWER(a), 'acme'))
+expect:
+  columns: EntityId STRING
+  ["e1"]
+  ["e1"]
+
+case array_length
+query:
+  SELECT EntityId, ARRAY_LENGTH(Aliases) AS n FROM Entities WHERE TeamId = 't1'
+expect:
+  columns: EntityId STRING, n INT64
+  ["e3","1"]
+  ["e1","2"]
+  ["e4",null]
+  ["e2","0"]
+
+case array_empty_or_null
+query:
+  SELECT EntityId FROM Entities WHERE Aliases IS NULL OR ARRAY_LENGTH(Aliases) = 0
+expect:
+  columns: EntityId STRING
+  ["e4"]
+  ["e2"]
+
+case array_includes
+query:
+  SELECT EntityId FROM Entities WHERE ARRAY_INCLUDES(Aliases, @v)
+params:
+  @v STRING = "ACME"
+expect:
+  columns: EntityId STRING
+  ["e1"]
+  ["e1"]
+
+case array_includes_any
+query:
+  SELECT TeamId, EntityId FROM Entities WHERE ARRAY_INCLUDES_ANY(Aliases, @vals)
+params:
+  @vals ARRAY<STRING> = ["BH", "Ola"]
+expect:
+  columns: TeamId STRING, EntityId STRING
+  ["t1","e3"]
+  ["t2","e5"]
+
+case array_concat_reverse
+query:
+  SELECT ARRAY_CONCAT([1, 2], [3], @a) AS c, ARRAY_REVERSE([1, 2, 3]) AS r
+params:
+  @a ARRAY<INT64> = [4]
+expect:
+  columns: c ARRAY<INT64>, r ARRAY<INT64>
+  [["1","2","3","4"],["3","2","1"]]
+
+case array_offset_ordinal
+query:
+  SELECT a[OFFSET(0)] AS o, a[ORDINAL(1)] AS d, a[SAFE_OFFSET(9)] AS s FROM (SELECT [10, 20] AS a)
+expect:
+  columns: o INT64, d INT64, s INT64
+  ["10","10",null]
+
+case array_offset_out_of_range
+query:
+  SELECT [10, 20][OFFSET(5)]
+expect:
+  error: OUT_OF_RANGE
+  message: Array index 5 is out of bounds
+
+case coalesce_empty_array
+query:
+  SELECT EntityId, COALESCE(Aliases, []) AS aliases FROM Entities WHERE TeamId = 't1' AND EntityId = 'e4'
+expect:
+  columns: EntityId STRING, aliases ARRAY<STRING>
+  ["e4",[]]
+
+case array_to_string_generate
+query:
+  SELECT ARRAY_TO_STRING(['a', NULL, 'c'], '-', 'x') AS s, GENERATE_ARRAY(1, 10, 3) AS g
+expect:
+  columns: s STRING, g ARRAY<INT64>
+  ["a-x-c",["1","4","7","10"]]
+
+case array_with_null_element_param
+query:
+  SELECT x FROM UNNEST(@xs) AS x
+params:
+  @xs ARRAY<INT64> = [1, null]
+expect:
+  columns: x INT64
+  [null]
+  ["1"]
+
+case unnest_single_row
+query:
+  SELECT 'x' AS v FROM UNNEST([1])
+expect:
+  columns: v STRING
+  ["x"]
+

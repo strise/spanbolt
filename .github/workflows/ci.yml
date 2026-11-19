@@ -1,0 +1,53 @@
+# Draft: not run yet. The PR gate: what scripts/gate.sh runs locally.
+# The GoogleSQL shim comes from the release assets pinned in native/googlesql-shim.env, so these
+# jobs need them published (workflow shim.yml) and the repository public (or a token for curl).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      SPANBOLT_CACHE_DIR: ${{ github.workspace }}/.shim-cache
+      # gate.sh compares recorded conformance expectations against this ref.
+      GATE_BASE: origin/${{ github.base_ref || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache the prebuilt GoogleSQL shim
+        uses: actions/cache@v4
+        with:
+          path: .shim-cache
+          key: shim-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/googlesql-shim.env') }}
+      - name: Gate (fmt, clippy, tests, conformance in prod and emulator modes)
+        run: scripts/gate.sh
+      - name: Upload gate output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-${{ matrix.os }}
+          path: .mcp-output/gate

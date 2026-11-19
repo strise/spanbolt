@@ -1,0 +1,3568 @@
+# Data points for fitting prod's SCORE and SCORE_NGRAMS values, and for TOKENIZE_NGRAMS case
+# handling. Term frequency (rows 1-4), document length (rows 5-8, 13), terms per query, repeated
+# query terms, OR/AND, phrases, options and corpus size (score_corpus_* cases insert more rows).
+# Prod needs a SEARCH predicate next to SCORE, so every SCORE query repeats its query in WHERE.
+tags: sql search oracle3
+schema:
+  CREATE TABLE S (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Code STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+    Body_Tri TOKENLIST AS (TOKENIZE_NGRAMS(Body, ngram_size_min => 3, ngram_size_max => 3)) HIDDEN,
+    Body_Ngrams TOKENLIST AS (TOKENIZE_NGRAMS(Body)) HIDDEN,
+    Body_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Body)) HIDDEN,
+    Code_Ngrams TOKENLIST AS (TOKENIZE_NGRAMS(Code)) HIDDEN,
+    Code_Tri TOKENLIST AS (TOKENIZE_NGRAMS(Code, ngram_size_min => 3, ngram_size_max => 3)) HIDDEN,
+    Code_Substr TOKENLIST AS (TOKENIZE_SUBSTRING(Code)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX SSearch ON S(Body_Tokens, Body_Tri, Body_Ngrams, Body_Substr);
+  CREATE SEARCH INDEX SCodes ON S(Code_Ngrams, Code_Tri, Code_Substr)
+insert S cols=Id,Body,Code:
+  [1, "alpha", "ABC"]
+  [2, "alpha alpha", "abc"]
+  [3, "alpha alpha alpha", "Abc"]
+  [4, "alpha alpha alpha alpha", "ABC-123/x"]
+  [5, "alpha beta", "abcdef"]
+  [6, "alpha beta beta", "ABCDEF"]
+  [7, "alpha beta gamma", "AbCdEf"]
+  [8, "alpha one two three four five six seven eight nine ten eleven twelve thirteen fourteen", "xyz"]
+  [9, "beta gamma", "XYZ"]
+  [10, "gamma delta", null]
+  [11, "delta", null]
+  [12, "epsilon zeta eta theta", null]
+  [13, "one two three four five six seven alpha eight nine ten", null]
+
+# --- SCORE: term frequency and document length
+
+case score_one_term
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+
+case score_one_term_rare
+query:
+  SELECT Id, SCORE(Body_Tokens, 'delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["10",1.0]
+  ["11",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["10",1.2588917016983032]
+  ["11",1.2588917016983032]
+
+case score_one_term_unique
+query:
+  SELECT Id, SCORE(Body_Tokens, 'epsilon') AS s FROM S WHERE SEARCH(Body_Tokens, 'epsilon') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["12",1.2588917016983032]
+
+case score_one_term_beta
+query:
+  SELECT Id, SCORE(Body_Tokens, 'beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'beta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",1.0]
+  ["6",2.0]
+  ["7",1.0]
+  ["9",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",1.2588917016983032]
+  ["6",1.6450823545455933]
+  ["7",1.2588917016983032]
+  ["9",1.2588917016983032]
+
+case score_upper_case_query
+query:
+  SELECT Id, SCORE(Body_Tokens, 'ALPHA') AS s FROM S WHERE SEARCH(Body_Tokens, 'ALPHA') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+
+# --- SCORE: number of query terms, repeats, operators
+
+case score_two_terms_and
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",3.2661805152893066]
+  ["6",3.669611930847168]
+  ["7",3.2661805152893066]
+
+case score_three_terms_and
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta gamma') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta gamma') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["7",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["7",5.338847637176514]
+
+case score_two_terms_or
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR beta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+  ["8",1.0]
+  ["9",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2704493999481201]
+  ["2",1.673880696296692]
+  ["3",1.995731234550476]
+  ["4",2.263509511947632]
+  ["5",2.5408987998962402]
+  ["6",2.9443299770355225]
+  ["7",2.5408987998962402]
+  ["8",1.2704493999481201]
+  ["9",1.2704493999481201]
+  ["13",1.2704493999481201]
+
+case score_three_terms_or
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR beta OR gamma') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR beta OR gamma') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",2.0]
+  ["6",3.0]
+  ["7",3.0]
+  ["8",1.0]
+  ["9",2.0]
+  ["10",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2796483039855957]
+  ["2",1.696801781654358]
+  ["3",2.029599666595459]
+  ["4",2.306485891342163]
+  ["5",2.5592966079711914]
+  ["6",2.976450204849243]
+  ["7",3.838944911956787]
+  ["8",1.2796483039855957]
+  ["9",2.5592966079711914]
+  ["10",1.2796483039855957]
+  ["13",1.2796483039855957]
+
+case score_or_missing_term
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zzzz') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zzzz') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2704493999481201]
+  ["2",1.673880696296692]
+  ["3",1.995731234550476]
+  ["4",2.263509511947632]
+  ["5",1.2704493999481201]
+  ["6",1.2704493999481201]
+  ["7",1.2704493999481201]
+  ["8",1.2704493999481201]
+  ["13",1.2704493999481201]
+
+case score_or_two_missing_terms
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zzzz OR yyyy') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zzzz OR yyyy') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2796483039855957]
+  ["2",1.696801781654358]
+  ["3",2.029599666595459]
+  ["4",2.306485891342163]
+  ["5",1.2796483039855957]
+  ["6",1.2796483039855957]
+  ["7",1.2796483039855957]
+  ["8",1.2796483039855957]
+  ["13",1.2796483039855957]
+
+case score_or_rare_term
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["10",1.0]
+  ["11",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2704493999481201]
+  ["2",1.673880696296692]
+  ["3",1.995731234550476]
+  ["4",2.263509511947632]
+  ["5",1.2704493999481201]
+  ["6",1.2704493999481201]
+  ["7",1.2704493999481201]
+  ["8",1.2704493999481201]
+  ["10",1.2704493999481201]
+  ["11",1.2704493999481201]
+  ["13",1.2704493999481201]
+
+case score_repeated_query_term
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",2.0]
+  ["2",4.0]
+  ["3",6.0]
+  ["4",8.0]
+  ["5",2.0]
+  ["6",2.0]
+  ["7",2.0]
+  ["8",2.0]
+  ["13",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",2.5408987998962402]
+  ["2",3.937390089035034]
+  ["3",4.867130756378174]
+  ["4",5.574248313903809]
+  ["5",2.5408987998962402]
+  ["6",2.5408987998962402]
+  ["7",2.5408987998962402]
+  ["8",2.5408987998962402]
+  ["13",2.5408987998962402]
+
+case score_repeated_query_term_three
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha alpha alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha alpha alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",3.0]
+  ["2",6.0]
+  ["3",9.0]
+  ["4",12.0]
+  ["5",3.0]
+  ["6",3.0]
+  ["7",3.0]
+  ["8",3.0]
+  ["13",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",3.838944911956787]
+  ["2",6.309773921966553]
+  ["3",7.899704933166504]
+  ["4",9.08515739440918]
+  ["5",3.838944911956787]
+  ["6",3.838944911956787]
+  ["7",3.838944911956787]
+  ["8",3.838944911956787]
+  ["13",3.838944911956787]
+
+case score_phrase
+query:
+  SELECT Id, SCORE(Body_Tokens, '"alpha beta"') AS s FROM S WHERE SEARCH(Body_Tokens, '"alpha beta"') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",3.2661805152893066]
+  ["6",3.669611930847168]
+  ["7",3.2661805152893066]
+
+case score_negation
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha -beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha -beta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+
+case score_and_or_mixed
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha (beta OR delta)') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha (beta OR delta)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha (beta OR delta)`, has error(s): -Encountered error on column 7 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",3.3092479705810547]
+  ["6",3.7264013290405273]
+  ["7",3.3092479705810547]
+
+case score_search_differs_from_score
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2704493999481201]
+  ["2",1.673880696296692]
+  ["3",1.995731234550476]
+  ["4",2.263509511947632]
+  ["5",3.2661805152893066]
+  ["6",3.669611930847168]
+  ["7",3.2661805152893066]
+  ["8",1.2704493999481201]
+  ["13",1.2704493999481201]
+
+# --- SCORE: options
+
+case score_enhance_query
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5597055554389954]
+  ["2",0.6922320127487183]
+  ["3",0.7979593276977539]
+  ["4",0.8859239816665649]
+  ["5",0.5597055554389954]
+  ["6",0.5597055554389954]
+  ["7",0.5597055554389954]
+  ["8",0.5597055554389954]
+  ["13",0.5597055554389954]
+
+case score_enhance_query_two_terms
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",1.3116873502731323]
+  ["6",1.4584637880325317]
+  ["7",1.3116873502731323]
+
+case score_dialect_words
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta', dialect => 'words') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta', dialect => 'words') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",3.2661805152893066]
+  ["6",3.669611930847168]
+  ["7",3.2661805152893066]
+
+case score_dialect_words_phrase
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta', dialect => 'words_phrase') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta', dialect => 'words_phrase') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",3.2661805152893066]
+  ["6",3.669611930847168]
+  ["7",3.2661805152893066]
+
+case score_language_tag
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha', language_tag => 'en') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha', language_tag => 'en') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+
+# --- SCORE: corpus size and document frequency (IDF check)
+
+case score_corpus_more_docs_without_term
+insert S cols=Id,Body:
+  [101, "filler"]
+  [102, "filler"]
+  [103, "filler"]
+  [104, "filler"]
+  [105, "filler"]
+  [106, "filler"]
+  [107, "filler"]
+  [108, "filler"]
+  [109, "filler"]
+  [110, "filler"]
+  [111, "filler"]
+  [112, "filler"]
+  [113, "filler"]
+  [114, "filler"]
+  [115, "filler"]
+  [116, "filler"]
+  [117, "filler"]
+  [118, "filler"]
+  [119, "filler"]
+  [120, "filler"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["10",1.0]
+  ["11",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["10",1.2588917016983032]
+  ["11",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["10",1.0]
+  ["11",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2704493999481201]
+  ["2",1.673880696296692]
+  ["3",1.995731234550476]
+  ["4",2.263509511947632]
+  ["5",1.2704493999481201]
+  ["6",1.2704493999481201]
+  ["7",1.2704493999481201]
+  ["8",1.2704493999481201]
+  ["10",1.2704493999481201]
+  ["11",1.2704493999481201]
+  ["13",1.2704493999481201]
+
+case score_corpus_more_docs_with_term
+insert S cols=Id,Body:
+  [201, "delta filler"]
+  [202, "delta filler"]
+  [203, "delta filler"]
+  [204, "delta filler"]
+  [205, "delta filler"]
+  [206, "delta filler"]
+  [207, "delta filler"]
+  [208, "delta filler"]
+  [209, "delta filler"]
+  [210, "delta filler"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["10",1.0]
+  ["11",1.0]
+  ["201",1.0]
+  ["202",1.0]
+  ["203",1.0]
+  ["204",1.0]
+  ["205",1.0]
+  ["206",1.0]
+  ["207",1.0]
+  ["208",1.0]
+  ["209",1.0]
+  ["210",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["10",1.2588917016983032]
+  ["11",1.2588917016983032]
+  ["201",1.2588917016983032]
+  ["202",1.2588917016983032]
+  ["203",1.2588917016983032]
+  ["204",1.2588917016983032]
+  ["205",1.2588917016983032]
+  ["206",1.2588917016983032]
+  ["207",1.2588917016983032]
+  ["208",1.2588917016983032]
+  ["209",1.2588917016983032]
+  ["210",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["10",1.0]
+  ["11",1.0]
+  ["13",1.0]
+  ["201",1.0]
+  ["202",1.0]
+  ["203",1.0]
+  ["204",1.0]
+  ["205",1.0]
+  ["206",1.0]
+  ["207",1.0]
+  ["208",1.0]
+  ["209",1.0]
+  ["210",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2704493999481201]
+  ["2",1.673880696296692]
+  ["3",1.995731234550476]
+  ["4",2.263509511947632]
+  ["5",1.2704493999481201]
+  ["6",1.2704493999481201]
+  ["7",1.2704493999481201]
+  ["8",1.2704493999481201]
+  ["10",1.2704493999481201]
+  ["11",1.2704493999481201]
+  ["13",1.2704493999481201]
+  ["201",1.2704493999481201]
+  ["202",1.2704493999481201]
+  ["203",1.2704493999481201]
+  ["204",1.2704493999481201]
+  ["205",1.2704493999481201]
+  ["206",1.2704493999481201]
+  ["207",1.2704493999481201]
+  ["208",1.2704493999481201]
+  ["209",1.2704493999481201]
+  ["210",1.2704493999481201]
+
+case score_corpus_small
+delete S:
+  range [5] .. [13]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+delete S:
+  range [2] .. [4]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+
+# --- SCORE_NGRAMS over TOKENIZE_NGRAMS (3, 3), default TOKENIZE_NGRAMS and TOKENIZE_SUBSTRING
+
+case score_ngrams_tri_word
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'alpha') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",0.375]
+  ["6",0.3333333333333333]
+  ["7",0.21428571428571427]
+  ["8",0.045454545454545456]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.06]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.6666666666666666]
+  ["3",0.6666666666666666]
+  ["4",0.6666666666666666]
+  ["5",0.4166666666666667]
+  ["6",0.38461538461538464]
+  ["7",0.2777777777777778]
+  ["8",0.07142857142857142]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.05357142857142857]
+
+case score_ngrams_tri_typo
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'alpah') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.2]
+  ["2",0.125]
+  ["3",0.125]
+  ["4",0.125]
+  ["5",0.1]
+  ["6",0.09090909090909091]
+  ["7",0.0625]
+  ["8",0.014705882352941176]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.019230769230769232]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.3333333333333333]
+  ["2",0.25]
+  ["3",0.25]
+  ["4",0.25]
+  ["5",0.21428571428571427]
+  ["6",0.2]
+  ["7",0.15]
+  ["8",0.041666666666666664]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.017241379310344827]
+
+case score_ngrams_tri_two_words
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'alpha beta') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.375]
+  ["2",0.4]
+  ["3",0.4]
+  ["4",0.4]
+  ["5",1.0]
+  ["6",0.8888888888888888]
+  ["7",0.5714285714285714]
+  ["8",0.05714285714285714]
+  ["9",0.14285714285714285]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.041666666666666664]
+  ["13",0.07407407407407407]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.4166666666666667]
+  ["2",0.42857142857142855]
+  ["3",0.42857142857142855]
+  ["4",0.42857142857142855]
+  ["5",1.0]
+  ["6",0.9166666666666666]
+  ["7",0.5555555555555556]
+  ["8",0.08108108108108109]
+  ["9",0.1]
+  ["10",0.045454545454545456]
+  ["11",0.0625]
+  ["12",0.06896551724137931]
+  ["13",0.06666666666666667]
+
+case score_ngrams_tri_upper
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'ALPHA') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",0.375]
+  ["6",0.3333333333333333]
+  ["7",0.21428571428571427]
+  ["8",0.045454545454545456]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.06]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.0]
+  ["2",0.0]
+  ["3",0.0]
+  ["4",0.0]
+  ["5",0.0]
+  ["6",0.0]
+  ["7",0.0]
+  ["8",0.0]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.0]
+
+case score_ngrams_tri_short_query
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'al') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.0]
+  ["2",0.0]
+  ["3",0.0]
+  ["4",0.0]
+  ["5",0.0]
+  ["6",0.0]
+  ["7",0.0]
+  ["8",0.0]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.2857142857142857]
+  ["2",0.2]
+  ["3",0.2]
+  ["4",0.2]
+  ["5",0.16666666666666666]
+  ["6",0.15384615384615385]
+  ["7",0.1111111111111111]
+  ["8",0.02857142857142857]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.0]
+
+case score_ngrams_default_sizes
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Ngrams, 'alpha') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",0.375]
+  ["6",0.3333333333333333]
+  ["7",0.21428571428571427]
+  ["8",0.045454545454545456]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.06]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.6666666666666666]
+  ["3",0.6666666666666666]
+  ["4",0.6666666666666666]
+  ["5",0.4166666666666667]
+  ["6",0.38461538461538464]
+  ["7",0.2777777777777778]
+  ["8",0.07142857142857142]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.05357142857142857]
+
+case score_ngrams_default_sizes_two_words
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Ngrams, 'alpha beta') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.375]
+  ["2",0.4]
+  ["3",0.4]
+  ["4",0.4]
+  ["5",1.0]
+  ["6",0.8888888888888888]
+  ["7",0.5714285714285714]
+  ["8",0.05714285714285714]
+  ["9",0.14285714285714285]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.041666666666666664]
+  ["13",0.07407407407407407]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.4166666666666667]
+  ["2",0.42857142857142855]
+  ["3",0.42857142857142855]
+  ["4",0.42857142857142855]
+  ["5",1.0]
+  ["6",0.9166666666666666]
+  ["7",0.5555555555555556]
+  ["8",0.08108108108108109]
+  ["9",0.1]
+  ["10",0.045454545454545456]
+  ["11",0.0625]
+  ["12",0.06896551724137931]
+  ["13",0.06666666666666667]
+
+case score_ngrams_substring_word
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Substr, 'alpha') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",0.375]
+  ["6",0.3333333333333333]
+  ["7",0.21428571428571427]
+  ["8",0.045454545454545456]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.06]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.8571428571428571]
+  ["3",0.8571428571428571]
+  ["4",0.8571428571428571]
+  ["5",0.5454545454545454]
+  ["6",0.5454545454545454]
+  ["7",0.35294117647058826]
+  ["8",0.08823529411764706]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.09433962264150944]
+
+case score_ngrams_substring_prefix
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Substr, 'alph') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.6666666666666666]
+  ["2",0.3333333333333333]
+  ["3",0.3333333333333333]
+  ["4",0.3333333333333333]
+  ["5",0.25]
+  ["6",0.2222222222222222]
+  ["7",0.14285714285714285]
+  ["8",0.030303030303030304]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.04]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5714285714285714]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",0.3333333333333333]
+  ["6",0.3333333333333333]
+  ["7",0.2222222222222222]
+  ["8",0.057971014492753624]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.05555555555555555]
+
+case score_ngrams_substring_two_words
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Substr, 'alpha beta') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.375]
+  ["2",0.4]
+  ["3",0.4]
+  ["4",0.4]
+  ["5",1.0]
+  ["6",0.8888888888888888]
+  ["7",0.5714285714285714]
+  ["8",0.05714285714285714]
+  ["9",0.14285714285714285]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.041666666666666664]
+  ["13",0.07407407407407407]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5454545454545454]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",0.6470588235294118]
+  ["8",0.0821917808219178]
+  ["9",0.2222222222222222]
+  ["10",0.045454545454545456]
+  ["11",0.0625]
+  ["12",0.07142857142857142]
+  ["13",0.08620689655172414]
+
+case score_ngrams_algorithm_trigrams
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'alpha', algorithm => 'trigrams') AS s FROM S ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.5]
+  ["3",0.5]
+  ["4",0.5]
+  ["5",0.375]
+  ["6",0.3333333333333333]
+  ["7",0.21428571428571427]
+  ["8",0.045454545454545456]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.06]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.6666666666666666]
+  ["3",0.6666666666666666]
+  ["4",0.6666666666666666]
+  ["5",0.4166666666666667]
+  ["6",0.38461538461538464]
+  ["7",0.2777777777777778]
+  ["8",0.07142857142857142]
+  ["9",0.0]
+  ["10",0.0]
+  ["11",0.0]
+  ["12",0.0]
+  ["13",0.05357142857142857]
+
+case score_ngrams_with_search_ngrams
+query:
+  SELECT Id, SCORE_NGRAMS(Body_Tri, 'alpha beta') AS s FROM S WHERE SEARCH_NGRAMS(Body_Tri, 'alpha beta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.375]
+  ["2",0.4]
+  ["3",0.4]
+  ["4",0.4]
+  ["5",1.0]
+  ["6",0.8888888888888888]
+  ["7",0.5714285714285714]
+  ["8",0.05714285714285714]
+  ["9",0.14285714285714285]
+  ["13",0.07407407407407407]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.4166666666666667]
+  ["2",0.42857142857142855]
+  ["3",0.42857142857142855]
+  ["4",0.42857142857142855]
+  ["5",1.0]
+  ["6",0.9166666666666666]
+  ["7",0.5555555555555556]
+  ["8",0.08108108108108109]
+  ["9",0.1]
+  ["13",0.06666666666666667]
+
+# --- TOKENIZE_NGRAMS case handling: Code values are ABC, abc, Abc, ABC-123/x, abcdef, ABCDEF, AbCdEf, xyz, XYZ
+
+case ngrams_case_lower_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Ngrams, 'abc') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["5"]
+
+case ngrams_case_upper_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Ngrams, 'ABC') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["6"]
+
+case ngrams_case_mixed_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Ngrams, 'Abc') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+
+case ngrams_case_long_lower_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Ngrams, 'abcdef') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["5"]
+
+case ngrams_case_long_upper_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Ngrams, 'ABCDEF') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["6"]
+
+case ngrams_case_tri_lower_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Tri, 'abcdef') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["5"]
+
+case ngrams_case_tri_upper_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Tri, 'ABCDEF') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["6"]
+
+case ngrams_case_xyz_upper_query
+query:
+  SELECT Id FROM S WHERE SEARCH_NGRAMS(Code_Ngrams, 'XYZ') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["8"]
+  ["9"]
+expect@spanner:
+  columns: Id INT64
+  ["9"]
+
+case ngrams_case_score_lower
+query:
+  SELECT Id, SCORE_NGRAMS(Code_Tri, 'abcdef') AS s FROM S WHERE Id <= 9 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.25]
+  ["2",0.25]
+  ["3",0.25]
+  ["4",0.1]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",0.0]
+  ["9",0.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.0]
+  ["2",0.375]
+  ["3",0.0]
+  ["4",0.0]
+  ["5",1.0]
+  ["6",0.0]
+  ["7",0.0]
+  ["8",0.0]
+  ["9",0.0]
+
+case ngrams_case_score_upper
+query:
+  SELECT Id, SCORE_NGRAMS(Code_Tri, 'ABCDEF') AS s FROM S WHERE Id <= 9 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.25]
+  ["2",0.25]
+  ["3",0.25]
+  ["4",0.1]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",0.0]
+  ["9",0.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.375]
+  ["2",0.0]
+  ["3",0.1]
+  ["4",0.21428571428571427]
+  ["5",0.0]
+  ["6",1.0]
+  ["7",0.07692307692307693]
+  ["8",0.0]
+  ["9",0.0]
+
+case ngrams_case_score_default_sizes
+query:
+  SELECT Id, SCORE_NGRAMS(Code_Ngrams, 'ABC') AS s FROM S WHERE Id <= 9 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",1.0]
+  ["3",1.0]
+  ["4",0.14285714285714285]
+  ["5",0.25]
+  ["6",0.25]
+  ["7",0.25]
+  ["8",0.0]
+  ["9",0.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",0.0]
+  ["3",0.14285714285714285]
+  ["4",0.2727272727272727]
+  ["5",0.0]
+  ["6",0.375]
+  ["7",0.1]
+  ["8",0.0]
+  ["9",0.0]
+
+case substring_case_upper_query
+query:
+  SELECT Id FROM S WHERE SEARCH_SUBSTRING(Code_Substr, 'ABC') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+expect@spanner:
+  same
+
+case substring_case_score_upper
+query:
+  SELECT Id, SCORE_NGRAMS(Code_Substr, 'ABCDEF') AS s FROM S WHERE Id <= 9 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.25]
+  ["2",0.25]
+  ["3",0.25]
+  ["4",0.1]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",0.0]
+  ["9",0.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.375]
+  ["2",0.375]
+  ["3",0.375]
+  ["4",0.21428571428571427]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",0.0]
+  ["9",0.0]
+
+# DEBUG_TOKENLIST shows prod's token lists directly (the emulator has no such function).
+case debug_tokenlist_ngrams
+query:
+  SELECT Id, DEBUG_TOKENLIST(Code_Ngrams) AS t FROM S WHERE Id IN (1, 4, 7) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[A, AB, ABC, B, BC, C]"]
+  ["4","[-, -1, -12, /, /x, 1, 12, 123, 2, 23, 23/, 3, 3/, 3/x, A, AB, ABC, ABC-, B, BC, BC-, C, C-, C-1, x], BC-1, C-12, -123, 123/, 23/x"]
+  ["7","[A, Ab, AbC, AbCd, C, Cd, CdE, E, Ef, b, bC, bCd, d, dE, dEf, f], bCdE, CdEf"]
+
+case debug_tokenlist_tri
+query:
+  SELECT Id, DEBUG_TOKENLIST(Body_Tri) AS t FROM S WHERE Id IN (1, 5) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","alp, lph, pha"]
+  ["5","alp, lph, pha, \"ha \", \"a b\", \" be\", bet, eta"]
+
+case debug_tokenlist_substring
+query:
+  SELECT Id, DEBUG_TOKENLIST(Body_Substr) AS t FROM S WHERE Id IN (1, 5) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[a, al, alp, h, ha, l, lp, lph, p, ph, pha], alph, lpha"]
+  ["5","[a, al, alp, b, be, bet, e, et, eta, h, ha, l, lp, lph, p, ph, pha, t, ta], alph, lpha, <gap(1)>, beta"]
+
+case debug_tokenlist_fulltext
+query:
+  SELECT Id, DEBUG_TOKENLIST(Body_Tokens) AS t FROM S WHERE Id IN (2, 5) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["2","alpha(boundary), alpha(end_boundary)"]
+  ["5","alpha(boundary), beta(end_boundary)"]
+
+# --- Follow-up (oracle4): SCORE for 4+ query terms, larger term frequencies, gaps between
+# query terms, and whether short or common words (AS, the, of) count as query terms.
+
+case score_many_terms_or
+tags: oracle4
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2871437072753906]
+  ["2",1.7154781818389893]
+  ["3",2.0571961402893066]
+  ["4",2.341503858566284]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2933688163757324]
+  ["2",1.7309892177581787]
+  ["3",2.08011531829834]
+  ["4",2.370586633682251]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2986211776733398]
+  ["2",1.7440766096115112]
+  ["3",2.0994532108306885]
+  ["4",2.395124912261963]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5 OR zz6 OR zz7') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5 OR zz6 OR zz7') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.3069965839385986]
+  ["2",1.76494562625885]
+  ["3",2.1302895545959473]
+  ["4",2.4342539310455322]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5 OR zz6 OR zz7 OR zz8 OR zz9 OR zz10 OR zz11') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5 OR zz6 OR zz7 OR zz8 OR zz9 OR zz10 OR zz11') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.3184013366699219]
+  ["2",1.793363094329834]
+  ["3",2.1722793579101562]
+  ["4",2.4875359535217285]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5 OR zz6 OR zz7 OR zz8 OR zz9 OR zz10 OR zz11 OR zz12 OR zz13 OR zz14 OR zz15 OR zz16 OR zz17 OR zz18 OR zz19 OR zz20 OR zz21 OR zz22 OR zz23') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zz1 OR zz2 OR zz3 OR zz4 OR zz5 OR zz6 OR zz7 OR zz8 OR zz9 OR zz10 OR zz11 OR zz12 OR zz13 OR zz14 OR zz15 OR zz16 OR zz17 OR zz18 OR zz19 OR zz20 OR zz21 OR zz22 OR zz23') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.3348420858383179]
+  ["2",1.8343284130096436]
+  ["3",2.2328100204467773]
+  ["4",2.564345121383667]
+
+case score_many_terms_and
+tags: oracle4
+insert S cols=Id,Body:
+  [307, "w1 w2 w3 w4 w5 w6 w7 w8"]
+  [308, "kappa kappa kappa kappa kappa kappa kappa kappa"]
+  [309, "kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa kappa"]
+  [310, "alpha beta x delta"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'w1 w2 w3 w4') AS s FROM S WHERE SEARCH(Body_Tokens, 'w1 w2 w3 w4') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["307",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["307",7.4587321281433105]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'w1 w3 w5 w7') AS s FROM S WHERE SEARCH(Body_Tokens, 'w1 w3 w5 w7') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["307",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["307",5.1485748291015625]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'w1 w2 w3 w4 w5 w6') AS s FROM S WHERE SEARCH(Body_Tokens, 'w1 w2 w3 w4 w5 w6') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["307",6.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["307",11.795886993408203]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'w1 w2 w3 w4 w5 w6 w7 w8') AS s FROM S WHERE SEARCH(Body_Tokens, 'w1 w2 w3 w4 w5 w6 w7 w8') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["307",8.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["307",16.219022750854492]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'w2 w1') AS s FROM S WHERE SEARCH(Body_Tokens, 'w2 w1') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["307",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["307",2.5408987998962402]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'kappa') AS s FROM S WHERE SEARCH(Body_Tokens, 'kappa') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["308",8.0]
+  ["309",16.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["308",2.9448206424713135]
+  ["309",3.812513828277588]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha gamma') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha gamma') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["7",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["7",2.5408987998962402]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha three') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha three') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["8",2.0]
+  ["13",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["8",2.5408987998962402]
+  ["13",2.5408987998962402]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta delta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta delta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["310",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["310",4.58889627456665]
+query:
+  SELECT Id, SCORE(Body_Tokens, '"alpha beta gamma"') AS s FROM S WHERE SEARCH(Body_Tokens, '"alpha beta gamma"') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["7",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["7",5.338847637176514]
+
+case score_short_and_common_words
+tags: oracle4
+insert S cols=Id,Body:
+  [301, "alpha as"]
+  [302, "alpha the"]
+  [303, "alpha xy"]
+  [304, "alpha of beta"]
+  [305, "Nordlys Holding AS"]
+  [306, "alpha q"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha as') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha as') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["301",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+  ["301",1.2588917016983032]
+  ["302",1.2588917016983032]
+  ["303",1.2588917016983032]
+  ["304",1.2588917016983032]
+  ["306",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha the') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha the') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["302",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+  ["301",1.2588917016983032]
+  ["302",1.2588917016983032]
+  ["303",1.2588917016983032]
+  ["304",1.2588917016983032]
+  ["306",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha xy') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha xy') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["303",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["303",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha q') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha q') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["306",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["306",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha of beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha of beta') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["304",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",2.5408987998962402]
+  ["6",2.9443299770355225]
+  ["7",2.5408987998962402]
+  ["304",2.5408987998962402]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR the') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR the') AND Id <= 4 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'as') AS s FROM S WHERE SEARCH(Body_Tokens, 'as') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["301",1.0]
+  ["305",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["301",1.2588917016983032]
+  ["305",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'Nordlys Holding AS') AS s FROM S WHERE SEARCH(Body_Tokens, 'Nordlys Holding AS') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["305",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["305",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'Nordlys Holding') AS s FROM S WHERE SEARCH(Body_Tokens, 'Nordlys Holding') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["305",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["305",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'holding as') AS s FROM S WHERE SEARCH(Body_Tokens, 'holding as') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["305",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["305",1.2588917016983032]
+
+# --- Follow-up (oracle5): which words prod drops from SEARCH/SCORE queries. Row 400 has only
+# `alpha`; rows 401.. have `alpha <word>`. A dropped word matches every row; a kept word only its own.
+
+case stopwords_each_word
+tags: oracle5
+insert S cols=Id,Body:
+  [400, "alpha"]
+  [401, "alpha a"]
+  [402, "alpha an"]
+  [403, "alpha and"]
+  [404, "alpha are"]
+  [405, "alpha as"]
+  [406, "alpha at"]
+  [407, "alpha be"]
+  [408, "alpha but"]
+  [409, "alpha by"]
+  [410, "alpha for"]
+  [411, "alpha if"]
+  [412, "alpha in"]
+  [413, "alpha into"]
+  [414, "alpha is"]
+  [415, "alpha it"]
+  [416, "alpha no"]
+  [417, "alpha not"]
+  [418, "alpha of"]
+  [419, "alpha on"]
+  [420, "alpha or"]
+  [421, "alpha such"]
+  [422, "alpha that"]
+  [423, "alpha the"]
+  [424, "alpha their"]
+  [425, "alpha then"]
+  [426, "alpha there"]
+  [427, "alpha these"]
+  [428, "alpha they"]
+  [429, "alpha this"]
+  [430, "alpha to"]
+  [431, "alpha was"]
+  [432, "alpha will"]
+  [433, "alpha with"]
+  [434, "alpha og"]
+  [435, "alpha i"]
+  [436, "alpha på"]
+  [437, "alpha av"]
+  [438, "alpha til"]
+  [439, "alpha med"]
+  [440, "alpha asa"]
+  [441, "alpha ans"]
+  [442, "alpha da"]
+  [443, "alpha sa"]
+  [444, "alpha ba"]
+  [445, "alpha xy"]
+  [446, "alpha holding"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha a') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha a') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["401",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha an') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha an') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["402",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha and') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha and') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["403",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha are') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha are') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["404",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha as') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha as') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["405",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha at') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha at') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["406",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha be') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha be') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["407",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha but') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha but') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["408",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["408",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha by') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha by') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["409",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha for') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha for') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["410",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha if') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha if') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["411",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["411",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha in') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha in') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["412",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha into') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha into') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["413",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["413",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha is') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha is') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["414",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha it') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha it') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["415",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha no') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha no') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["416",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["416",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha not') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha not') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["417",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["417",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha of') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha of') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["418",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha on') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha on') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["419",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha or') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha or') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["420",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha such') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha such') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["421",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["421",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha that') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha that') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["422",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha the') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha the') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["423",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha their') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha their') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["424",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["424",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha then') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha then') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["425",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["425",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha there') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha there') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["426",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["426",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha these') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha these') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["427",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["427",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha they') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha they') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["428",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["428",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha this') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha this') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["429",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha to') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha to') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["430",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha was') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha was') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["431",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha will') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha will') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["432",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["432",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha with') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha with') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["433",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha og') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha og') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["434",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["434",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha i') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha i') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["435",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+  ["407",1.2588917016983032]
+  ["408",1.2588917016983032]
+  ["409",1.2588917016983032]
+  ["410",1.2588917016983032]
+  ["411",1.2588917016983032]
+  ["412",1.2588917016983032]
+  ["413",1.2588917016983032]
+  ["414",1.2588917016983032]
+  ["415",1.2588917016983032]
+  ["416",1.2588917016983032]
+  ["417",1.2588917016983032]
+  ["418",1.2588917016983032]
+  ["419",1.2588917016983032]
+  ["420",1.2588917016983032]
+  ["421",1.2588917016983032]
+  ["422",1.2588917016983032]
+  ["423",1.2588917016983032]
+  ["424",1.2588917016983032]
+  ["425",1.2588917016983032]
+  ["426",1.2588917016983032]
+  ["427",1.2588917016983032]
+  ["428",1.2588917016983032]
+  ["429",1.2588917016983032]
+  ["430",1.2588917016983032]
+  ["431",1.2588917016983032]
+  ["432",1.2588917016983032]
+  ["433",1.2588917016983032]
+  ["434",1.2588917016983032]
+  ["435",1.2588917016983032]
+  ["436",1.2588917016983032]
+  ["437",1.2588917016983032]
+  ["438",1.2588917016983032]
+  ["439",1.2588917016983032]
+  ["440",1.2588917016983032]
+  ["441",1.2588917016983032]
+  ["442",1.2588917016983032]
+  ["443",1.2588917016983032]
+  ["444",1.2588917016983032]
+  ["445",1.2588917016983032]
+  ["446",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha på') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha på') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["436",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha av') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha av') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["437",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["437",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha til') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha til') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["438",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["438",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha med') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha med') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["439",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["439",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha asa') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha asa') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["440",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["440",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha ans') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha ans') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["441",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["441",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha da') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha da') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["442",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["442",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha sa') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha sa') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["443",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["443",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha ba') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha ba') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["444",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["444",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha xy') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha xy') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["445",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["445",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha holding') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha holding') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["446",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["446",3.2661805152893066]
+
+case stopwords_case_and_language
+tags: oracle5
+insert S cols=Id,Body:
+  [400, "alpha"]
+  [401, "alpha as"]
+  [402, "alpha og"]
+  [403, "alpha i"]
+  [404, "alpha the"]
+  [405, "alpha AS"]
+  [406, "alpha ASA"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha AS') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha AS') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["401",2.0]
+  ["405",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha ASA') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha ASA') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["406",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["406",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'Holding AS') AS s FROM S WHERE SEARCH(Body_Tokens, 'Holding AS') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+expect@spanner:
+  same
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha as', language_tag => 'no') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha as', language_tag => 'no') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["401",2.0]
+  ["405",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha og', language_tag => 'no') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha og', language_tag => 'no') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["402",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["402",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha i', language_tag => 'no') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha i', language_tag => 'no') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["403",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha the', language_tag => 'no') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha the', language_tag => 'no') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["404",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha og', language_tag => 'en') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha og', language_tag => 'en') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["402",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["402",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, '"alpha as"') AS s FROM S WHERE SEARCH(Body_Tokens, '"alpha as"') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["401",2.0]
+  ["405",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["401",3.2661805152893066]
+  ["405",3.2661805152893066]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha -as') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha -as') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["400",1.0]
+  ["402",1.0]
+  ["403",1.0]
+  ["404",1.0]
+  ["406",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["406",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'as OR alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'as OR alpha') AND Id >= 400 ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["400",1.0]
+  ["401",2.0]
+  ["402",1.0]
+  ["403",1.0]
+  ["404",1.0]
+  ["405",2.0]
+  ["406",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["400",1.2588917016983032]
+  ["401",1.2588917016983032]
+  ["402",1.2588917016983032]
+  ["403",1.2588917016983032]
+  ["404",1.2588917016983032]
+  ["405",1.2588917016983032]
+  ["406",1.2588917016983032]
+
+case score_enhance_query_more
+tags: oracle5
+query:
+  SELECT Id, SCORE(Body_Tokens, 'beta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'beta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",1.0]
+  ["6",2.0]
+  ["7",1.0]
+  ["9",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",0.5812535285949707]
+  ["6",0.7122135758399963]
+  ["7",0.5812535285949707]
+  ["9",0.5812535285949707]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'delta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'delta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["10",1.0]
+  ["11",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["10",0.6314595937728882]
+  ["11",0.6314595937728882]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR zzzz', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR zzzz', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5597055554389954]
+  ["2",0.6922320127487183]
+  ["3",0.7979593276977539]
+  ["4",0.8859239816665649]
+  ["5",0.5597055554389954]
+  ["6",0.5597055554389954]
+  ["7",0.5597055554389954]
+  ["8",0.5597055554389954]
+  ["13",0.5597055554389954]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR beta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR beta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+  ["8",1.0]
+  ["9",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5479043126106262]
+  ["2",0.6839828491210938]
+  ["3",0.7925440073013306]
+  ["4",0.882866382598877]
+  ["5",1.1033092737197876]
+  ["6",1.2423532009124756]
+  ["7",1.1033092737197876]
+  ["8",0.5479043126106262]
+  ["9",0.5554050207138062]
+  ["13",0.5479043126106262]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta gamma', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta gamma', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["7",3.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["7",2.1981441974639893]
+query:
+  SELECT Id, SCORE(Body_Tokens, '"alpha beta"', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, '"alpha beta"', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["5",2.0]
+  ["6",3.0]
+  ["7",2.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["5",1.3858588933944702]
+  ["6",1.5168190002441406]
+  ["7",1.3858588933944702]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha -beta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha -beta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5597055554389954]
+  ["2",0.6922320127487183]
+  ["3",0.7979593276977539]
+  ["4",0.8859239816665649]
+  ["8",0.5597055554389954]
+  ["13",0.5597055554389954]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.5597055554389954]
+  ["2",0.6922320127487183]
+  ["3",0.7979593276977539]
+  ["4",0.8859239816665649]
+  ["5",0.5597055554389954]
+  ["6",0.5597055554389954]
+  ["7",0.5597055554389954]
+  ["8",0.5597055554389954]
+  ["13",0.5597055554389954]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",1.0]
+  ["2",2.0]
+  ["3",3.0]
+  ["4",4.0]
+  ["5",1.0]
+  ["6",1.0]
+  ["7",1.0]
+  ["8",1.0]
+  ["13",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["5",1.2588917016983032]
+  ["6",1.2588917016983032]
+  ["7",1.2588917016983032]
+  ["8",1.2588917016983032]
+  ["13",1.2588917016983032]
+
+case score_repeated_terms_more
+tags: oracle5
+insert S cols=Id,Body:
+  [450, "alpha beta alpha"]
+  [451, "alpha x alpha"]
+  [452, "beta alpha alpha beta"]
+  [453, "alpha alpha x alpha alpha"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha alpha') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",2.0]
+  ["2",4.0]
+  ["3",6.0]
+  ["4",8.0]
+  ["450",4.0]
+  ["451",4.0]
+  ["452",4.0]
+  ["453",8.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",2.5408987998962402]
+  ["2",3.937390089035034]
+  ["3",4.867130756378174]
+  ["4",5.574248313903809]
+  ["450",3.347761392593384]
+  ["451",3.347761392593384]
+  ["452",3.937390089035034]
+  ["453",5.29515266418457]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha beta alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha beta alpha') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["450",5.0]
+  ["452",6.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["450",6.0328874588012695]
+  ["452",6.309773921966553]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha alpha beta') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha alpha beta') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["450",5.0]
+  ["452",6.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["450",5.282936096191406]
+  ["452",6.309773921966553]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha OR alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha OR alpha') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",2.0]
+  ["2",4.0]
+  ["3",6.0]
+  ["4",8.0]
+  ["450",4.0]
+  ["451",4.0]
+  ["452",4.0]
+  ["453",8.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",1.2588917016983032]
+  ["2",1.6450823545455933]
+  ["3",1.9531786441802979]
+  ["4",2.2095134258270264]
+  ["450",1.6450823545455933]
+  ["451",1.6450823545455933]
+  ["452",1.6450823545455933]
+  ["453",2.2095134258270264]
+query:
+  SELECT Id, SCORE(Body_Tokens, '"alpha alpha"') AS s FROM S WHERE SEARCH(Body_Tokens, '"alpha alpha"') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["2",4.0]
+  ["3",6.0]
+  ["4",8.0]
+  ["452",4.0]
+  ["453",8.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["2",3.937390089035034]
+  ["3",4.867130756378174]
+  ["4",5.574248313903809]
+  ["452",3.937390089035034]
+  ["453",5.29515266418457]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha x alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha x alpha') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["451",5.0]
+  ["453",9.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["451",6.0328874588012695]
+  ["453",7.0869622230529785]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'alpha alpha alpha alpha') AS s FROM S WHERE SEARCH(Body_Tokens, 'alpha alpha alpha alpha') AND (Id <= 4 OR Id >= 450) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",4.0]
+  ["2",8.0]
+  ["3",12.0]
+  ["4",16.0]
+  ["450",8.0]
+  ["451",8.0]
+  ["452",8.0]
+  ["453",16.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",5.1485748291015625]
+  ["2",8.739990234375]
+  ["3",11.017950057983398]
+  ["4",12.701635360717773]
+  ["450",6.861912727355957]
+  ["451",6.861912727355957]
+  ["452",8.739990234375]
+  ["453",11.812663078308105]

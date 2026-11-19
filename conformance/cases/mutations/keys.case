@@ -1,0 +1,129 @@
+tags: mutations
+schema:
+  CREATE TABLE S (
+    K STRING(MAX) NOT NULL,
+    V INT64,
+  ) PRIMARY KEY (K);
+  CREATE TABLE Descending (
+    A INT64 NOT NULL,
+    B STRING(MAX) NOT NULL,
+  ) PRIMARY KEY (A DESC, B);
+  CREATE TABLE Nullable (
+    K INT64,
+    V INT64,
+  ) PRIMARY KEY (K);
+  CREATE TABLE ByteKey (
+    K BYTES(MAX) NOT NULL,
+  ) PRIMARY KEY (K);
+  CREATE TABLE TsKey (
+    K TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = true),
+    V INT64,
+  ) PRIMARY KEY (K)
+
+case string_key_order
+insert S cols=K,V:
+  ["b", 1]
+  ["a", 2]
+  ["", 3]
+  ["B", 4]
+  ["æ", 5]
+read S cols=K,V:
+  all
+expect:
+  columns: K STRING, V INT64
+  ["","3"]
+  ["B","4"]
+  ["a","2"]
+  ["b","1"]
+  ["æ","5"]
+
+case desc_key_order
+insert Descending cols=A,B:
+  [1, "x"]
+  [3, "a"]
+  [3, "b"]
+  [-5, "z"]
+read Descending cols=A,B:
+  all
+expect:
+  columns: A INT64, B STRING
+  ["3","a"]
+  ["3","b"]
+  ["1","x"]
+  ["-5","z"]
+
+case null_key
+insert Nullable cols=K,V:
+  [null, 1]
+  [1, 2]
+read Nullable cols=K,V:
+  all
+expect:
+  columns: K INT64, V INT64
+  [null,"1"]
+  ["1","2"]
+
+case null_key_duplicate
+insert Nullable cols=K,V:
+  [null, 1]
+insert Nullable cols=K,V:
+  [null, 2]
+expect:
+  error: ALREADY_EXISTS
+  message: Table Nullable: Row {Int64(NULL)} already exists.
+
+case null_key_point_read
+insert Nullable cols=K,V:
+  [null, 1]
+read Nullable cols=K,V:
+  [null]
+expect:
+  columns: K INT64, V INT64
+  [null,"1"]
+
+case bytes_key_order
+insert ByteKey cols=K:
+  ["/w=="]
+  ["AA=="]
+  [""]
+  ["AAA="]
+read ByteKey cols=K:
+  all
+expect:
+  columns: K BYTES
+  [""]
+  ["AA=="]
+  ["AAA="]
+  ["/w=="]
+
+case commit_timestamp_key
+insert TsKey cols=K,V:
+  ["spanner.commit_timestamp()", 1]
+read TsKey cols=V:
+  all
+expect:
+  columns: V INT64
+  ["1"]
+
+case commit_timestamp_in_future_rejected
+insert TsKey cols=K,V:
+  ["9999-01-01T00:00:00Z", 1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write timestamps in the future, found: 9999-01-01T00:00:00+00:00
+
+case key_wrong_type
+insert S cols=K,V:
+  [1, 1]
+read S cols=K,V:
+  all
+expect:
+  columns: K STRING, V INT64
+  ["1","1"]
+
+case delete_wrong_key_arity
+delete Descending:
+  [1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for Descending. Expected 2 key parts, found 1 key parts. Supplied key: values { string_value: "1" }

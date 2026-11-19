@@ -1,0 +1,171 @@
+# Top-level STRUCT result columns: the emulator (and Spanner) refuse to return a STRUCT as a column
+# value. ARRAY<STRUCT> columns and structs used inside the query are fine.
+tags: sql struct
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (Id)
+insert T cols=Id,Name:
+  [1, "a"]
+  [2, "b"]
+
+case struct_literal_named
+query:
+  SELECT STRUCT(1 AS a) AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_literal_anonymous
+query:
+  SELECT STRUCT(1 AS a, 'x' AS b)
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case tuple_struct
+query:
+  SELECT (1, 'x') AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_with_other_columns
+query:
+  SELECT 1 AS x, STRUCT(2 AS a) AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_from_table
+query:
+  SELECT Id, STRUCT(Id, Name) AS s FROM T
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_from_table_no_rows
+query:
+  SELECT STRUCT(Id, Name) AS s FROM T WHERE FALSE
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_null_cast
+query:
+  SELECT CAST(NULL AS STRUCT<a INT64>) AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_param
+query:
+  SELECT @p AS p
+params:
+  @p STRUCT<id STRING, score FLOAT64> = ["a", 1.5]
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_through_subquery
+query:
+  SELECT * FROM (SELECT STRUCT(1 AS a) AS s)
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_scalar_subquery
+query:
+  SELECT (SELECT AS STRUCT 1 AS a, 2 AS b) AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_union_all
+query:
+  SELECT STRUCT(1 AS a) AS s UNION ALL SELECT STRUCT(2 AS a)
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case select_as_struct_top_level
+query:
+  SELECT AS STRUCT 1 AS a, 2 AS b
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+
+case struct_order_by_hidden
+query:
+  SELECT Id FROM T ORDER BY STRUCT(Id AS a).a
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case struct_field_access_ok
+query:
+  SELECT s.a FROM (SELECT STRUCT(1 AS a) AS s)
+expect:
+  columns: a INT64
+  ["1"]
+
+case struct_field_star_ok
+query:
+  SELECT s.* FROM (SELECT STRUCT(1 AS a, 'x' AS b) AS s)
+expect:
+  columns: a INT64, b STRING
+  ["1","x"]
+
+case array_of_struct_ok
+query:
+  SELECT [STRUCT(1 AS a, 'x' AS b)] AS arr
+expect:
+  columns: arr ARRAY<STRUCT<a INT64, b STRING>>
+  [[["1","x"]]]
+
+case array_subquery_struct_ok
+query:
+  SELECT ARRAY(SELECT AS STRUCT Id, Name FROM T ORDER BY Id) AS arr
+expect:
+  columns: arr ARRAY<STRUCT<Id INT64, Name STRING>>
+  [[["1","a"],["2","b"]]]
+
+case struct_in_where_ok
+query:
+  SELECT Id FROM T WHERE STRUCT(Id, Name) = (1, 'a')
+expect:
+  columns: Id INT64
+  ["1"]
+
+case struct_param_field_ok
+query:
+  SELECT @p.id AS id
+params:
+  @p STRUCT<id STRING, score FLOAT64> = ["a", 1.5]
+expect:
+  columns: id STRING
+  ["a"]
+
+case struct_in_exists_subquery_ok
+query:
+  SELECT Id FROM T WHERE EXISTS (SELECT STRUCT(1 AS a) AS s)
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+
+case struct_in_in_subquery
+query:
+  SELECT Id FROM T WHERE (Id, Name) IN (SELECT AS STRUCT 1, 'a')
+expect:
+  columns: Id INT64
+  ["1"]
+
+case struct_dml_then_return
+dml:
+  UPDATE T SET Name = 'c' WHERE Id = 1 THEN RETURN STRUCT(Id, Name) AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.

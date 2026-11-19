@@ -1,0 +1,58 @@
+# Long-running operations of a database before and after DropDatabase. `ddl op=NAME` saves the
+# operation name; `get_operation op=NAME` observes `counts: [1]` (found, done) or the error;
+# `list_operations` (longrunning ListOperations on `<db>/operations`) and
+# `list_database_operations` (on the instance) observe how many saved operations they list.
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+
+case get_operation_while_database_exists
+ddl op=a:
+  CREATE TABLE U (Id INT64 NOT NULL) PRIMARY KEY (Id)
+get_operation op=a
+expect:
+  counts: [1]
+
+case list_operations_while_database_exists
+ddl op=a:
+  CREATE TABLE U (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl op=b:
+  CREATE INDEX UById ON U(Id)
+list_operations
+expect:
+  counts: [2]
+
+case list_database_operations_while_database_exists
+ddl op=a:
+  CREATE TABLE U (Id INT64 NOT NULL) PRIMARY KEY (Id)
+list_database_operations
+expect:
+  error: UNIMPLEMENTED
+  message: 
+
+case get_operation_after_drop_database
+ddl op=a:
+  CREATE TABLE U (Id INT64 NOT NULL) PRIMARY KEY (Id)
+drop_database
+get_operation op=a
+expect:
+  error: NOT_FOUND
+  message: Operation not found: <op>
+
+case list_operations_after_drop_database
+ddl op=a:
+  CREATE TABLE U (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl op=b:
+  CREATE INDEX UById ON U(Id)
+drop_database
+list_operations
+expect:
+  counts: [0]
+
+case list_database_operations_after_drop_database
+ddl op=a:
+  CREATE TABLE U (Id INT64 NOT NULL) PRIMARY KEY (Id)
+drop_database
+list_database_operations
+expect:
+  error: UNIMPLEMENTED
+  message: 

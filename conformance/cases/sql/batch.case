@@ -1,0 +1,158 @@
+tags: sql dml batch
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case batch_all_ok
+batch:
+  INSERT INTO Users (UserId, Email) VALUES ('b1', 'b1@x');
+  UPDATE Users SET Name = 'B' WHERE UserId = 'b1';
+  DELETE FROM Users WHERE UserId = 'u4'
+expect:
+  counts: [1,1,1]
+
+case batch_stops_at_first_error
+batch:
+  UPDATE Users SET Name = 'first' WHERE UserId = 'u1';
+  INSERT INTO Users (UserId, Email) VALUES ('u1', 'dup');
+  UPDATE Users SET Name = 'third' WHERE UserId = 'u2'
+expect:
+  counts: [1]
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#UserId:"u1"}) due to previously existing row
+
+case batch_first_statement_fails
+batch:
+  INSERT INTO Users (UserId) VALUES ('nope');
+  UPDATE Users SET Name = 'x' WHERE TRUE
+expect:
+  counts: []
+  error: FAILED_PRECONDITION
+  message: A new row in table Users does not specify a non-null value for NOT NULL column: Email
+
+case batch_syntax_error_middle
+batch:
+  UPDATE Users SET Name = 'a' WHERE UserId = 'u1';
+  UPDAT Users SET Name = 'b'
+expect:
+  counts: [1]
+  error: INVALID_ARGUMENT
+  message: Statement 1: 'UPDAT Users SET Name = 'b'' is not valid DML.
+
+case batch_select_rejected
+batch:
+  SELECT 1
+expect:
+  counts: []
+  error: INVALID_ARGUMENT
+  message: Statement 0: 'SELECT 1' is not valid DML.
+
+case batch_sees_earlier_statements
+batch:
+  INSERT INTO Users (UserId, Email) VALUES ('b2', 'x');
+  UPDATE Users SET Email = CONCAT(Email, '!') WHERE UserId = 'b2'
+expect:
+  counts: [1,1]
+
+case pdml_update
+pdml:
+  UPDATE Entities SET Score = 0 WHERE Score IS NULL
+expect:
+  count: 1
+
+case pdml_delete
+pdml:
+  DELETE FROM Signals WHERE Confidence < 0.5
+expect:
+  count: 1
+
+case pdml_insert_rejected
+pdml:
+  INSERT INTO Users (UserId, Email) VALUES ('p1', 'x')
+expect:
+  error: INVALID_ARGUMENT
+  message: INSERT is not supported for Partitioned DML
+
+case pdml_then_return_rejected
+pdml:
+  UPDATE Users SET Name = 'x' WHERE TRUE THEN RETURN UserId
+expect:
+  count: 3
+  columns: UserId STRING
+  ["u1"]
+  ["u2"]
+  ["u4"]
+
+case pdml_not_fully_partitionable
+pdml:
+  DELETE FROM Users WHERE UserId IN (SELECT CreatedBy FROM Reviews)
+expect:
+  error: INVALID_ARGUMENT
+  message: Partitioned DML only supports fully partitionable statements.
+

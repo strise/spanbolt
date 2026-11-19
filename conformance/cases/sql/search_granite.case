@@ -1,0 +1,511 @@
+# Entity search shapes: fulltext over name/aliases/identifiers, weighted SCORE, quoted
+# legal-form synonyms joined with OR, identifier lookups and the trigram (ngram) fallback.
+tags: sql search
+schema:
+  CREATE TABLE granite_no (
+    id STRING(MAX) NOT NULL,
+    is_slim BOOL,
+    entity_kind STRING(MAX),
+    identifiers ARRAY<STRING(MAX)>,
+    name STRING(MAX),
+    aliases ARRAY<STRING(MAX)>,
+    countries ARRAY<STRING(2)>,
+    primary_country STRING(2),
+    num_connections INT64,
+    is_stale BOOL,
+    aliases_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(aliases)) HIDDEN,
+    name_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(name)) HIDDEN,
+    identifiers_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(identifiers)) HIDDEN,
+    name_ngram_tokens TOKENLIST AS (TOKENIZE_NGRAMS(name, ngram_size_max => 3, ngram_size_min => 3)) HIDDEN,
+  ) PRIMARY KEY (id);
+  CREATE TABLE granite_se (
+    id STRING(MAX) NOT NULL,
+    is_slim BOOL,
+    entity_kind STRING(MAX),
+    identifiers ARRAY<STRING(MAX)>,
+    name STRING(MAX),
+    aliases ARRAY<STRING(MAX)>,
+    countries ARRAY<STRING(2)>,
+    primary_country STRING(2),
+    num_connections INT64,
+    is_stale BOOL,
+    aliases_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(aliases)) HIDDEN,
+    name_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(name)) HIDDEN,
+    identifiers_tokens TOKENLIST AS (TOKENIZE_FULLTEXT(identifiers)) HIDDEN,
+  ) PRIMARY KEY (id);
+  CREATE SEARCH INDEX idx_granite_no_search ON granite_no(name_tokens, aliases_tokens, identifiers_tokens) STORING (is_stale, is_slim, primary_country, entity_kind, num_connections, countries);
+  CREATE SEARCH INDEX idx_granite_no_ngram ON granite_no(name_ngram_tokens) STORING (is_stale, is_slim, primary_country, entity_kind, num_connections, countries);
+  CREATE SEARCH INDEX idx_granite_se_search ON granite_se(name_tokens, aliases_tokens, identifiers_tokens) STORING (is_stale, is_slim, primary_country, entity_kind, num_connections, countries)
+insert granite_no cols=id,is_slim,entity_kind,identifiers,name,aliases,countries,primary_country,num_connections,is_stale:
+  ["no-1", false, "company", ["NO900000001"], "Fjordkraft Testselskap AS", ["Fjordkraft"], ["NO"], "NO", 12, false]
+  ["no-2", false, "company", ["NO900000002", "900000002"], "Coca-Cola Testbryggeri AS", ["Coca Cola Norge"], ["NO"], "NO", 40, false]
+  ["no-3", false, "company", ["NO900000003"], "Nordlys Holding AS", [], ["NO", "SE"], "NO", 3, false]
+  ["no-4", false, "person", [], "Ola Testmann", ["Ola T. Testmann"], ["NO"], "NO", 2, false]
+  ["no-5", true, "company", ["NO900000005"], "Nordlys Invest ASA", null, ["NO"], "NO", null, false]
+  ["no-6", false, "company", ["NO900000006"], "Bjørn Åse Ærlig AS", ["Bjorn Ase Aerlig"], ["NO"], "NO", 0, true]
+  ["no-7", false, "person", null, "Kari Testdatter", null, null, null, 7, null]
+  ["no-8", false, "company", ["NO900000008"], "Acme Shipping A/S", ["Acme Shipping Aksjeselskap"], ["NO", "DK"], "NO", 25, false]
+  ["no-9", false, "company", [], null, ["Ghost Company"], [], "NO", 1, false]
+insert granite_se cols=id,is_slim,entity_kind,identifiers,name,aliases,countries,primary_country,num_connections,is_stale:
+  ["se-1", false, "company", ["SE5560000001"], "Nordlys Holding AB", ["Nordlys Aktiebolag"], ["SE"], "SE", 9, false]
+  ["se-2", false, "company", ["SE5560000002"], "Coca-Cola Sverige AB", [], ["SE"], "SE", 30, false]
+  ["se-3", false, "person", [], "Ola Testmann", [], ["SE"], "SE", 1, false]
+
+case quoted_name_or_alias
+query:
+  SELECT id FROM granite_no WHERE (SEARCH(name_tokens, @quotedQuery) OR SEARCH(aliases_tokens, @quotedQuery) OR SEARCH(identifiers_tokens, @trimmedQuery))
+params:
+  @quotedQuery STRING = "\"Coca-Cola AS\" OR \"Coca-Cola A/S\" OR \"Coca-Cola Aksjeselskap\""
+  @trimmedQuery STRING = "CocaColaAS"
+expect:
+  columns: id STRING
+expect@spanner:
+  same
+
+case quoted_phrase_does_not_match_partial
+query:
+  SELECT id FROM granite_no WHERE SEARCH(name_tokens, @q)
+params:
+  @q STRING = "\"Coca-Cola AS\""
+expect:
+  columns: id STRING
+expect@spanner:
+  same
+
+case quoted_phrase_full_name
+query:
+  SELECT id FROM granite_no WHERE SEARCH(name_tokens, @q)
+params:
+  @q STRING = "\"Coca-Cola Testbryggeri AS\""
+expect:
+  columns: id STRING
+  ["no-2"]
+expect@spanner:
+  same
+
+case quoted_legal_form_synonyms
+query:
+  SELECT id FROM granite_no WHERE SEARCH(name_tokens, @q) OR SEARCH(aliases_tokens, @q)
+params:
+  @q STRING = "\"Acme Shipping AS\" OR \"Acme Shipping A/S\" OR \"Acme Shipping Aksjeselskap\""
+expect:
+  columns: id STRING
+  ["no-8"]
+expect@spanner:
+  same
+
+case quoted_person_name
+query:
+  SELECT id FROM granite_no WHERE (SEARCH(name_tokens, @q) OR SEARCH(aliases_tokens, @q))
+params:
+  @q STRING = "\"Ola Testmann\""
+expect:
+  columns: id STRING
+  ["no-4"]
+expect@spanner:
+  same
+
+case quoted_escaped_dot
+query:
+  SELECT id FROM granite_no WHERE SEARCH(aliases_tokens, @q)
+params:
+  @q STRING = "\"Ola T\\. Testmann\""
+expect:
+  columns: id STRING
+  ["no-4"]
+expect@spanner:
+  same
+
+case quoted_norwegian_letters
+query:
+  SELECT id FROM granite_no WHERE SEARCH(name_tokens, @q)
+params:
+  @q STRING = "\"Bjørn Åse Ærlig AS\""
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"Bjørn Åse Ærlig AS"`, has error(s): -Syntax error on column 6: Expecting '"
+expect@spanner:
+  columns: id STRING
+  ["no-6"]
+
+case quoted_ascii_alias_of_norwegian_name
+query:
+  SELECT id FROM granite_no WHERE SEARCH(aliases_tokens, @q)
+params:
+  @q STRING = "\"Bjorn Ase Aerlig\""
+expect:
+  columns: id STRING
+  ["no-6"]
+expect@spanner:
+  same
+
+case identifier_digits
+query:
+  SELECT *, 10000.0 AS relevance_score FROM granite_no AS t WHERE SEARCH(identifiers_tokens, @trimmedQuery)
+params:
+  @trimmedQuery STRING = "900000002"
+expect:
+  columns: id STRING, is_slim BOOL, entity_kind STRING, identifiers ARRAY<STRING>, name STRING, aliases ARRAY<STRING>, countries ARRAY<STRING>, primary_country STRING, num_connections INT64, is_stale BOOL, relevance_score FLOAT64
+  ["no-2",false,"company",["NO900000002","900000002"],"Coca-Cola Testbryggeri AS",["Coca Cola Norge"],["NO"],"NO","40",false,10000.0]
+expect@spanner:
+  same
+
+case identifier_with_prefix
+query:
+  SELECT id FROM granite_no AS t WHERE SEARCH(identifiers_tokens, @trimmedQuery)
+params:
+  @trimmedQuery STRING = "NO900000003"
+expect:
+  columns: id STRING
+  ["no-3"]
+expect@spanner:
+  same
+
+case identifier_list_or
+query:
+  SELECT id FROM granite_no AS t WHERE SEARCH(identifiers_tokens, @identifiersQueryStr)
+params:
+  @identifiersQueryStr STRING = "NO900000001 OR NO900000008 OR NO000000000"
+expect:
+  columns: id STRING
+  ["no-1"]
+  ["no-8"]
+expect@spanner:
+  same
+
+case identifier_lowercase_query
+query:
+  SELECT id FROM granite_no WHERE SEARCH(identifiers_tokens, 'no900000005')
+expect:
+  columns: id STRING
+  ["no-5"]
+expect@spanner:
+  same
+
+case weighted_relevance_score
+query:
+  SELECT id,
+    (
+      COALESCE(SCORE(identifiers_tokens, @trimmedQuery ) * 10.0, 0) +
+      COALESCE(SCORE(name_tokens,        @query ) * 5.0, 0) +
+      COALESCE(SCORE(aliases_tokens,     @query ) * 2.0, 0) +
+      case when lower(entity_kind) = 'company' then 1.0 else 0.0 end +
+      LN(coalesce(num_connections, 0) + 1) * 1.5
+      + 1
+    ) AS relevance_score
+  FROM granite_no AS t
+  WHERE (SEARCH(name_tokens, @quotedQuery) OR SEARCH(aliases_tokens, @quotedQuery) OR SEARCH(identifiers_tokens, @trimmedQuery))
+  ORDER BY relevance_score DESC, id
+  LIMIT 100
+params:
+  @query STRING = "Nordlys Holding AS"
+  @trimmedQuery STRING = "NordlysHoldingAS"
+  @quotedQuery STRING = "\"Nordlys Holding AS\" OR \"Nordlys Holding A/S\" OR \"Nordlys Holding Aksjeselskap\""
+expect:
+  columns: id STRING, relevance_score FLOAT64
+  ["no-3",19.079441541679834]
+expect@spanner:
+  columns: id STRING, relevance_score FLOAT64
+  ["no-3",20.410344118126368]
+
+case score_raw_query_counts_terms
+query:
+  SELECT id, SCORE(name_tokens, @query) AS s, SCORE(aliases_tokens, @query) AS a FROM granite_no ORDER BY id
+params:
+  @query STRING = "Nordlys Holding AS"
+expect:
+  columns: id STRING, s FLOAT64, a FLOAT64
+  ["no-1",1.0,0.0]
+  ["no-2",1.0,0.0]
+  ["no-3",3.0,0.0]
+  ["no-4",0.0,0.0]
+  ["no-5",1.0,0.0]
+  ["no-6",1.0,0.0]
+  ["no-7",0.0,0.0]
+  ["no-8",0.0,0.0]
+  ["no-9",0.0,0.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: ESCORER_SCORE: This function may only be used with a compatible SEARCH predicate
+
+case score_null_source
+query:
+  SELECT id, SCORE(name_tokens, 'ghost') AS s, SCORE(aliases_tokens, 'ghost') AS a FROM granite_no WHERE id = 'no-9'
+expect:
+  columns: id STRING, s FLOAT64, a FLOAT64
+  ["no-9",0.0,1.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: ESCORER_SCORE: This function may only be used with a compatible SEARCH predicate
+
+case score_on_null_array
+query:
+  SELECT id, SCORE(aliases_tokens, 'nordlys') AS a FROM granite_no WHERE id IN ('no-5', 'no-7')
+expect:
+  columns: id STRING, a FLOAT64
+  ["no-5",0.0]
+  ["no-7",0.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: ESCORER_SCORE: This function may only be used with a compatible SEARCH predicate
+
+case search_null_array_column
+query:
+  SELECT id, SEARCH(aliases_tokens, 'nordlys') AS hit FROM granite_no WHERE id IN ('no-5', 'no-7', 'no-3')
+expect:
+  columns: id STRING, hit BOOL
+  ["no-3",false]
+  ["no-5",null]
+  ["no-7",null]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The function SEARCH can only be used in a WHERE clause.
+
+case union_of_markets_with_filters
+query:
+  WITH full_text_match AS (
+    SELECT * FROM (
+      (SELECT id, is_slim, is_stale, primary_country, entity_kind FROM granite_no AS t
+       WHERE (SEARCH(name_tokens, @quotedQuery) OR SEARCH(aliases_tokens, @quotedQuery) OR SEARCH(identifiers_tokens, @trimmedQuery)))
+      UNION ALL
+      (SELECT id, is_slim, is_stale, primary_country, entity_kind FROM granite_se AS t
+       WHERE (SEARCH(name_tokens, @quotedQuery) OR SEARCH(aliases_tokens, @quotedQuery) OR SEARCH(identifiers_tokens, @trimmedQuery)))
+    ) AS t
+  )
+  SELECT id FROM full_text_match
+  WHERE (is_stale = FALSE OR is_stale IS NULL)
+  AND (is_slim = FALSE OR is_slim IS NULL)
+  AND primary_country IN UNNEST(@primaryCountries)
+params:
+  @quotedQuery STRING = "\"Nordlys Holding AB\" OR \"Nordlys Holding Aktiebolag\" OR \"Nordlys\""
+  @trimmedQuery STRING = "NordlysHoldingAB"
+  @primaryCountries ARRAY<STRING> = ["NO", "SE"]
+expect:
+  columns: id STRING
+  ["se-1"]
+  ["no-3"]
+expect@spanner:
+  same
+
+case all_matches_group_by_max
+query:
+  WITH id_match AS (
+    SELECT id, 1000000.0 AS relevance_score FROM granite_no AS t WHERE id = @query
+  ),
+  full_text_match AS (
+    SELECT id, (COALESCE(SCORE(name_tokens, @query) * 5.0, 0) + 1) AS relevance_score
+    FROM granite_no AS t
+    WHERE (SEARCH(name_tokens, @quotedQuery) OR SEARCH(aliases_tokens, @quotedQuery))
+    ORDER BY relevance_score DESC
+    LIMIT 100
+  ),
+  all_matches AS (
+    SELECT id, MAX(relevance_score) AS relevance_score FROM (
+      SELECT id, relevance_score FROM id_match
+      UNION ALL SELECT id, relevance_score FROM full_text_match
+    )
+    GROUP BY id
+  )
+  SELECT am.id, am.relevance_score, t.name
+  FROM all_matches am
+  INNER JOIN granite_no t USING (id)
+  ORDER BY relevance_score DESC, id
+  LIMIT @limit
+params:
+  @query STRING = "Fjordkraft"
+  @quotedQuery STRING = "\"Fjordkraft\""
+  @limit INT64 = 50
+expect:
+  columns: id STRING, relevance_score FLOAT64, name STRING
+  ["no-1",6.0,"Fjordkraft Testselskap AS"]
+expect@spanner:
+  columns: id STRING, relevance_score FLOAT64, name STRING
+  ["no-1",7.294458508491516,"Fjordkraft Testselskap AS"]
+
+case countries_exists_filter
+query:
+  SELECT id FROM granite_no AS t
+  WHERE SEARCH(name_tokens, @q)
+  AND (countries IS NULL OR ARRAY_LENGTH(countries) = 0 OR EXISTS (SELECT 1 FROM UNNEST(countries) AS c WHERE c NOT IN UNNEST(@localMarkets)))
+params:
+  @q STRING = "nordlys"
+  @localMarkets ARRAY<STRING> = ["NO"]
+expect:
+  columns: id STRING
+  ["no-3"]
+expect@spanner:
+  same
+
+case count_by_kind
+query:
+  WITH matches AS (
+    SELECT DISTINCT id, entity_kind FROM granite_no AS t
+    WHERE (SEARCH(name_tokens, @quotedQuery) OR SEARCH(aliases_tokens, @quotedQuery) OR SEARCH(identifiers_tokens, @trimmedQuery))
+    AND (is_stale = FALSE OR is_stale IS NULL)
+  )
+  SELECT LOWER(entity_kind) AS entity_kind, COUNT(*) AS cnt FROM matches GROUP BY LOWER(entity_kind)
+params:
+  @quotedQuery STRING = "\"testmann\" OR \"nordlys\" OR \"testdatter\""
+  @trimmedQuery STRING = "testmann"
+expect:
+  columns: entity_kind STRING, cnt INT64
+  ["person","2"]
+  ["company","2"]
+expect@spanner:
+  same
+
+case ngram_match_percent
+query:
+  SELECT id FROM granite_no AS t WHERE SEARCH_NGRAMS(name_ngram_tokens, @ngramQuery, min_ngrams_percent => 40.0)
+params:
+  @ngramQuery STRING = "Fjordkraf Testselskp"
+expect:
+  columns: id STRING
+  ["no-1"]
+expect@spanner:
+  same
+
+case ngram_typo_recall
+query:
+  SELECT id FROM granite_no AS t WHERE SEARCH_NGRAMS(name_ngram_tokens, @ngramQuery, min_ngrams_percent => 40.0)
+params:
+  @ngramQuery STRING = "Nordlis"
+expect:
+  columns: id STRING
+  ["no-5"]
+  ["no-3"]
+expect@spanner:
+  same
+
+case ngram_default_min_ngrams
+query:
+  SELECT id FROM granite_no AS t WHERE SEARCH_NGRAMS(name_ngram_tokens, @ngramQuery)
+params:
+  @ngramQuery STRING = "acmx"
+expect:
+  columns: id STRING
+expect@spanner:
+  same
+
+case ngram_score_order
+query:
+  SELECT id,
+    (COALESCE(SCORE_NGRAMS(name_ngram_tokens, @ngramQuery) * 8.0, 0) +
+     case when lower(entity_kind) = 'company' then 1.0 else 0.0 end +
+     coalesce(num_connections, 0) * 0.01) AS relevance_score
+  FROM granite_no AS t
+  WHERE SEARCH_NGRAMS(name_ngram_tokens, @ngramQuery, min_ngrams_percent => 40.0)
+  ORDER BY relevance_score DESC, id
+  LIMIT 100
+params:
+  @ngramQuery STRING = "Nordlys"
+expect:
+  columns: id STRING, relevance_score FLOAT64
+  ["no-3",3.53]
+  ["no-5",3.5]
+expect@spanner:
+  columns: id STRING, relevance_score FLOAT64
+  ["no-3",3.8299999999999996]
+  ["no-5",3.8]
+
+case ngram_score_values
+query:
+  SELECT id, SCORE_NGRAMS(name_ngram_tokens, @q) AS s FROM granite_no WHERE id IN ('no-1', 'no-3', 'no-6', 'no-9')
+params:
+  @q STRING = "Nordlys Holdings"
+expect:
+  columns: id STRING, s FLOAT64
+  ["no-9",0.0]
+  ["no-3",0.7647058823529411]
+  ["no-1",0.027777777777777776]
+  ["no-6",0.0]
+expect@spanner:
+  columns: id STRING, s FLOAT64
+  ["no-1",0.023809523809523808]
+  ["no-3",0.7142857142857143]
+  ["no-6",0.0]
+  ["no-9",0.0]
+
+case ngram_norwegian_letters
+query:
+  SELECT id FROM granite_no WHERE SEARCH_NGRAMS(name_ngram_tokens, @q, min_ngrams_percent => 40.0)
+params:
+  @q STRING = "Bjørn Ærlig"
+expect:
+  columns: id STRING
+  ["no-6"]
+expect@spanner:
+  same
+
+case ngram_short_query
+query:
+  SELECT id FROM granite_no WHERE SEARCH_NGRAMS(name_ngram_tokens, 'as')
+expect:
+  columns: id STRING
+expect@spanner:
+  same
+
+case ngram_min_ngrams_named
+query:
+  SELECT id FROM granite_no WHERE SEARCH_NGRAMS(name_ngram_tokens, 'testmann', min_ngrams => 5)
+expect:
+  columns: id STRING
+  ["no-4"]
+expect@spanner:
+  same
+
+case force_search_index_with_storing
+query:
+  SELECT id, primary_country, num_connections FROM granite_no@{FORCE_INDEX=idx_granite_no_search} WHERE SEARCH(name_tokens, 'nordlys')
+expect:
+  columns: id STRING, primary_country STRING, num_connections INT64
+  ["no-5","NO",null]
+  ["no-3","NO","3"]
+expect@spanner:
+  same
+
+# Prod requires a matching SEARCH predicate for SCORE (ESCORER_SCORE). Same query as
+# score_raw_query_counts_terms with the predicate added, to record prod's SCORE values.
+
+case score_with_search_predicate
+tags: oracle2
+query:
+  SELECT id, SCORE(name_tokens, @query) AS s FROM granite_no WHERE SEARCH(name_tokens, @query) ORDER BY id
+params:
+  @query STRING = "Nordlys Holding AS"
+expect:
+  columns: id STRING, s FLOAT64
+  ["no-3",3.0]
+expect@spanner:
+  columns: id STRING, s FLOAT64
+  ["no-3",3.2661805152893066]
+
+case score_single_term_with_search_predicate
+tags: oracle2
+query:
+  SELECT id, SCORE(name_tokens, 'nordlys') AS s FROM granite_no WHERE SEARCH(name_tokens, 'nordlys') ORDER BY id
+expect:
+  columns: id STRING, s FLOAT64
+  ["no-3",1.0]
+  ["no-5",1.0]
+expect@spanner:
+  columns: id STRING, s FLOAT64
+  ["no-3",1.2588917016983032]
+  ["no-5",1.2588917016983032]
+
+case score_or_query_two_columns
+tags: oracle2
+query:
+  SELECT id, SCORE(name_tokens, @query) AS s, SCORE(aliases_tokens, @query) AS a FROM granite_no WHERE SEARCH(name_tokens, @query) OR SEARCH(aliases_tokens, @query) ORDER BY id
+params:
+  @query STRING = "nordlys OR fjordkraft"
+expect:
+  columns: id STRING, s FLOAT64, a FLOAT64
+  ["no-1",1.0,1.0]
+  ["no-3",1.0,0.0]
+  ["no-5",1.0,0.0]
+expect@spanner:
+  columns: id STRING, s FLOAT64, a FLOAT64
+  ["no-1",1.2704493999481201,1.2704493999481201]
+  ["no-3",1.2704493999481201,0.0]
+  ["no-5",1.2704493999481201,0.0]

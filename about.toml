@@ -1,0 +1,24 @@
+# cargo-about: the licenses spanbolt accepts for Rust crates, and where their texts come from.
+# `cargo about generate --all-features --locked about.hbs -o THIRD_PARTY_LICENSES.txt` writes the full
+# texts that ship with the binary and the image (the Dockerfile does it; docs/licenses.md).
+# `scripts/check-licenses.py` fails when a crate's license expression can't be satisfied from
+# `accepted`, so a new dependency under another license stops the gate instead of the release.
+# Keep THIRD_PARTY_NOTICES.md (the inventory) in step when this list changes.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "Unlicense",
+    # File-level copyleft (imbl, imbl-sized-chunks): used unmodified, source public.
+    "MPL-2.0",
+]
+
+# Every crate is listed, build dependencies included, as in THIRD_PARTY_NOTICES.md: a superset of
+# what the binary links is harmless, and it keeps the inventory and the texts one list. Release
+# builds run `cargo about generate --frozen` after `cargo fetch`: texts come from the crate sources
+# only, the same on every run.
+

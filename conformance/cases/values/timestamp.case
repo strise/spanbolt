@@ -1,0 +1,127 @@
+tags: values timestamp
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    B BOOL,
+    I INT64,
+    F32 FLOAT32,
+    F FLOAT64,
+    N NUMERIC,
+    S STRING(MAX),
+    S3 STRING(3),
+    Y BYTES(MAX),
+    Y2 BYTES(2),
+    D DATE,
+    Ts TIMESTAMP,
+    J JSON,
+    AI ARRAY<INT64>,
+    AS_ ARRAY<STRING(MAX)>,
+    AF ARRAY<FLOAT64>,
+    AN ARRAY<NUMERIC>,
+    AJ ARRAY<JSON>,
+    AY ARRAY<BYTES(MAX)>,
+    AD ARRAY<DATE>,
+    ATs ARRAY<TIMESTAMP>,
+    AB ARRAY<BOOL>,
+  ) PRIMARY KEY (K)
+
+case nanos
+insert V cols=K,Ts:
+  [1, "2024-01-02T03:04:05.123456789Z"]
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+  ["1","2024-01-02T03:04:05.123456789Z"]
+
+case millis
+insert V cols=K,Ts:
+  [1, "2024-01-02T03:04:05.120Z"]
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+  ["1","2024-01-02T03:04:05.12Z"]
+
+case min
+insert V cols=K,Ts:
+  [1, "0001-01-01T00:00:00Z"]
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+  ["1","0001-01-01T00:00:00Z"]
+
+case max
+insert V cols=K,Ts:
+  [1, "9999-12-31T23:59:59.999999999Z"]
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+  ["1","9999-12-31T23:59:59.999999999Z"]
+
+case offset
+insert V cols=K,Ts:
+  [1, "2024-01-02T03:04:05+02:00"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-01-02T03:04:05+02:00 as a TIMESTAMP. The timestamp value must end with an uppercase literal 'Z' to specify Zulu time (UTC-0). For details on the TIMESTAMP type encoding, see https://cloud.google.com/spanner/docs/data-types#timestamp-type
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+
+case lowercase_t
+insert V cols=K,Ts:
+  [1, "2024-01-02t03:04:05z"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-01-02t03:04:05z as a TIMESTAMP. The timestamp value must end with an uppercase literal 'Z' to specify Zulu time (UTC-0). For details on the TIMESTAMP type encoding, see https://cloud.google.com/spanner/docs/data-types#timestamp-type
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+
+case bad_month
+insert V cols=K,Ts:
+  [1, "2024-13-01T00:00:00Z"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-13-01T00:00:00Z as a TIMESTAMP: Failed to parse input. For details on the TIMESTAMP type encoding, see https://cloud.google.com/spanner/docs/data-types#timestamp_type
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+
+case no_zone
+insert V cols=K,Ts:
+  [1, "2024-01-02T03:04:05"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-01-02T03:04:05 as a TIMESTAMP. The timestamp value must end with an uppercase literal 'Z' to specify Zulu time (UTC-0). For details on the TIMESTAMP type encoding, see https://cloud.google.com/spanner/docs/data-types#timestamp-type
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+
+case ten_fraction_digits
+insert V cols=K,Ts:
+  [1, "2024-01-02T03:04:05.1234567891Z"]
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+  ["1","2024-01-02T03:04:05.123456789Z"]
+
+case commit_ts_not_allowed
+insert V cols=K,Ts:
+  [1, "spanner.commit_timestamp()"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write commit timestamp because the allow_commit_timestamp column option is not set to true for column V.Ts, or for all corresponding shared key columns in this table's interleaved table hierarchy.
+read V cols=K,Ts:
+  [1]
+expect:
+  columns: K INT64, Ts TIMESTAMP
+

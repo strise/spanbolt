@@ -1,0 +1,259 @@
+# Query shapes the SQL engine plans specially: key/index pushdown through joins, correlated
+# subqueries, set operations, CTEs, UNNEST and aggregation modifiers.
+tags: sql select
+schema:
+  CREATE TABLE Singers (
+    SingerId INT64 NOT NULL,
+    Name STRING(MAX),
+    Team STRING(36),
+    Score FLOAT64,
+    Tags ARRAY<STRING(MAX)>,
+  ) PRIMARY KEY (SingerId);
+  CREATE TABLE Albums (
+    SingerId INT64 NOT NULL,
+    AlbumId INT64 NOT NULL,
+    Title STRING(MAX),
+    Year INT64,
+  ) PRIMARY KEY (SingerId, AlbumId),
+    INTERLEAVE IN PARENT Singers ON DELETE CASCADE;
+  CREATE INDEX SingersByTeam ON Singers(Team) STORING (Name);
+  CREATE INDEX AlbumsByYear ON Albums(Year DESC)
+insert Singers cols=SingerId,Name,Team,Score,Tags:
+  [1, "Ann", "red", 1.5, ["a", "b"]]
+  [2, "Bob", "blue", 2.5, []]
+  [3, null, "red", null, null]
+  [4, "Dan", null, 0.5, ["c"]]
+insert Albums cols=SingerId,AlbumId,Title,Year:
+  [1, 1, "A", 2001]
+  [1, 2, "B", 2005]
+  [2, 1, "C", 2005]
+  [4, 1, "D", null]
+
+case join_filter_pushdown
+query:
+  SELECT s.Name, a.Title FROM Singers s JOIN Albums a ON a.SingerId = s.SingerId WHERE s.SingerId = @id ORDER BY a.Title
+params:
+  @id INT64 = 1
+expect:
+  columns: Name STRING, Title STRING
+  ["Ann","A"]
+  ["Ann","B"]
+expect@spanner:
+  same
+
+case left_join_keeps_unmatched
+query:
+  SELECT s.SingerId, a.AlbumId FROM Singers s LEFT JOIN Albums a ON a.SingerId = s.SingerId AND a.Year > 2002 ORDER BY 1, 2
+expect:
+  columns: SingerId INT64, AlbumId INT64
+  ["1","2"]
+  ["2","1"]
+  ["3",null]
+  ["4",null]
+expect@spanner:
+  same
+
+case cross_join_where_equality
+query:
+  SELECT s.SingerId, a.Title FROM Singers s, Albums a WHERE s.SingerId = a.SingerId AND s.Team = 'red'
+expect:
+  columns: SingerId INT64, Title STRING
+  ["1","A"]
+  ["1","B"]
+expect@spanner:
+  same
+
+case full_join
+query:
+  SELECT s.SingerId, a.Title FROM (SELECT * FROM Singers WHERE Team = 'red') s FULL JOIN (SELECT * FROM Albums WHERE Year = 2005) a ON s.SingerId = a.SingerId
+expect:
+  columns: SingerId INT64, Title STRING
+  ["1","B"]
+  ["3",null]
+  [null,"C"]
+expect@spanner:
+  same
+
+case correlated_exists
+query:
+  SELECT SingerId FROM Singers s WHERE EXISTS (SELECT 1 FROM Albums a WHERE a.SingerId = s.SingerId AND a.Year = 2005)
+expect:
+  columns: SingerId INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case not_in_subquery_with_null
+query:
+  SELECT SingerId FROM Singers WHERE Team NOT IN (SELECT Team FROM Singers WHERE SingerId > 2)
+expect:
+  columns: SingerId INT64
+expect@spanner:
+  same
+
+case scalar_subquery_per_row
+query:
+  SELECT s.SingerId, (SELECT MAX(Year) FROM Albums a WHERE a.SingerId = s.SingerId) AS latest FROM Singers s
+expect:
+  columns: SingerId INT64, latest INT64
+  ["4",null]
+  ["3",null]
+  ["2","2005"]
+  ["1","2005"]
+expect@spanner:
+  same
+
+case array_subquery_struct
+query:
+  SELECT s.SingerId, ARRAY(SELECT AS STRUCT a.AlbumId, a.Title FROM Albums a WHERE a.SingerId = s.SingerId ORDER BY a.AlbumId DESC) AS albums FROM Singers s ORDER BY 1
+expect:
+  columns: SingerId INT64, albums ARRAY<STRUCT<AlbumId INT64, Title STRING>>
+  ["1",[["2","B"],["1","A"]]]
+  ["2",[["1","C"]]]
+  ["3",[]]
+  ["4",[["1","D"]]]
+expect@spanner:
+  same
+
+case index_range_desc
+query:
+  SELECT Title FROM Albums@{FORCE_INDEX=AlbumsByYear} WHERE Year BETWEEN 2002 AND 2010 ORDER BY Title
+expect:
+  columns: Title STRING
+  ["B"]
+  ["C"]
+expect@spanner:
+  same
+
+case index_storing_with_backjoin
+query:
+  SELECT SingerId, Name, Score FROM Singers@{FORCE_INDEX=SingersByTeam} WHERE Team = 'red' ORDER BY SingerId
+expect:
+  columns: SingerId INT64, Name STRING, Score FLOAT64
+  ["1","Ann",1.5]
+  ["3",null,null]
+expect@spanner:
+  same
+
+case set_operations
+query:
+  SELECT Team FROM Singers INTERSECT DISTINCT SELECT 'red'
+  UNION ALL
+  (SELECT Team FROM Singers EXCEPT DISTINCT SELECT Team FROM Singers WHERE SingerId <> 2)
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Different set operations cannot be used in the same query without using parentheses for grouping [at 2:1]
+expect@spanner:
+  same
+
+case cte_used_twice
+query:
+  WITH red AS (SELECT SingerId FROM Singers WHERE Team = 'red')
+  SELECT a.SingerId, b.SingerId FROM red a JOIN red b ON a.SingerId < b.SingerId
+expect:
+  columns: SingerId INT64, SingerId INT64
+  ["1","3"]
+expect@spanner:
+  same
+
+case unnest_with_offset_column
+query:
+  SELECT s.SingerId, t, o FROM Singers s, UNNEST(s.Tags) AS t WITH OFFSET o ORDER BY 1, 3
+expect:
+  columns: SingerId INT64, t STRING, o INT64
+  ["1","a","0"]
+  ["1","b","1"]
+  ["4","c","0"]
+expect@spanner:
+  same
+
+case unnest_param_struct_array
+query:
+  SELECT x.k, x.v FROM UNNEST(@rows) AS x WHERE x.v > 1 ORDER BY x.k
+params:
+  @rows ARRAY<STRUCT<k STRING, v INT64>> = [["a", 1], ["b", 2], ["c", 3]]
+expect:
+  columns: k STRING, v INT64
+  ["b","2"]
+  ["c","3"]
+expect@spanner:
+  same
+
+case group_having_distinct
+query:
+  SELECT Team, COUNT(DISTINCT SingerId) AS n, STRING_AGG(Name, ',' ORDER BY Name) AS names FROM Singers GROUP BY Team HAVING COUNT(*) >= 1 ORDER BY Team
+expect:
+  columns: Team STRING, n INT64, names STRING
+  [null,"1","Dan"]
+  ["blue","1","Bob"]
+  ["red","2","Ann"]
+expect@spanner:
+  same
+
+case array_agg_ignore_nulls_limit
+query:
+  SELECT ARRAY_AGG(Name IGNORE NULLS ORDER BY Name DESC LIMIT 2) AS top FROM Singers
+expect:
+  columns: top ARRAY<STRING>
+  [["Dan","Bob"]]
+expect@spanner:
+  same
+
+case limit_offset_params
+query:
+  SELECT SingerId FROM Singers ORDER BY SingerId LIMIT @l OFFSET @o
+params:
+  @l INT64 = 2
+  @o INT64 = 1
+expect:
+  columns: SingerId INT64
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case select_star_except
+query:
+  SELECT * EXCEPT (Tags, Score) FROM Singers WHERE SingerId IN UNNEST(@ids) ORDER BY SingerId
+params:
+  @ids ARRAY<INT64> = [4, 1, 99]
+expect:
+  columns: SingerId INT64, Name STRING, Team STRING
+  ["1","Ann","red"]
+  ["4","Dan",null]
+expect@spanner:
+  same
+
+case distinct_nulls
+query:
+  SELECT DISTINCT Team FROM Singers
+expect:
+  columns: Team STRING
+  ["blue"]
+  [null]
+  ["red"]
+expect@spanner:
+  same
+
+case case_when_coalesce
+query:
+  SELECT SingerId, CASE WHEN Score IS NULL THEN 'none' WHEN Score > 1 THEN 'high' ELSE 'low' END AS band, COALESCE(Team, 'n/a') AS team FROM Singers ORDER BY 1
+expect:
+  columns: SingerId INT64, band STRING, team STRING
+  ["1","high","red"]
+  ["2","high","blue"]
+  ["3","none","red"]
+  ["4","low","n/a"]
+expect@spanner:
+  same
+
+case window_function_rejected
+query:
+  SELECT ROW_NUMBER() OVER (ORDER BY SingerId) FROM Singers
+expect:
+  error: INVALID_ARGUMENT
+  message: Analytic functions not supported [at 1:8]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: ROW_NUMBER.

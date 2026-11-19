@@ -1,0 +1,221 @@
+tags: sql datetime
+schema:
+  CREATE TABLE Teams (
+    TeamId STRING(36) NOT NULL,
+    Name STRING(MAX) NOT NULL,
+    CustomerId STRING(36),
+    Created TIMESTAMP NOT NULL,
+  ) PRIMARY KEY (TeamId);
+  CREATE TABLE Entities (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    Kind STRING(32) NOT NULL,
+    Status STRING(32),
+    Name STRING(MAX),
+    Aliases ARRAY<STRING(MAX)>,
+    Data JSON,
+    Score FLOAT64,
+    Version INT64 NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    UpdatedAt TIMESTAMP,
+  ) PRIMARY KEY (TeamId, EntityId),
+    INTERLEAVE IN PARENT Teams ON DELETE CASCADE;
+  CREATE INDEX EntitiesByKind ON Entities(TeamId, Kind);
+  CREATE NULL_FILTERED INDEX EntitiesByStatus ON Entities(Status) STORING (Name);
+  CREATE TABLE Reviews (
+    TeamId STRING(36) NOT NULL,
+    EntityId STRING(36) NOT NULL,
+    ReviewId INT64 NOT NULL,
+    CreatedBy STRING(36) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL,
+    Outcome STRING(16),
+  ) PRIMARY KEY (TeamId, EntityId, ReviewId),
+    INTERLEAVE IN PARENT Entities ON DELETE CASCADE;
+  CREATE TABLE Users (
+    UserId STRING(36) NOT NULL,
+    Email STRING(MAX) NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (UserId);
+  CREATE TABLE Signals (
+    EntityId STRING(36) NOT NULL,
+    SignalType STRING(32) NOT NULL,
+    ValidFrom TIMESTAMP NOT NULL,
+    Confidence FLOAT64 NOT NULL,
+  ) PRIMARY KEY (EntityId, SignalType, ValidFrom)
+insert Teams cols=TeamId,Name,CustomerId,Created:
+  ["t1", "Alpha", "c1", "2024-01-01T00:00:00Z"]
+  ["t2", "Beta", "c1", "2024-02-01T00:00:00Z"]
+  ["t3", "Gamma", null, "2024-03-01T00:00:00Z"]
+insert Entities cols=TeamId,EntityId,Kind,Status,Name,Aliases,Data,Score,Version,CreatedAt,UpdatedAt:
+  ["t1", "e1", "company", "active", "Acme AS", ["ACME", "Acme Group"], "{\"country\":\"NO\",\"size\":120,\"tags\":[\"a\",\"b\"],\"owner\":{\"id\":\"p1\",\"share\":0.5}}", 0.75, 3, "2024-01-05T10:00:00Z", "2024-06-01T12:30:00.123456Z"]
+  ["t1", "e2", "person", "active", "Kari Nordmann", [], "{\"country\":\"NO\",\"birth\":{\"year\":1980}}", 0.5, 1, "2024-01-06T00:00:00Z", null]
+  ["t1", "e3", "company", "archived", "Beta Holding", ["BH"], "{\"country\":\"SE\",\"size\":5}", null, 2, "2024-02-10T08:00:00Z", "2024-03-01T00:00:00Z"]
+  ["t1", "e4", "company", null, "Delta ASA", null, null, 1.25, 1, "2024-03-15T00:00:00Z", null]
+  ["t2", "e1", "company", "active", "Acme AS", ["ACME"], "{\"country\":\"NO\",\"size\":120}", 0.9, 5, "2024-02-02T00:00:00Z", null]
+  ["t2", "e5", "person", "pending", "Ola Nordmann", ["Ola"], "{\"country\":\"DK\"}", 0.1, 1, "2024-04-01T00:00:00Z", null]
+insert Reviews cols=TeamId,EntityId,ReviewId,CreatedBy,CreatedAt,Outcome:
+  ["t1", "e1", 1, "u1", "2024-01-10T00:00:00Z", "approved"]
+  ["t1", "e1", 2, "u2", "2024-02-10T00:00:00Z", null]
+  ["t1", "e3", 1, "u1", "2024-02-11T00:00:00Z", "rejected"]
+  ["t2", "e5", 1, "u3", "2024-04-02T00:00:00Z", null]
+insert Users cols=UserId,Email,Name:
+  ["u1", "ann@example.com", "Ann"]
+  ["u2", "bob@example.com", null]
+  ["u4", "dan@example.com", "Dan"]
+insert Signals cols=EntityId,SignalType,ValidFrom,Confidence:
+  ["e1", "news", "2024-05-01T00:00:00Z", 0.8]
+  ["e1", "news", "2024-05-20T00:00:00Z", 0.4]
+  ["e1", "sanction", "2024-04-01T00:00:00Z", 1.0]
+  ["e3", "news", "2024-05-02T00:00:00Z", 0.6]
+  ["e5", "pep", "2024-01-01T00:00:00Z", 0.9]
+
+case timestamp_sub_add
+query:
+  SELECT TIMESTAMP_SUB(TIMESTAMP '2024-03-01T00:00:00Z', INTERVAL 1 DAY) AS a, TIMESTAMP_ADD(TIMESTAMP '2024-01-31T23:59:59.999999Z', INTERVAL 1 MICROSECOND) AS b
+expect:
+  columns: a TIMESTAMP, b TIMESTAMP
+  ["2024-02-29T00:00:00Z","2024-02-01T00:00:00Z"]
+
+case timestamp_sub_param_interval
+query:
+  SELECT TIMESTAMP_SUB(@now, INTERVAL @stale_seconds SECOND) AS cutoff
+params:
+  @now TIMESTAMP = "2024-01-01T00:00:00Z"
+  @stale_seconds INT64 = 90
+expect:
+  columns: cutoff TIMESTAMP
+  ["2023-12-31T23:58:30Z"]
+
+case date_sub_diff
+query:
+  SELECT DATE_SUB(DATE '2024-03-31', INTERVAL 1 MONTH) AS a, DATE_DIFF(DATE '2024-03-01', DATE '2023-03-01', DAY) AS d, DATE_DIFF(DATE '2024-03-01', DATE '2023-12-31', MONTH) AS m
+expect:
+  columns: a DATE, d INT64, m INT64
+  ["2024-02-29","366","3"]
+
+case date_add_leap
+query:
+  SELECT DATE_ADD(DATE '2024-02-29', INTERVAL 1 YEAR) AS a, DATE_ADD(DATE '2024-01-31', INTERVAL 1 MONTH) AS b
+expect:
+  columns: a DATE, b DATE
+  ["2025-02-28","2024-02-29"]
+
+case date_trunc_variants
+query:
+  SELECT DATE_TRUNC(DATE '2024-05-15', MONTH) AS m, DATE_TRUNC(DATE '2024-05-15', YEAR) AS y, DATE_TRUNC(DATE '2024-05-15', WEEK) AS w, DATE_TRUNC(DATE '2024-05-15', ISOWEEK) AS iw
+expect:
+  columns: m DATE, y DATE, w DATE, iw DATE
+  ["2024-05-01","2024-01-01","2024-05-12","2024-05-13"]
+
+case timestamp_trunc_tz
+query:
+  SELECT TIMESTAMP_TRUNC(TIMESTAMP '2024-05-15T22:30:00Z', DAY) AS utc, TIMESTAMP_TRUNC(TIMESTAMP '2024-05-15T22:30:00Z', DAY, 'Europe/Oslo') AS oslo
+expect:
+  columns: utc TIMESTAMP, oslo TIMESTAMP
+  ["2024-05-15T07:00:00Z","2024-05-15T22:00:00Z"]
+
+case extract_parts
+query:
+  SELECT EXTRACT(YEAR FROM CreatedAt) AS y, EXTRACT(DAYOFWEEK FROM CreatedAt) AS dow, EXTRACT(DATE FROM CreatedAt) AS d, EXTRACT(HOUR FROM CreatedAt AT TIME ZONE 'Europe/Oslo') AS h_oslo
+  FROM Entities WHERE TeamId = 't1' AND EntityId = 'e3'
+expect:
+  columns: y INT64, dow INT64, d DATE, h_oslo INT64
+  ["2024","7","2024-02-10","9"]
+
+case extract_date_compare
+query:
+  SELECT EntityId FROM Entities WHERE EXTRACT(DATE FROM CreatedAt) < DATE_SUB(DATE '2024-03-01', INTERVAL 1 MONTH)
+expect:
+  columns: EntityId STRING
+  ["e1"]
+  ["e2"]
+
+case format_timestamp_tz
+query:
+  SELECT FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E6S%Ez', TIMESTAMP '2024-07-01T12:00:00.5Z', 'Europe/Oslo') AS a, FORMAT_TIMESTAMP('%Y-%m', TIMESTAMP '2024-12-31T23:30:00Z', 'Asia/Tokyo') AS b
+expect:
+  columns: a STRING, b STRING
+  ["2024-07-01T14:00:00.500000+02:00","2025-01"]
+
+case format_date
+query:
+  SELECT FORMAT_DATE('%Y-%m', DATE '2024-02-29') AS a, FORMAT_DATE('%A %d %B %Y', DATE '2024-02-29') AS b
+expect:
+  columns: a STRING, b STRING
+  ["2024-02","Thursday 29 February 2024"]
+
+case parse_functions
+query:
+  SELECT PARSE_DATE('%Y%m%d', '20240229') AS d, PARSE_TIMESTAMP('%Y-%m-%d %H:%M', '2024-01-02 03:04', 'Europe/Oslo') AS t
+expect:
+  columns: d DATE, t TIMESTAMP
+  ["2024-02-29","2024-01-02T02:04:00Z"]
+
+case parse_date_invalid
+query:
+  SELECT PARSE_DATE('%Y-%m-%d', '2024-02-30')
+expect:
+  error: OUT_OF_RANGE
+  message: Out-of-range datetime field in parsing function
+
+case unix_conversions
+query:
+  SELECT UNIX_DATE(DATE '2024-01-01') AS ud, UNIX_SECONDS(TIMESTAMP '2024-01-01T00:00:00Z') AS us, UNIX_MICROS(TIMESTAMP '1970-01-01T00:00:00.000001Z') AS um, TIMESTAMP_SECONDS(0) AS t0, TIMESTAMP_MILLIS(-1) AS tm
+expect:
+  columns: ud INT64, us INT64, um INT64, t0 TIMESTAMP, tm TIMESTAMP
+  ["19723","1704067200","1","1970-01-01T00:00:00Z","1969-12-31T23:59:59.999Z"]
+
+case date_from_timestamp_tz
+query:
+  SELECT DATE(TIMESTAMP '2024-01-01T23:30:00Z', 'Europe/Oslo') AS oslo, DATE(TIMESTAMP '2024-01-01T23:30:00Z', 'UTC') AS utc, DATE(2024, 2, 29) AS ctor
+expect:
+  columns: oslo DATE, utc DATE, ctor DATE
+  ["2024-01-02","2024-01-01","2024-02-29"]
+
+case timestamp_diff_units
+query:
+  SELECT TIMESTAMP_DIFF(TIMESTAMP '2024-01-02T00:00:00Z', TIMESTAMP '2024-01-01T00:00:01Z', HOUR) AS h, TIMESTAMP_DIFF(TIMESTAMP '2024-01-01T00:00:00Z', TIMESTAMP '2024-01-01T00:00:01.5Z', MILLISECOND) AS ms
+expect:
+  columns: h INT64, ms INT64
+  ["23","-1500"]
+
+case timestamp_nanos_literal
+query:
+  SELECT TIMESTAMP '2024-01-02 03:04:05.123456789+00' AS t, CAST('2024-01-02T03:04:05.000000001Z' AS TIMESTAMP) AS t2
+expect:
+  columns: t TIMESTAMP, t2 TIMESTAMP
+  ["2024-01-02T03:04:05.123456789Z","2024-01-02T03:04:05.000000001Z"]
+
+case current_timestamp_and_date
+query:
+  SELECT CURRENT_TIMESTAMP() AS now, CURRENT_DATE() AS today, CURRENT_TIMESTAMP() > TIMESTAMP '2024-01-01T00:00:00Z' AS after
+expect:
+  columns: now TIMESTAMP, today DATE, after BOOL
+  ["<now>","<now>",true]
+
+case coalesce_modified_created
+query:
+  SELECT EntityId FROM Entities WHERE COALESCE(UpdatedAt, CreatedAt) >= @from
+params:
+  @from TIMESTAMP = "2024-03-01T00:00:00Z"
+expect:
+  columns: EntityId STRING
+  ["e5"]
+  ["e3"]
+  ["e4"]
+  ["e1"]
+
+case timestamp_out_of_range
+query:
+  SELECT TIMESTAMP_ADD(TIMESTAMP '9999-12-31T23:59:59Z', INTERVAL 1 DAY)
+expect:
+  error: OUT_OF_RANGE
+  message: Unix picoseconds value is out of allowed range between -62135596800000000000000 to 253402300799999999999999
+
+case generate_date_array
+query:
+  SELECT GENERATE_DATE_ARRAY(DATE '2024-01-30', DATE '2024-04-30', INTERVAL 1 MONTH) AS months
+expect:
+  columns: months ARRAY<DATE>
+  [["2024-01-30","2024-02-29","2024-03-29","2024-04-29"]]
+

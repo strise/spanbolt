@@ -49,8 +49,13 @@ migrations, JDBC, the Java client, Beam pipelines) passes on it. Expect gaps out
 suite and the conformance cases exercise.
 
 - Anything spanbolt doesn't support fails with `UNIMPLEMENTED`, not a silently different answer.
-- Not supported: graph queries (`GRAPH_TABLE`), `APPROX_*` distance functions with `options`,
-  backups, IAM policies, the emulator's own command-line flags.
+- Spanner Graph: `CREATE [OR REPLACE] PROPERTY GRAPH`, `DROP PROPERTY GRAPH`,
+  `INFORMATION_SCHEMA.PROPERTY_GRAPHS`, and GQL (`GRAPH g MATCH ...`, `GRAPH_TABLE`) with
+  `WHERE`/`FILTER`, `RETURN`, `NEXT`, `FOR`, `OPTIONAL MATCH`, bounded quantified paths and
+  `LABELS`. Path variables, `ANY`/`SHORTEST` search, `SIMPLE` paths and graph elements in results
+  or `TO_JSON` are not supported.
+- Not supported: `APPROX_*` distance functions with `options`, backups, IAM policies, the
+  emulator's own command-line flags.
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the
   client libraries already handle, but the timing differs.
 - Tested on macOS (arm64) and in the linux/arm64 image. linux/amd64 is untested.

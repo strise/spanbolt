@@ -79,6 +79,14 @@ fn assignable(found: &ColumnType, col: &ColumnType) -> bool {
 }
 
 impl ExprEvaluator for SchemaExprs {
+    fn validate_property_graph(
+        &self,
+        schema: &Arc<spanbolt_ddl::Schema>,
+        name: &str,
+    ) -> Result<()> {
+        self.engine.validate_property_graph(schema, name)
+    }
+
     fn validate(&self, expr: &str, table: &TableMeta, kind: &ExprKind) -> Result<()> {
         // Generated columns are analysed with their parentheses, as the emulator reports them.
         let text = match kind {

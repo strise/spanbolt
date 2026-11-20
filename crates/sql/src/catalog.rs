@@ -43,6 +43,10 @@ pub struct SqlCatalog {
     /// Keyed by lowercase full name (`schema.table`, `information_schema.tables`).
     relations: HashMap<String, Relation>,
     plans: Mutex<HashMap<PlanKey, Arc<Prepared>>>,
+    /// Property graphs, keyed by lowercase name.
+    pub graphs: HashMap<String, Arc<crate::graph::GraphDef>>,
+    /// Graph adjacency built on first use, per element table and table contents.
+    pub graph_index: crate::graph_exec::IndexCache,
     /// INFORMATION_SCHEMA rows, built on first use. They depend on the schema alone.
     info_rows: Mutex<HashMap<String, Arc<InfoRows>>>,
     pub hits: std::sync::atomic::AtomicU64,
@@ -230,8 +234,9 @@ struct Builder<'a> {
 }
 
 impl Builder<'_> {
-    fn add(&mut self, name: &str, columns: &[Col], rel: Relation) -> Result<()> {
-        self.tables.push(self.cache.get(table_json(name, columns))?);
+    fn add(&mut self, name: &str, columns: &[Col], pk: &[usize], rel: Relation) -> Result<()> {
+        self.tables
+            .push(self.cache.get(table_json(name, columns, pk))?);
         let lower = name.to_ascii_lowercase();
         self.names.push(lower.clone());
         self.relations.insert(lower, rel);
@@ -284,7 +289,7 @@ fn push_json_str(out: &mut String, s: &str) {
 }
 
 /// The shim's table JSON (`googlesql_shim.h`), also the table's cache key.
-fn table_json(name: &str, columns: &[Col]) -> String {
+fn table_json(name: &str, columns: &[Col], pk: &[usize]) -> String {
     let mut out = String::with_capacity(64 + columns.len() * 64);
     out.push_str("{\"name\":");
     push_json_str(&mut out, name);
@@ -308,7 +313,12 @@ fn table_json(name: &str, columns: &[Col]) -> String {
             ",\"writable\":false}"
         });
     }
-    out.push_str("]}");
+    out.push(']');
+    if !pk.is_empty() {
+        out.push_str(",\"primary_key\":");
+        out.push_str(&serde_json::to_string(pk).unwrap_or_default());
+    }
+    out.push('}');
     out
 }
 
@@ -339,9 +349,9 @@ pub fn build(
                 (c.name.as_str(), &c.ty, hidden, !c.generated)
             })
             .collect();
-        b.add(&tm.name, &cols, Relation::Table(id))?;
+        b.add(&tm.name, &cols, &tm.pk, Relation::Table(id))?;
         if let Some(syn) = st.and_then(|t| t.synonym.as_ref()) {
-            b.add(syn, &cols, Relation::Table(id))?;
+            b.add(syn, &cols, &tm.pk, Relation::Table(id))?;
         }
     }
     for it in info_tables() {
@@ -351,7 +361,7 @@ pub fn build(
             .map(|(n, t, _)| (n.as_str(), t, false, false))
             .collect();
         let name = format!("INFORMATION_SCHEMA.{}", it.name);
-        b.add(&name, &cols, Relation::Info(it.clone()))?;
+        b.add(&name, &cols, &[], Relation::Info(it.clone()))?;
     }
     let views: Vec<_> = schema
         .creation_order
@@ -376,7 +386,7 @@ pub fn build(
                         name: v.name.clone(),
                         query: a.query.clone(),
                     });
-                    b.add(&v.name, &cols, Relation::View(def))?;
+                    b.add(&v.name, &cols, &[], Relation::View(def))?;
                     added = true;
                 }
                 Err(_) => next.push(v),
@@ -388,10 +398,25 @@ pub fn build(
         gsql = b.gsql()?;
         pending = next;
     }
+    let mut graphs = HashMap::new();
+    for g in schema.opaque.iter().filter(|o| o.kind == "PROPERTY GRAPH") {
+        // A graph the current tables no longer support is left out; DDL rejects creating one.
+        let Ok(def) = crate::graph::analyse(&gsql, &storage, &g.ddl) else {
+            continue;
+        };
+        if gsql
+            .add_property_graph(&crate::graph::shim_json(&def, &storage))
+            .is_ok()
+        {
+            graphs.insert(def.name.to_ascii_lowercase(), Arc::new(def));
+        }
+    }
     Ok(SqlCatalog {
         gsql,
         schema,
         storage,
+        graphs,
+        graph_index: Default::default(),
         relations: b.relations,
         plans: Mutex::new(HashMap::new()),
         info_rows: Mutex::new(HashMap::new()),

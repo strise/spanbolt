@@ -723,3 +723,85 @@ async fn dml_read_then_insert_race_aborts_loser() {
         Ok(vec![vec!["1000".to_string()], vec!["1001".to_string()]])
     );
 }
+
+/// Property graphs over gRPC: CREATE PROPERTY GRAPH is checked against the tables, then GQL
+/// queries and INFORMATION_SCHEMA.PROPERTY_GRAPHS read it.
+#[cfg(feature = "googlesql")]
+#[tokio::test]
+async fn property_graph_ddl_and_gql() {
+    let env = setup().await;
+    let mut admin = env.admin();
+    let ddl = |stmts: &[&str]| da::UpdateDatabaseDdlRequest {
+        database: DB.into(),
+        statements: stmts.iter().map(|s| s.to_string()).collect(),
+        ..Default::default()
+    };
+    let failed = |r: Result<tonic::Response<lro::Operation>, tonic::Status>| match r {
+        Err(e) => Some((e.code(), e.message().to_string())),
+        Ok(op) => match op.into_inner().result {
+            Some(operation::Result::Error(s)) => Some((Code::from(s.code), s.message)),
+            _ => None,
+        },
+    };
+    let bad = admin
+        .update_database_ddl(ddl(&[
+            "CREATE PROPERTY GRAPH g NODE TABLES (Missing KEY (Id) LABEL X PROPERTIES ALL COLUMNS)",
+        ]))
+        .await;
+    assert_eq!(failed(bad).map(|f| f.0), Some(Code::InvalidArgument));
+    let ok = admin
+        .update_database_ddl(ddl(&[
+            "CREATE TABLE Transfers (Id INT64 NOT NULL, Src INT64, Dst INT64, Amount INT64) PRIMARY KEY (Id)",
+            "CREATE PROPERTY GRAPH g NODE TABLES (Accounts LABEL Account PROPERTIES ALL COLUMNS)
+               EDGE TABLES (Transfers KEY (Id) SOURCE KEY (Src) REFERENCES Accounts (Id)
+                 DESTINATION KEY (Dst) REFERENCES Accounts (Id) LABEL Transfer PROPERTIES ALL COLUMNS)",
+        ]))
+        .await;
+    assert_eq!(failed(ok), None);
+
+    let session = env.session(DB).await;
+    seed(&env, &session).await;
+    let mut sp = env.spanner();
+    sp.commit(pb::CommitRequest {
+        session: session.clone(),
+        transaction: single_use_rw(),
+        mutations: vec![upsert(
+            "Transfers",
+            &["Id", "Src", "Dst", "Amount"],
+            vec![row(&["1", "1", "2", "10"]), row(&["2", "2", "3", "20"])],
+        )],
+        ..Default::default()
+    })
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+    let query = |sql: &str| pb::ExecuteSqlRequest {
+        session: session.clone(),
+        sql: sql.into(),
+        ..Default::default()
+    };
+    let rs = sp
+        .execute_sql(query(
+            "GRAPH g MATCH (a:Account WHERE a.Id = 1)-[t:Transfer]->{1,2}(b) RETURN b.Id AS id ORDER BY id",
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert_eq!(
+        rows(&rs),
+        vec![vec!["2".to_string()], vec!["3".to_string()]]
+    );
+    let node = sp
+        .execute_sql(query("GRAPH g MATCH (a:Account) RETURN a"))
+        .await
+        .err()
+        .map(|e| e.code());
+    assert_eq!(node, Some(Code::InvalidArgument));
+    let names = sp
+        .execute_sql(query(
+            "SELECT PROPERTY_GRAPH_NAME FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS",
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert_eq!(rows(&names), vec![vec!["g".to_string()]]);
+}

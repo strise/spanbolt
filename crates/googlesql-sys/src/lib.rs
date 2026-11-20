@@ -54,6 +54,17 @@ unsafe extern "C" {
         params: *const c_char,
         params_len: usize,
     ) -> RawResult;
+    fn gsql_catalog_add_property_graph(
+        catalog: *mut RawCatalog,
+        json: *const c_char,
+        len: usize,
+        error: *mut Buf,
+    ) -> i32;
+    fn gsql_analyze_ddl(
+        catalog: *const RawCatalog,
+        sql: *const c_char,
+        sql_len: usize,
+    ) -> RawResult;
     fn gsql_buf_free(buf: Buf);
 }
 
@@ -186,6 +197,37 @@ impl Catalog {
         }
     }
 
+    /// Adds a property graph (the shim's graph JSON, see `googlesql_shim.h`) over this catalog's
+    /// tables. Takes `&mut self`: graphs are added before the catalog is shared.
+    pub fn add_property_graph(&mut self, json: &str) -> Result<(), AnalyzeError> {
+        let mut err = empty_buf();
+        // SAFETY: catalog pointer is live and exclusively borrowed; json valid for its length.
+        let code = unsafe {
+            gsql_catalog_add_property_graph(
+                self.raw.as_ptr(),
+                json.as_ptr().cast(),
+                json.len(),
+                &mut err,
+            )
+        };
+        let message = String::from_utf8_lossy(&take(err)).into_owned();
+        if code == 0 {
+            Ok(())
+        } else {
+            Err(AnalyzeError { code, message })
+        }
+    }
+
+    /// Analyses a `CREATE [OR REPLACE] PROPERTY GRAPH` statement against this catalog's tables.
+    pub fn analyze_property_graph_ddl(
+        &self,
+        sql: &str,
+    ) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+        // SAFETY: catalog pointer is live for &self; sql valid for its length.
+        let r = unsafe { gsql_analyze_ddl(self.raw.as_ptr(), sql.as_ptr().cast(), sql.len()) };
+        decode_result(r)
+    }
+
     /// Analyses one statement; `params_json` maps parameter names to GoogleSQL type names.
     /// Returns the serialized `AnyResolvedStatementProto`.
     pub fn analyze_raw(&self, sql: &str, params_json: &str) -> Result<Vec<u8>, AnalyzeError> {
@@ -223,6 +265,21 @@ impl Catalog {
             message: format!("decode AnyResolvedStatementProto: {e}"),
         })
     }
+}
+
+fn decode_result(r: RawResult) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+    let bytes = take(r.proto);
+    let error = take(r.error);
+    if r.code != 0 {
+        return Err(AnalyzeError {
+            code: r.code,
+            message: String::from_utf8_lossy(&error).into_owned(),
+        });
+    }
+    prost::Message::decode(bytes.as_slice()).map_err(|e| AnalyzeError {
+        code: 13,
+        message: format!("decode AnyResolvedStatementProto: {e}"),
+    })
 }
 
 impl Drop for Catalog {

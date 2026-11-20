@@ -12,6 +12,9 @@
 #include "absl/container/flat_hash_map.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
+#include "absl/container/flat_hash_set.h"
+#include "absl/strings/ascii.h"
+#include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "googlesql/public/analyzer.h"
@@ -22,6 +25,7 @@
 #include "googlesql/public/multi_catalog.h"
 #include "googlesql/public/options.pb.h"
 #include "googlesql/public/simple_catalog.h"
+#include "googlesql/public/simple_property_graph.h"
 #include "googlesql/public/types/type_factory.h"
 #include "googlesql/resolved_ast/resolved_ast.h"
 #include "googlesql/resolved_ast/resolved_ast.pb.h"
@@ -122,7 +126,17 @@ googlesql::LanguageOptions SpannerLanguageOptions() {
       googlesql::FEATURE_FOR_UPDATE,
       googlesql::FEATURE_INLINE_LAMBDA_ARGUMENT,
       googlesql::FEATURE_IS_DISTINCT,
+      googlesql::FEATURE_SQL_GRAPH,
+      googlesql::FEATURE_SQL_GRAPH_ADVANCED_QUERY,
+      googlesql::FEATURE_SQL_GRAPH_BOUNDED_PATH_QUANTIFICATION,
+      googlesql::FEATURE_SQL_GRAPH_PATH_TYPE,
+      googlesql::FEATURE_SQL_GRAPH_PATH_MODE,
+      googlesql::FEATURE_SQL_GRAPH_DYNAMIC_ELEMENT_TYPE,
+      googlesql::FEATURE_SQL_GRAPH_RETURN_EXTENSIONS,
+      googlesql::FEATURE_SQL_GRAPH_CALL,
   });
+  // Spanner reserves GRAPH_TABLE, so `FROM GRAPH_TABLE(g MATCH ...)` parses.
+  options.EnableReservableKeyword("GRAPH_TABLE").IgnoreError();
   options.SetSupportedStatementKinds({
       googlesql::RESOLVED_QUERY_STMT,
       googlesql::RESOLVED_INSERT_STMT,
@@ -247,7 +261,7 @@ absl::StatusOr<const googlesql::Type*> ColumnType(const std::string& name) {
 }
 
 // {"name":"schema.T","columns":[{"name":"c","type":"INT64","hidden":false,
-//  "writable":true}]}
+//  "writable":true}],"primary_key":[0]}
 absl::StatusOr<std::unique_ptr<gsql_table>> BuildTable(const json& t) {
   std::string table_name = t.at("name").get<std::string>();
   std::string local_name = table_name;
@@ -271,6 +285,11 @@ absl::StatusOr<std::unique_ptr<gsql_table>> BuildTable(const json& t) {
         out->table->AddColumn(std::make_unique<googlesql::SimpleColumn>(
             table_name, column_name, *type, hidden, writable));
     if (!added.ok()) return added;
+  }
+  if (t.contains("primary_key")) {
+    std::vector<int> pk = t["primary_key"].get<std::vector<int>>();
+    absl::Status set = out->table->SetPrimaryKey(pk);
+    if (!set.ok()) return set;
   }
   out->table->set_full_name(table_name).IgnoreError();
   return out;
@@ -332,11 +351,16 @@ absl::StatusOr<std::unique_ptr<gsql_catalog>> BuildCatalog(
 
 absl::StatusOr<std::string> Analyze(const gsql_catalog& cat,
                                     const std::string& sql,
-                                    const std::string& params_text) {
+                                    const std::string& params_text,
+                                    bool ddl = false) {
   // Per-call factory: the catalog's factory stays read-only so analyses can
   // run concurrently.
   googlesql::TypeFactory call_factory;
   googlesql::AnalyzerOptions options = cat.options;
+  if (ddl) {
+    options.mutable_language()->SetSupportedStatementKinds(
+        {googlesql::RESOLVED_CREATE_PROPERTY_GRAPH_STMT});
+  }
   if (!params_text.empty()) {
     json params = json::parse(params_text, nullptr, false);
     if (params.is_discarded() || !params.is_object()) {
@@ -365,6 +389,176 @@ absl::StatusOr<std::string> Analyze(const gsql_catalog& cat,
   status = output->resolved_statement()->SaveTo(&fdsets, &proto);
   if (!status.ok()) return status;
   return proto.SerializeAsString();
+}
+
+absl::StatusOr<const googlesql::Table*> FindTable(const gsql_catalog& cat,
+                                                  const std::string& name) {
+  std::vector<std::string> path;
+  if (auto dot = name.find('.'); dot != std::string::npos) {
+    path = {name.substr(0, dot), name.substr(dot + 1)};
+  } else {
+    path = {name};
+  }
+  const googlesql::Table* table = nullptr;
+  absl::Status status = cat.tables->FindTable(path, &table);
+  if (!status.ok()) {
+    return absl::InvalidArgumentError(absl::StrCat("Table not found: ", name));
+  }
+  return table;
+}
+
+absl::StatusOr<std::vector<int>> ColumnIndexes(const googlesql::Table& table,
+                                               const json& names) {
+  std::vector<int> out;
+  for (const auto& n : names) {
+    const std::string& name = n.get_ref<const std::string&>();
+    int found = -1;
+    for (int i = 0; i < table.NumColumns(); ++i) {
+      if (absl::EqualsIgnoreCase(table.GetColumn(i)->Name(), name)) {
+        found = i;
+        break;
+      }
+    }
+    if (found < 0) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Column not found: ", table.Name(), ".", name));
+    }
+    out.push_back(found);
+  }
+  return out;
+}
+
+// Adds a property graph built from a JSON document:
+// {"name":"G","properties":[{"name":"id","type":"STRING"}],
+//  "labels":[{"name":"Person","properties":["id"]}],
+//  "nodes":[{"name":"Person","table":"Person","key":["id"],
+//            "labels":["Person"],"properties":[{"name":"id","sql":"id"}]}],
+//  "edges":[{... as nodes ...,
+//            "source":{"node":"Person","edge_columns":["src"],
+//                      "node_columns":["id"]},
+//            "destination":{...}}]}
+absl::Status AddPropertyGraph(gsql_catalog& cat, const json& g) {
+  const std::string graph_name = g.at("name").get<std::string>();
+  const std::vector<std::string> path = {graph_name};
+
+  std::vector<std::unique_ptr<const googlesql::GraphPropertyDeclaration>> decls;
+  absl::flat_hash_map<std::string, const googlesql::GraphPropertyDeclaration*>
+      decl_by_name;
+  for (const auto& p : g.at("properties")) {
+    std::string name = p.at("name").get<std::string>();
+    auto type = ColumnType(p.at("type").get<std::string>());
+    if (!type.ok()) return type.status();
+    auto decl = std::make_unique<googlesql::SimpleGraphPropertyDeclaration>(
+        name, path, *type, /*type_annotation_map=*/nullptr,
+        googlesql::GraphPropertyDeclaration::Kind::kScalar);
+    decl_by_name[absl::AsciiStrToLower(name)] = decl.get();
+    decls.push_back(std::move(decl));
+  }
+  auto decl_for = [&](const std::string& name)
+      -> absl::StatusOr<const googlesql::GraphPropertyDeclaration*> {
+    auto it = decl_by_name.find(absl::AsciiStrToLower(name));
+    if (it == decl_by_name.end()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Property not declared: ", name));
+    }
+    return it->second;
+  };
+
+  std::vector<std::unique_ptr<const googlesql::GraphElementLabel>> labels;
+  absl::flat_hash_map<std::string, const googlesql::GraphElementLabel*>
+      label_by_name;
+  for (const auto& l : g.at("labels")) {
+    std::string name = l.at("name").get<std::string>();
+    absl::flat_hash_set<const googlesql::GraphPropertyDeclaration*> props;
+    for (const auto& p : l.at("properties")) {
+      auto decl = decl_for(p.get<std::string>());
+      if (!decl.ok()) return decl.status();
+      props.insert(*decl);
+    }
+    auto label =
+        std::make_unique<googlesql::SimpleGraphElementLabel>(name, path, props);
+    label_by_name[absl::AsciiStrToLower(name)] = label.get();
+    labels.push_back(std::move(label));
+  }
+
+  struct Common {
+    std::string name;
+    const googlesql::Table* table;
+    std::vector<int> key;
+    absl::flat_hash_set<const googlesql::GraphElementLabel*> labels;
+    std::vector<std::unique_ptr<const googlesql::GraphPropertyDefinition>> defs;
+  };
+  auto common = [&](const json& e) -> absl::StatusOr<Common> {
+    Common c;
+    c.name = e.at("name").get<std::string>();
+    auto table = FindTable(cat, e.at("table").get<std::string>());
+    if (!table.ok()) return table.status();
+    c.table = *table;
+    auto key = ColumnIndexes(*c.table, e.at("key"));
+    if (!key.ok()) return key.status();
+    c.key = *std::move(key);
+    for (const auto& l : e.at("labels")) {
+      auto it = label_by_name.find(absl::AsciiStrToLower(l.get<std::string>()));
+      if (it == label_by_name.end()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Label not declared: ", l.get<std::string>()));
+      }
+      c.labels.insert(it->second);
+    }
+    for (const auto& p : e.at("properties")) {
+      auto decl = decl_for(p.at("name").get<std::string>());
+      if (!decl.ok()) return decl.status();
+      c.defs.push_back(std::make_unique<googlesql::SimpleGraphPropertyDefinition>(
+          *decl, p.at("sql").get<std::string>()));
+    }
+    return c;
+  };
+
+  std::vector<std::unique_ptr<const googlesql::GraphNodeTable>> nodes;
+  absl::flat_hash_map<std::string, const googlesql::GraphNodeTable*>
+      node_by_name;
+  for (const auto& n : g.at("nodes")) {
+    auto c = common(n);
+    if (!c.ok()) return c.status();
+    auto node = std::make_unique<googlesql::SimpleGraphNodeTable>(
+        c->name, path, c->table, c->key, c->labels, std::move(c->defs));
+    node_by_name[absl::AsciiStrToLower(c->name)] = node.get();
+    nodes.push_back(std::move(node));
+  }
+
+  std::vector<std::unique_ptr<const googlesql::GraphEdgeTable>> edges;
+  for (const auto& e : g.at("edges")) {
+    auto c = common(e);
+    if (!c.ok()) return c.status();
+    auto reference = [&](const json& r)
+        -> absl::StatusOr<std::unique_ptr<const googlesql::GraphNodeTableReference>> {
+      auto it =
+          node_by_name.find(absl::AsciiStrToLower(r.at("node").get<std::string>()));
+      if (it == node_by_name.end()) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Node table not found: ", r.at("node").get<std::string>()));
+      }
+      auto edge_cols = ColumnIndexes(*c->table, r.at("edge_columns"));
+      if (!edge_cols.ok()) return edge_cols.status();
+      auto node_cols = ColumnIndexes(*it->second->GetTable(), r.at("node_columns"));
+      if (!node_cols.ok()) return node_cols.status();
+      return std::make_unique<googlesql::SimpleGraphNodeTableReference>(
+          it->second, *std::move(edge_cols), *std::move(node_cols));
+    };
+    auto source = reference(e.at("source"));
+    if (!source.ok()) return source.status();
+    auto destination = reference(e.at("destination"));
+    if (!destination.ok()) return destination.status();
+    edges.push_back(std::make_unique<googlesql::SimpleGraphEdgeTable>(
+        c->name, path, c->table, c->key, c->labels, std::move(c->defs),
+        *std::move(source), *std::move(destination)));
+  }
+
+  cat.tables->AddOwnedPropertyGraph(
+      graph_name, std::make_unique<googlesql::SimplePropertyGraph>(
+                      path, std::move(nodes), std::move(edges),
+                      std::move(labels), std::move(decls)));
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -455,6 +649,41 @@ gsql_result gsql_analyze(const gsql_catalog* catalog, const char* sql,
                          : std::string(params_json, params_len));
   } catch (const std::exception& e) {
     result = absl::InvalidArgumentError(absl::StrCat("params JSON: ", e.what()));
+  }
+  if (!result.ok()) return Error(result.status());
+  return gsql_result{0, CopyBytes(*result), gsql_buf{nullptr, 0}};
+}
+
+int32_t gsql_catalog_add_property_graph(gsql_catalog* catalog,
+                                        const char* json_text, size_t json_len,
+                                        gsql_buf* error) {
+  absl::Status status;
+  try {
+    json doc = json::parse(std::string(json_text, json_len), nullptr,
+                           /*allow_exceptions=*/false);
+    if (doc.is_discarded() || !doc.is_object()) {
+      status = absl::InvalidArgumentError("graph JSON is not an object");
+    } else {
+      status = AddPropertyGraph(*catalog, doc);
+    }
+  } catch (const std::exception& e) {
+    status = absl::InvalidArgumentError(absl::StrCat("graph JSON: ", e.what()));
+  }
+  if (error != nullptr) {
+    *error = status.ok() ? gsql_buf{nullptr, 0}
+                         : CopyBytes(std::string(status.message()));
+  }
+  return static_cast<int32_t>(status.code());
+}
+
+gsql_result gsql_analyze_ddl(const gsql_catalog* catalog, const char* sql,
+                             size_t sql_len) {
+  absl::StatusOr<std::string> result;
+  try {
+    result = Analyze(*catalog, std::string(sql, sql_len), std::string(),
+                     /*ddl=*/true);
+  } catch (const std::exception& e) {
+    result = absl::InternalError(e.what());
   }
   if (!result.ok()) return Error(result.status());
   return gsql_result{0, CopyBytes(*result), gsql_buf{nullptr, 0}};

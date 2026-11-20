@@ -91,6 +91,17 @@ pub fn apply_ddl(state: &DbState, statements: &[String]) -> Result<DbState, DdlF
 fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
     use spanbolt_storage::expr::{ExprKind, expr_evaluator};
     let (table, only): (&str, Option<&str>) = match stmt {
+        Statement::Opaque {
+            object,
+            drop: false,
+        } if object.kind == "PROPERTY GRAPH" => {
+            let Some(ev) = expr_evaluator() else {
+                return Ok(());
+            };
+            return ev
+                .validate_property_graph(&std::sync::Arc::new(schema.clone()), &object.name)
+                .map_err(to_status);
+        }
         Statement::CreateTable { table, .. } => (&table.name, None),
         Statement::AlterTable { table, action } => match action {
             AlterTable::AddColumn { column, .. } | AlterTable::AlterColumn { column } => {

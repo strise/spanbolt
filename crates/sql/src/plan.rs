@@ -30,6 +30,9 @@ use crate::types::{self, Type, unimplemented};
 use crate::validate::Node;
 use crate::value_ops::{Key, truthy};
 
+#[path = "graph_plan.rs"]
+mod graph_plan;
+
 /// Columns visible at one level, innermost first.
 pub struct Scope<'p> {
     pub cols: &'p [i64],
@@ -161,6 +164,10 @@ pub struct Planner<'c> {
     pub search_rules: SearchRules,
     /// Subquery plans, for `explain` (kind and operator tree).
     pub subplans: Vec<(String, Arc<BoxOp>)>,
+    /// The property graph of the graph query being planned.
+    graph: Option<graph_plan::GraphCx>,
+    /// The previous statement's rows, for the next `GraphRefScan` of a linear graph query.
+    graph_ref: Option<Planned>,
 }
 
 /// What Cloud Spanner checks about where search functions appear in a statement.
@@ -368,6 +375,7 @@ pub fn expr_type(e: &AnyResolvedExprProto) -> Option<&TypeProto> {
         E::ResolvedSubqueryExprNode(x) => x.parent.as_ref(),
         E::ResolvedWithExprNode(x) => x.parent.as_ref(),
         E::ResolvedDmldefaultNode(x) => x.parent.as_ref(),
+        E::ResolvedGraphGetElementPropertyNode(x) => x.parent.as_ref(),
         _ => None,
     };
     base.and_then(|b| b.r#type.as_ref())
@@ -458,6 +466,9 @@ fn refs_only(e: &AnyResolvedExprProto, ids: &[i64]) -> bool {
 fn refs_any(e: &AnyResolvedExprProto, ids: &[i64]) -> bool {
     match e.node.as_ref() {
         Some(E::ResolvedColumnRefNode(c)) => ids.contains(&nid(&c.column)),
+        Some(E::ResolvedGraphGetElementPropertyNode(g)) => {
+            g.expr.as_deref().is_none_or(|x| refs_any(x, ids))
+        }
         Some(E::ResolvedCastNode(c)) => c.expr.as_deref().is_some_and(|x| refs_any(x, ids)),
         Some(E::ResolvedGetStructFieldNode(g)) => {
             g.expr.as_deref().is_some_and(|x| refs_any(x, ids))
@@ -836,6 +847,8 @@ impl<'c> Planner<'c> {
             },
             search_rules: SearchRules::default(),
             subplans: Vec::new(),
+            graph: None,
+            graph_ref: None,
         }
     }
 
@@ -1090,6 +1103,12 @@ impl<'c> Planner<'c> {
                 layout: scan_columns(s),
             }),
             S::ResolvedAnalyticScanNode(a) => Err(analytic_scan_error(a)),
+            S::ResolvedGraphTableScanNode(g) => self.graph_table(g, outer),
+            S::ResolvedGraphScanBaseNode(b) => self.graph_base(b, outer),
+            S::ResolvedGraphRefScanNode(_) => self
+                .graph_ref
+                .take()
+                .ok_or_else(|| unimplemented("This graph query shape")),
             other => Err(unimplemented(format!(
                 "Query operator {}",
                 node_name(other)
@@ -2112,6 +2131,9 @@ impl<'c> Planner<'c> {
                     .expr
                     .as_deref()
                     .ok_or_else(|| Error::internal("cast without expr"))?;
+                if graph_plan::is_graph_type(expr_type(e)) {
+                    return self.expr(inner, scope);
+                }
                 let from = type_of(inner)?;
                 let to = type_of(e)?;
                 let x = self.expr(inner, scope)?;
@@ -2165,6 +2187,7 @@ impl<'c> Planner<'c> {
                 })
             }
             E::ResolvedSubqueryExprNode(s) => self.subquery(s, scope)?,
+            E::ResolvedGraphGetElementPropertyNode(g) => self.graph_property(g, scope)?,
             E::ResolvedWithExprNode(w) => {
                 let ids: Vec<i64> = w.assignment_list.iter().map(|a| nid(&a.column)).collect();
                 let inner = Scope {
@@ -2375,6 +2398,9 @@ impl<'c> Planner<'c> {
         } else {
             self.search_placement(&name, b)?
         };
+        if let Some(ev) = self.graph_call(&name, b, scope)? {
+            return Ok(ev);
+        }
         let safe = b.error_mode.and_then(|m| ErrorMode::try_from(m).ok())
             == Some(ErrorMode::SafeErrorMode);
         let ret = types::from_proto(

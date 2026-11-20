@@ -1,12 +1,14 @@
 # On a tag vX.Y.Z: check it matches the workspace version in Cargo.toml and points at a commit on
 # main, then create the GitHub release with notes generated from the merged PRs
 # (.github/release.yml groups them by label). image.yml publishes the image for the same tag.
-# How to cut a release: docs/releasing.md.
+# How to cut a release: docs/releasing.md. workflow_dispatch on a branch is a dry run: it checks
+# the version and prints the release it would make, but only a tag ref publishes.
 name: release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,6 +27,10 @@ jobs:
       - name: Check the tag
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          if [ "$GITHUB_REF_TYPE" != tag ]; then
+            echo "::notice::dry run on $GITHUB_REF_NAME: would release v$version from $GITHUB_SHA"
+            exit 0
+          fi
           if [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "::error::tag $GITHUB_REF_NAME, but Cargo.toml says $version"; exit 1
           fi
@@ -32,6 +38,7 @@ jobs:
             echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main"; exit 1
           fi
       - name: Create the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

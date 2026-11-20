@@ -1,6 +1,7 @@
 # Multi-arch image (linux/amd64 + linux/arm64) from the prebuilt shim, each architecture built on a
 # native runner, smoke-tested, pushed by digest, then merged into one manifest list. Every push to
-# main publishes :main and :sha-<short>; a v* tag adds the semver tags.
+# main publishes :main and :sha-<short>; a v* tag adds the semver tags. workflow_dispatch on any
+# other branch (e.g. a Dependabot PR) builds and smoke-tests both architectures but pushes nothing.
 name: image
 
 on:
@@ -14,6 +15,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/strise/spanbolt
+  PUBLISH: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
   build:
@@ -70,6 +72,7 @@ jobs:
           password: ${{ github.token }}
       - name: Push by digest
         id: push
+        if: env.PUBLISH == 'true'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
@@ -79,12 +82,14 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=image-${{ matrix.arch }}
       - name: Export the digest
+        if: env.PUBLISH == 'true'
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           mkdir -p "$RUNNER_TEMP/digests"
           touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: digest-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -92,6 +97,7 @@ jobs:
 
   merge:
     needs: build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

@@ -27,11 +27,13 @@ jobs:
           - { platform: linux-arm64, runner: ubuntu-24.04-arm, protoc: linux-aarch_64 }
           - { platform: darwin-arm64, runner: macos-15, protoc: osx-aarch_64 }
     runs-on: ${{ matrix.runner }}
-    # Cold: ~25 min on a 12-core Mac, about an hour on a 4-core 16 GB Linux runner at 2 jobs.
+    # 2 jobs everywhere: the macos-15 runner has 3 vCPU and 7 GB, and a third compile only swaps.
+    # Cold: ~25 min on a 12-core Mac, about 90 min on a standard 8 GB Linux runner at 2 jobs
+    # (peak swap ~7.5 GB).
     timeout-minutes: 360
     steps:
-      # A standard Linux runner has 16 GB of RAM, and two of googlesql's generated sources compiling
-      # at once (resolved_ast*.cc, 5+ GB each) ran it out of memory: the runner shut down without an
+      # A standard Linux runner has 8 GB of RAM, and two of googlesql's generated sources compiling
+      # at once (resolved_ast*.cc, 5+ GB each) run it out of memory: the runner shut down without an
       # error from Bazel. Make room on disk, then add swap so a peak spills instead of killing it.
       - name: Free disk and add swap (Linux)
         if: runner.os == 'Linux'
@@ -43,7 +45,7 @@ jobs:
           # /mnt (the x86_64 runners' scratch disk) when it has room, else the root disk.
           dir=/
           if [ -d /mnt ] && [ "$(df -BG --output=avail /mnt | tail -1 | tr -dc 0-9)" -gt 40 ]; then dir=/mnt; fi
-          sudo fallocate -l 24G "$dir/spanbolt-swap"
+          sudo fallocate -l 16G "$dir/spanbolt-swap"
           sudo chmod 600 "$dir/spanbolt-swap"
           sudo mkswap "$dir/spanbolt-swap"
           sudo swapon "$dir/spanbolt-swap"
@@ -90,8 +92,9 @@ jobs:
           extra=()
           if [ "$RUNNER_OS" = Linux ]; then
             extra=(--repo_env=CC=clang-18 --repo_env=CXX=clang++-18)
-          else
-            jobs=3
+            # The Android SDK was deleted above; with ANDROID_HOME still set, rules_android's SDK
+            # repository fails analysis.
+            unset ANDROID_HOME ANDROID_SDK_ROOT ANDROID_NDK ANDROID_NDK_HOME ANDROID_NDK_ROOT ANDROID_NDK_LATEST_HOME
           fi
           # Memory and disk every minute, for the log, so the next failure says what ran out.
           if [ "$RUNNER_OS" = Linux ]; then

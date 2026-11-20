@@ -728,6 +728,8 @@ enum Deferred {
 pub struct Writer {
     state: DbState,
     commit_ts: Timestamp,
+    /// Timestamps later than this in an `allow_commit_timestamp` column are "in the future".
+    max_ts: Timestamp,
     written: Vec<(Target, Key)>,
     deferred: Vec<Deferred>,
     buf: Vec<u8>,
@@ -739,11 +741,20 @@ impl Writer {
         Writer {
             state: base.clone(),
             commit_ts,
+            max_ts: commit_ts,
             written: Vec::new(),
             deferred: Vec::new(),
             buf: Vec::with_capacity(64),
             mutations: 0,
         }
+    }
+
+    /// Checks commit-timestamp columns against `max_ts` instead of the commit timestamp: DML
+    /// staged before commit doesn't know its commit timestamp yet, only that it will be later
+    /// than every `CURRENT_TIMESTAMP()` handed out so far.
+    pub fn with_max_ts(mut self, max_ts: Timestamp) -> Writer {
+        self.max_ts = max_ts;
+        self
     }
 
     pub fn state(&self) -> &DbState {
@@ -1057,7 +1068,7 @@ impl Writer {
                 }
                 _ => Ok(()),
             },
-            Value::Timestamp(ts) if cm.allow_commit_timestamp && *ts > self.commit_ts => {
+            Value::Timestamp(ts) if cm.allow_commit_timestamp && *ts > self.max_ts => {
                 Err(Error::constraint(
                     Code::FailedPrecondition,
                     format!(

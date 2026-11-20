@@ -1,0 +1,125 @@
+# Writes to TIMESTAMP columns with allow_commit_timestamp = true: Spanner rejects only values later
+# than the transaction's commit timestamp, and CURRENT_TIMESTAMP() is never later than that.
+tags: sql dml
+schema:
+  CREATE TABLE Events (
+    Id STRING(36) NOT NULL,
+    Created TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = true),
+    Updated TIMESTAMP OPTIONS (allow_commit_timestamp = true),
+  ) PRIMARY KEY (Id)
+insert Events cols=Id,Created:
+  ["seed", "2020-01-01T00:00:00Z"]
+
+case dml_current_timestamp
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', CURRENT_TIMESTAMP())
+expect:
+  count: 1
+query:
+  SELECT Id, Created FROM Events WHERE Id = 'a'
+expect:
+  columns: Id STRING, Created TIMESTAMP
+  ["a","<now>"]
+
+case dml_current_timestamp_after_read_in_txn
+begin txn=t
+query txn=t:
+  SELECT COUNT(*) FROM Events
+expect:
+  columns: INT64
+  ["1"]
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', CURRENT_TIMESTAMP())
+expect:
+  count: 1
+dml txn=t:
+  UPDATE Events SET Updated = CURRENT_TIMESTAMP() WHERE Id = 'seed'
+expect:
+  count: 1
+commit txn=t
+query:
+  SELECT Id, Created, Updated FROM Events ORDER BY Id
+expect:
+  columns: Id STRING, Created TIMESTAMP, Updated TIMESTAMP
+  ["a","<now>",null]
+  ["seed","2020-01-01T00:00:00Z","<now>"]
+
+case dml_current_timestamp_then_return
+dml:
+  INSERT INTO Events (Id, Created, Updated) VALUES ('a', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+  THEN RETURN Id
+expect:
+  count: 1
+  columns: Id STRING
+  ["a"]
+
+case batch_current_timestamp
+batch:
+  INSERT INTO Events (Id, Created) VALUES ('a', CURRENT_TIMESTAMP());
+  INSERT INTO Events (Id, Created) VALUES ('b', CURRENT_TIMESTAMP());
+  UPDATE Events SET Updated = CURRENT_TIMESTAMP() WHERE Id = 'seed'
+expect:
+  counts: [1,1,1]
+query:
+  SELECT COUNT(*) FROM Events WHERE Created > '2021-01-01T00:00:00Z' OR Updated IS NOT NULL
+expect:
+  columns: INT64
+  ["3"]
+
+case dml_recent_past
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 5 MILLISECOND))
+expect:
+  count: 1
+
+case dml_one_hour_ahead
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR))
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Cannot write timestamps in the future, found: .*
+
+case batch_one_hour_ahead
+batch:
+  INSERT INTO Events (Id, Created) VALUES ('a', CURRENT_TIMESTAMP());
+  UPDATE Events SET Updated = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR) WHERE Id = 'seed'
+expect:
+  counts: [1]
+  error: FAILED_PRECONDITION
+  message~: ^Cannot write timestamps in the future, found: .*
+
+case mutation_past
+insert Events cols=Id,Created:
+  ["a", "2024-06-01T12:00:00.123456Z"]
+read Events cols=Id,Created:
+  ["a"]
+expect:
+  columns: Id STRING, Created TIMESTAMP
+  ["a","2024-06-01T12:00:00.123456Z"]
+
+case mutation_far_future
+insert Events cols=Id,Created:
+  ["a", "2999-01-01T00:00:00Z"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write timestamps in the future, found: 2999-01-01T00:00:00+00:00
+
+case dml_pending_commit_timestamp
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+query:
+  SELECT Created > '2021-01-01T00:00:00Z' FROM Events WHERE Id = 'a'
+expect:
+  columns: BOOL
+  [true]
+
+case mutation_pending_commit_timestamp
+insert Events cols=Id,Created save=TS:
+  ["a", "spanner.commit_timestamp()"]
+query:
+  SELECT Created > '2021-01-01T00:00:00Z' FROM Events WHERE Id = 'a'
+expect:
+  columns: BOOL
+  [true]

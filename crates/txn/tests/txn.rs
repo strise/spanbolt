@@ -451,3 +451,54 @@ fn history_keeps_a_bounded_number_of_schemas() {
         .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(still.ts, changes[30]);
 }
+
+#[test]
+fn statement_timestamp_fits_a_commit_timestamp_column() {
+    let sch = schema(
+        vec![table(
+            "C",
+            vec![
+                not_null(col("K", ColumnType::Int64)),
+                commit_ts(col("T", ColumnType::Timestamp)),
+            ],
+            vec![asc("K")],
+        )],
+        vec![],
+    );
+    let state = DbState::new(sch).unwrap_or_else(|e| panic!("{e}"));
+    let db = Arc::new(Database::new(Arc::new(Clock::default()), state));
+    let write = |k: i64, ts: Timestamp| {
+        let cat = db.latest().state.catalog.clone();
+        Mutation::write(
+            &cat,
+            WriteKind::Insert,
+            "C",
+            &["K".into(), "T".into()],
+            &[ListValue {
+                values: vec![sv(&k.to_string()), sv(&ts.to_rfc3339())],
+            }],
+        )
+        .unwrap_or_else(|e| panic!("{e}"))
+    };
+    for k in 0..20 {
+        // DML staged after an earlier commit: the snapshot is older than CURRENT_TIMESTAMP().
+        let txn = ReadWriteTxn::new(db.clone());
+        txn.current_state().unwrap_or_else(|e| panic!("{e}"));
+        let now = db.clock().statement_ts();
+        txn.apply_dml(vec![write(k, now)])
+            .unwrap_or_else(|e| panic!("{e}"));
+        let ts = commit(&txn, &[]).unwrap_or_else(|e| panic!("{e}"));
+        assert!(ts > now, "commit {ts:?} not after statement {now:?}");
+    }
+    let future = Timestamp::from_micros(db.clock().now().as_micros() + 3_600_000_000);
+    let txn = ReadWriteTxn::new(db.clone());
+    let err = txn
+        .apply_dml(vec![write(100, future)])
+        .err()
+        .unwrap_or_else(|| panic!("a timestamp an hour ahead must be rejected"));
+    assert_eq!(err.code, Code::FailedPrecondition);
+    assert!(
+        err.message
+            .starts_with("Cannot write timestamps in the future")
+    );
+}

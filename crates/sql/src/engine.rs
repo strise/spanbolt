@@ -317,13 +317,21 @@ impl Engine {
                         &p,
                         &params,
                         Some(rw),
-                        db.clock().now(),
+                        db.clock().statement_ts(),
                         mode,
                         sink,
                     ),
                     Body::Dml(d) => drain(
-                        crate::dml::execute(&cat, d, &p, &params, rw, db.clock().now(), false)
-                            .inspect_err(|e| rw.dml_failed(e))?,
+                        crate::dml::execute(
+                            &cat,
+                            d,
+                            &p,
+                            &params,
+                            rw,
+                            db.clock().statement_ts(),
+                            false,
+                        )
+                        .inspect_err(|e| rw.dml_failed(e))?,
                         sink,
                     ),
                 }
@@ -341,8 +349,15 @@ impl Engine {
                         ));
                     };
                     let params = self.bind(&p, &st)?;
-                    let rs =
-                        crate::dml::execute(&cat, d, &p, &params, &rw, db.clock().now(), true)?;
+                    let rs = crate::dml::execute(
+                        &cat,
+                        d,
+                        &p,
+                        &params,
+                        &rw,
+                        db.clock().statement_ts(),
+                        true,
+                    )?;
                     match rw.commit(&state.catalog, &[]) {
                         Ok(_) => return drain(rs, sink),
                         Err(e) if e.code == Code::Aborted => last = Some(e),
@@ -433,9 +448,15 @@ impl Engine {
                 p.search.check_read_write()?;
                 let params = self.bind(&p, &st)?;
                 match &p.body {
-                    Body::Dml(d) => {
-                        crate::dml::execute(&cat, d, &p, &params, rw, db.clock().now(), false)
-                    }
+                    Body::Dml(d) => crate::dml::execute(
+                        &cat,
+                        d,
+                        &p,
+                        &params,
+                        rw,
+                        db.clock().statement_ts(),
+                        false,
+                    ),
                     Body::Query { .. } => Err(Error::invalid_argument(
                         "ExecuteBatchDml only supports DML statements.",
                     )),

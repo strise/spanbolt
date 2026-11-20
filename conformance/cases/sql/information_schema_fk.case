@@ -1,0 +1,317 @@
+# Foreign keys in INFORMATION_SCHEMA: what REFERENTIAL_CONSTRAINTS.UNIQUE_CONSTRAINT_NAME names for a
+# key onto the referenced table's primary key, onto columns with a unique index, with a non-unique
+# index, and with no index at all (Spanner creates backing indexes), in the default and a named schema.
+tags: sql information_schema
+schema:
+  CREATE TABLE Parents (
+    ParentId STRING(36) NOT NULL,
+    Code STRING(16) NOT NULL,
+    Slug STRING(16),
+    Label STRING(16),
+    A INT64,
+    B INT64,
+  ) PRIMARY KEY (ParentId);
+  CREATE UNIQUE INDEX ParentsByCode ON Parents(Code);
+  CREATE INDEX ParentsByLabel ON Parents(Label);
+  CREATE TABLE Children (
+    ChildId STRING(36) NOT NULL,
+    ParentId STRING(36),
+    ParentCode STRING(16),
+    ParentSlug STRING(16),
+    ParentLabel STRING(16),
+    PA INT64,
+    PB INT64,
+    CONSTRAINT FK_ChildPk FOREIGN KEY (ParentId) REFERENCES Parents (ParentId) ON DELETE CASCADE,
+    CONSTRAINT FK_ChildCode FOREIGN KEY (ParentCode) REFERENCES Parents (Code),
+    CONSTRAINT FK_ChildSlug FOREIGN KEY (ParentSlug) REFERENCES Parents (Slug),
+    CONSTRAINT FK_ChildLabel FOREIGN KEY (ParentLabel) REFERENCES Parents (Label),
+    CONSTRAINT FK_ChildAB FOREIGN KEY (PB, PA) REFERENCES Parents (B, A),
+  ) PRIMARY KEY (ChildId);
+  CREATE TABLE Others (
+    OtherId STRING(36) NOT NULL,
+    Slug STRING(16),
+    CONSTRAINT FK_OtherSlug FOREIGN KEY (Slug) REFERENCES Parents (Slug),
+  ) PRIMARY KEY (OtherId);
+  CREATE TABLE Pairs (
+    X INT64 NOT NULL,
+    Y INT64 NOT NULL,
+  ) PRIMARY KEY (X, Y);
+  CREATE TABLE PairRefs (
+    X INT64 NOT NULL,
+    Y INT64 NOT NULL,
+    Z INT64,
+    CONSTRAINT FK_PairWhole FOREIGN KEY (Y, X) REFERENCES Pairs (Y, X),
+    CONSTRAINT FK_PairPrefix FOREIGN KEY (X) REFERENCES Pairs (X),
+    CONSTRAINT FK_PairLoose FOREIGN KEY (Z) REFERENCES Pairs (Y) NOT ENFORCED,
+  ) PRIMARY KEY (X, Y);
+  CREATE SCHEMA mon;
+  CREATE TABLE mon.alerts (
+    id STRING(36) NOT NULL,
+    code STRING(16),
+  ) PRIMARY KEY (id);
+  CREATE TABLE mon.comments (
+    id STRING(36) NOT NULL,
+    alert_id STRING(36) NOT NULL,
+    alert_code STRING(16),
+    CONSTRAINT fk_comments FOREIGN KEY (alert_id) REFERENCES mon.alerts (id) ON DELETE CASCADE,
+    CONSTRAINT fk_comments_code FOREIGN KEY (alert_code) REFERENCES mon.alerts (code),
+  ) PRIMARY KEY (id)
+
+case referential_constraints
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, UNIQUE_CONSTRAINT_CATALOG, UNIQUE_CONSTRAINT_SCHEMA,
+    UNIQUE_CONSTRAINT_NAME, MATCH_OPTION, UPDATE_RULE, DELETE_RULE, SPANNER_STATE
+  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_CATALOG STRING, UNIQUE_CONSTRAINT_SCHEMA STRING, UNIQUE_CONSTRAINT_NAME STRING, MATCH_OPTION STRING, UPDATE_RULE STRING, DELETE_RULE STRING, SPANNER_STATE STRING
+  ["","FK_ChildAB","","","IDX_Parents_A_B_U_566932E9CA74EE0A","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_ChildCode","","","IDX_Parents_Code_U_1138935A6D4FCC53","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_ChildLabel","","","IDX_Parents_Label_U_3341F75B5CAAF0D0","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_ChildPk","","","PK_Parents","SIMPLE","NO ACTION","CASCADE","COMMITTED"]
+  ["","FK_ChildSlug","","","IDX_Parents_Slug_U_BE5D17644C792E7E","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_OtherSlug","","","IDX_Parents_Slug_U_BE5D17644C792E7E","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_PairLoose","","","IDX_Pairs_Y_U_44D94AB0950DE589","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_PairPrefix","","","IDX_Pairs_X_U_E8C0EC297F945D9C","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["","FK_PairWhole","","","PK_Pairs","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+  ["mon","fk_comments","","mon","PK_alerts","SIMPLE","NO ACTION","CASCADE","COMMITTED"]
+  ["mon","fk_comments_code","","mon","IDX_alerts_code_U_54EEBC5310A8EBE2","SIMPLE","NO ACTION","NO ACTION","COMMITTED"]
+
+case table_constraints
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_TYPE, IS_DEFERRABLE,
+    INITIALLY_DEFERRED, ENFORCED
+  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') AND CONSTRAINT_TYPE != 'CHECK'
+  ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_TYPE STRING, IS_DEFERRABLE STRING, INITIALLY_DEFERRED STRING, ENFORCED STRING
+  ["","FK_ChildAB","","Children","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_ChildCode","","Children","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_ChildLabel","","Children","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_ChildPk","","Children","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_ChildSlug","","Children","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_OtherSlug","","Others","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_PairLoose","","PairRefs","FOREIGN KEY","NO","NO","NO"]
+  ["","FK_PairPrefix","","PairRefs","FOREIGN KEY","NO","NO","YES"]
+  ["","FK_PairWhole","","PairRefs","FOREIGN KEY","NO","NO","YES"]
+  ["","IDX_Pairs_X_U_E8C0EC297F945D9C","","Pairs","UNIQUE","NO","NO","YES"]
+  ["","IDX_Pairs_Y_U_44D94AB0950DE589","","Pairs","UNIQUE","NO","NO","YES"]
+  ["","IDX_Parents_A_B_U_566932E9CA74EE0A","","Parents","UNIQUE","NO","NO","YES"]
+  ["","IDX_Parents_Code_U_1138935A6D4FCC53","","Parents","UNIQUE","NO","NO","YES"]
+  ["","IDX_Parents_Label_U_3341F75B5CAAF0D0","","Parents","UNIQUE","NO","NO","YES"]
+  ["","IDX_Parents_Slug_U_BE5D17644C792E7E","","Parents","UNIQUE","NO","NO","YES"]
+  ["","IDX_Parents_Slug_U_BE5D17644C792E7E","","Parents","UNIQUE","NO","NO","YES"]
+  ["","PK_Children","","Children","PRIMARY KEY","NO","NO","YES"]
+  ["","PK_Others","","Others","PRIMARY KEY","NO","NO","YES"]
+  ["","PK_PairRefs","","PairRefs","PRIMARY KEY","NO","NO","YES"]
+  ["","PK_Pairs","","Pairs","PRIMARY KEY","NO","NO","YES"]
+  ["","PK_Parents","","Parents","PRIMARY KEY","NO","NO","YES"]
+  ["","mon.IDX_alerts_code_U_54EEBC5310A8EBE2","mon","alerts","UNIQUE","NO","NO","YES"]
+  ["mon","PK_alerts","mon","alerts","PRIMARY KEY","NO","NO","YES"]
+  ["mon","PK_comments","mon","comments","PRIMARY KEY","NO","NO","YES"]
+  ["mon","fk_comments","mon","comments","FOREIGN KEY","NO","NO","YES"]
+  ["mon","fk_comments_code","mon","comments","FOREIGN KEY","NO","NO","YES"]
+
+case indexes
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, INDEX_TYPE, PARENT_TABLE_NAME, IS_UNIQUE,
+    IS_NULL_FILTERED, INDEX_STATE, SPANNER_IS_MANAGED
+  FROM INFORMATION_SCHEMA.INDEXES
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS')
+  ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, INDEX_NAME STRING, INDEX_TYPE STRING, PARENT_TABLE_NAME STRING, IS_UNIQUE BOOL, IS_NULL_FILTERED BOOL, INDEX_STATE STRING, SPANNER_IS_MANAGED BOOL
+  ["","Children","IDX_Children_PA_PB_N_34E3181FE3AAD541","INDEX","",false,true,"READ_WRITE",true]
+  ["","Children","IDX_Children_ParentCode_N_A7F0F7691B02856A","INDEX","",false,true,"READ_WRITE",true]
+  ["","Children","IDX_Children_ParentId_N_1934AA71D605596F","INDEX","",false,true,"READ_WRITE",true]
+  ["","Children","IDX_Children_ParentLabel_N_FF3B79E490066529","INDEX","",false,true,"READ_WRITE",true]
+  ["","Children","IDX_Children_ParentSlug_N_F877E5ABD6CEB797","INDEX","",false,true,"READ_WRITE",true]
+  ["","Children","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+  ["","Others","IDX_Others_Slug_N_6963F3296AC368D0","INDEX","",false,true,"READ_WRITE",true]
+  ["","Others","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+  ["","PairRefs","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+  ["","Pairs","IDX_Pairs_X_U_E8C0EC297F945D9C","INDEX","",true,false,"READ_WRITE",true]
+  ["","Pairs","IDX_Pairs_Y_U_44D94AB0950DE589","INDEX","",true,false,"READ_WRITE",true]
+  ["","Pairs","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+  ["","Parents","IDX_Parents_A_B_U_566932E9CA74EE0A","INDEX","",true,true,"READ_WRITE",true]
+  ["","Parents","IDX_Parents_Code_U_1138935A6D4FCC53","INDEX","",true,false,"READ_WRITE",true]
+  ["","Parents","IDX_Parents_Label_U_3341F75B5CAAF0D0","INDEX","",true,true,"READ_WRITE",true]
+  ["","Parents","IDX_Parents_Slug_U_BE5D17644C792E7E","INDEX","",true,true,"READ_WRITE",true]
+  ["","Parents","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+  ["","Parents","ParentsByCode","INDEX","",true,false,"READ_WRITE",false]
+  ["","Parents","ParentsByLabel","INDEX","",false,false,"READ_WRITE",false]
+  ["mon","alerts","IDX_alerts_code_U_54EEBC5310A8EBE2","INDEX","",true,true,"READ_WRITE",true]
+  ["mon","alerts","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+  ["mon","comments","IDX_comments_alert_code_N_9B908E092154D0CD","INDEX","",false,true,"READ_WRITE",true]
+  ["mon","comments","IDX_comments_alert_id_D5970CE6F9EF9329","INDEX","",false,false,"READ_WRITE",true]
+  ["mon","comments","PRIMARY_KEY","PRIMARY_KEY","",true,false,null,false]
+
+case index_columns
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_ORDERING,
+    IS_NULLABLE, SPANNER_TYPE
+  FROM INFORMATION_SCHEMA.INDEX_COLUMNS
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') AND INDEX_TYPE = 'INDEX'
+  ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, ORDINAL_POSITION, COLUMN_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, INDEX_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64, COLUMN_ORDERING STRING, IS_NULLABLE STRING, SPANNER_TYPE STRING
+  ["","Children","IDX_Children_PA_PB_N_34E3181FE3AAD541","PA","1","ASC","NO","INT64"]
+  ["","Children","IDX_Children_PA_PB_N_34E3181FE3AAD541","PB","2","ASC","NO","INT64"]
+  ["","Children","IDX_Children_ParentCode_N_A7F0F7691B02856A","ParentCode","1","ASC","NO","STRING(16)"]
+  ["","Children","IDX_Children_ParentId_N_1934AA71D605596F","ParentId","1","ASC","NO","STRING(36)"]
+  ["","Children","IDX_Children_ParentLabel_N_FF3B79E490066529","ParentLabel","1","ASC","NO","STRING(16)"]
+  ["","Children","IDX_Children_ParentSlug_N_F877E5ABD6CEB797","ParentSlug","1","ASC","NO","STRING(16)"]
+  ["","Others","IDX_Others_Slug_N_6963F3296AC368D0","Slug","1","ASC","NO","STRING(16)"]
+  ["","Pairs","IDX_Pairs_X_U_E8C0EC297F945D9C","X","1","ASC","NO","INT64"]
+  ["","Pairs","IDX_Pairs_Y_U_44D94AB0950DE589","Y","1","ASC","NO","INT64"]
+  ["","Parents","IDX_Parents_A_B_U_566932E9CA74EE0A","A","1","ASC","NO","INT64"]
+  ["","Parents","IDX_Parents_A_B_U_566932E9CA74EE0A","B","2","ASC","NO","INT64"]
+  ["","Parents","IDX_Parents_Code_U_1138935A6D4FCC53","Code","1","ASC","NO","STRING(16)"]
+  ["","Parents","IDX_Parents_Label_U_3341F75B5CAAF0D0","Label","1","ASC","NO","STRING(16)"]
+  ["","Parents","IDX_Parents_Slug_U_BE5D17644C792E7E","Slug","1","ASC","NO","STRING(16)"]
+  ["","Parents","ParentsByCode","Code","1","ASC","NO","STRING(16)"]
+  ["","Parents","ParentsByLabel","Label","1","ASC","YES","STRING(16)"]
+  ["mon","alerts","IDX_alerts_code_U_54EEBC5310A8EBE2","code","1","ASC","NO","STRING(16)"]
+  ["mon","comments","IDX_comments_alert_code_N_9B908E092154D0CD","alert_code","1","ASC","NO","STRING(16)"]
+  ["mon","comments","IDX_comments_alert_id_D5970CE6F9EF9329","alert_id","1","ASC","NO","STRING(36)"]
+
+case key_column_usage
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME,
+    ORDINAL_POSITION, POSITION_IN_UNIQUE_CONSTRAINT
+  FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS')
+  ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, ORDINAL_POSITION
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64, POSITION_IN_UNIQUE_CONSTRAINT INT64
+  ["","FK_ChildAB","","Children","PB","1","1"]
+  ["","FK_ChildAB","","Children","PA","2","2"]
+  ["","FK_ChildCode","","Children","ParentCode","1","1"]
+  ["","FK_ChildLabel","","Children","ParentLabel","1","1"]
+  ["","FK_ChildPk","","Children","ParentId","1","1"]
+  ["","FK_ChildSlug","","Children","ParentSlug","1","1"]
+  ["","FK_OtherSlug","","Others","Slug","1","1"]
+  ["","FK_PairLoose","","PairRefs","Z","1","1"]
+  ["","FK_PairPrefix","","PairRefs","X","1","1"]
+  ["","FK_PairWhole","","PairRefs","Y","1","1"]
+  ["","FK_PairWhole","","PairRefs","X","2","2"]
+  ["","IDX_Pairs_X_U_E8C0EC297F945D9C","","Pairs","X","1",null]
+  ["","IDX_Pairs_Y_U_44D94AB0950DE589","","Pairs","Y","1",null]
+  ["","IDX_Parents_A_B_U_566932E9CA74EE0A","","Parents","A","1",null]
+  ["","IDX_Parents_A_B_U_566932E9CA74EE0A","","Parents","B","2",null]
+  ["","IDX_Parents_Code_U_1138935A6D4FCC53","","Parents","Code","1",null]
+  ["","IDX_Parents_Label_U_3341F75B5CAAF0D0","","Parents","Label","1",null]
+  ["","IDX_Parents_Slug_U_BE5D17644C792E7E","","Parents","Slug","1",null]
+  ["","IDX_Parents_Slug_U_BE5D17644C792E7E","","Parents","Slug","1",null]
+  ["","PK_Children","","Children","ChildId","1",null]
+  ["","PK_Others","","Others","OtherId","1",null]
+  ["","PK_PairRefs","","PairRefs","X","1",null]
+  ["","PK_PairRefs","","PairRefs","Y","2",null]
+  ["","PK_Pairs","","Pairs","X","1",null]
+  ["","PK_Pairs","","Pairs","Y","2",null]
+  ["","PK_Parents","","Parents","ParentId","1",null]
+  ["mon","IDX_alerts_code_U_54EEBC5310A8EBE2","mon","alerts","code","1",null]
+  ["mon","PK_alerts","mon","alerts","id","1",null]
+  ["mon","PK_comments","mon","comments","id","1",null]
+  ["mon","fk_comments","mon","comments","alert_id","1","1"]
+  ["mon","fk_comments_code","mon","comments","alert_code","1","1"]
+
+case constraint_table_usage
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+  FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') AND CONSTRAINT_NAME NOT LIKE 'CK%'
+  ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
+  ["","Parents","","FK_ChildAB"]
+  ["","Parents","","FK_ChildCode"]
+  ["","Parents","","FK_ChildLabel"]
+  ["","Parents","","FK_ChildPk"]
+  ["","Parents","","FK_ChildSlug"]
+  ["","Parents","","FK_OtherSlug"]
+  ["","Pairs","","FK_PairLoose"]
+  ["","Pairs","","FK_PairPrefix"]
+  ["","Pairs","","FK_PairWhole"]
+  ["","Pairs","","IDX_Pairs_X_U_E8C0EC297F945D9C"]
+  ["","Pairs","","IDX_Pairs_Y_U_44D94AB0950DE589"]
+  ["","Parents","","IDX_Parents_A_B_U_566932E9CA74EE0A"]
+  ["","Parents","","IDX_Parents_Code_U_1138935A6D4FCC53"]
+  ["","Parents","","IDX_Parents_Label_U_3341F75B5CAAF0D0"]
+  ["","Parents","","IDX_Parents_Slug_U_BE5D17644C792E7E"]
+  ["","Parents","","IDX_Parents_Slug_U_BE5D17644C792E7E"]
+  ["","Children","","PK_Children"]
+  ["","Others","","PK_Others"]
+  ["","PairRefs","","PK_PairRefs"]
+  ["","Pairs","","PK_Pairs"]
+  ["","Parents","","PK_Parents"]
+  ["mon","alerts","mon","PK_alerts"]
+  ["mon","comments","mon","PK_comments"]
+  ["mon","alerts","mon","fk_comments"]
+  ["mon","alerts","mon","fk_comments_code"]
+  ["mon","alerts","mon","mon.IDX_alerts_code_U_54EEBC5310A8EBE2"]
+
+case constraint_column_usage
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+  FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE
+  WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') AND CONSTRAINT_NAME NOT LIKE 'CK%'
+  ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, COLUMN_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
+  ["","Parents","A","","FK_ChildAB"]
+  ["","Parents","B","","FK_ChildAB"]
+  ["","Parents","Code","","FK_ChildCode"]
+  ["","Parents","Label","","FK_ChildLabel"]
+  ["","Parents","ParentId","","FK_ChildPk"]
+  ["","Parents","Slug","","FK_ChildSlug"]
+  ["","Parents","Slug","","FK_OtherSlug"]
+  ["","Pairs","Y","","FK_PairLoose"]
+  ["","Pairs","X","","FK_PairPrefix"]
+  ["","Pairs","X","","FK_PairWhole"]
+  ["","Pairs","Y","","FK_PairWhole"]
+  ["","Pairs","X","","IDX_Pairs_X_U_E8C0EC297F945D9C"]
+  ["","Pairs","Y","","IDX_Pairs_Y_U_44D94AB0950DE589"]
+  ["","Parents","A","","IDX_Parents_A_B_U_566932E9CA74EE0A"]
+  ["","Parents","B","","IDX_Parents_A_B_U_566932E9CA74EE0A"]
+  ["","Parents","Code","","IDX_Parents_Code_U_1138935A6D4FCC53"]
+  ["","Parents","Label","","IDX_Parents_Label_U_3341F75B5CAAF0D0"]
+  ["","Parents","Slug","","IDX_Parents_Slug_U_BE5D17644C792E7E"]
+  ["","Parents","Slug","","IDX_Parents_Slug_U_BE5D17644C792E7E"]
+  ["","Children","ChildId","","PK_Children"]
+  ["","Others","OtherId","","PK_Others"]
+  ["","PairRefs","X","","PK_PairRefs"]
+  ["","PairRefs","Y","","PK_PairRefs"]
+  ["","Pairs","X","","PK_Pairs"]
+  ["","Pairs","Y","","PK_Pairs"]
+  ["","Parents","ParentId","","PK_Parents"]
+  ["mon","alerts","code","mon","IDX_alerts_code_U_54EEBC5310A8EBE2"]
+  ["mon","alerts","id","mon","PK_alerts"]
+  ["mon","comments","id","mon","PK_comments"]
+  ["mon","alerts","id","mon","fk_comments"]
+  ["mon","alerts","code","mon","fk_comments_code"]
+
+case mito_foreign_key_targets
+query:
+  SELECT fk.TABLE_SCHEMA, fk.TABLE_NAME, rc.CONSTRAINT_NAME,
+    COALESCE(pk.TABLE_SCHEMA, ix.TABLE_SCHEMA) AS REF_SCHEMA, COALESCE(pk.TABLE_NAME, ix.TABLE_NAME) AS REF_NAME
+  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+  JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS fk ON fk.CONSTRAINT_SCHEMA = rc.CONSTRAINT_SCHEMA AND fk.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+  LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS pk ON pk.CONSTRAINT_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA AND pk.CONSTRAINT_NAME = rc.UNIQUE_CONSTRAINT_NAME
+  LEFT JOIN INFORMATION_SCHEMA.INDEXES ix ON ix.TABLE_SCHEMA = rc.UNIQUE_CONSTRAINT_SCHEMA AND ix.INDEX_NAME = rc.UNIQUE_CONSTRAINT_NAME
+  ORDER BY rc.CONSTRAINT_SCHEMA, rc.CONSTRAINT_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_NAME STRING, REF_SCHEMA STRING, REF_NAME STRING
+  ["","Children","FK_ChildAB","","Parents"]
+  ["","Children","FK_ChildCode","","Parents"]
+  ["","Children","FK_ChildLabel","","Parents"]
+  ["","Children","FK_ChildPk","","Parents"]
+  ["","Children","FK_ChildSlug","","Parents"]
+  ["","Children","FK_ChildSlug","","Parents"]
+  ["","Others","FK_OtherSlug","","Parents"]
+  ["","Others","FK_OtherSlug","","Parents"]
+  ["","PairRefs","FK_PairLoose","","Pairs"]
+  ["","PairRefs","FK_PairPrefix","","Pairs"]
+  ["","PairRefs","FK_PairWhole","","Pairs"]
+  ["mon","comments","fk_comments","mon","alerts"]
+  ["mon","comments","fk_comments_code","mon","alerts"]

@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use spanbolt_ddl::{ColumnType, OnDelete, Schema, SortOrder, Table};
+use spanbolt_ddl::{ColumnType, ForeignKey, OnDelete, Schema, SortOrder, Table};
 use spanbolt_storage::{Result, Value};
 
 use crate::catalog::{Relation, SqlCatalog};
@@ -285,6 +285,24 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     Value::Null,
                 ]);
             }
+            for ix in managed_indexes(schema) {
+                let (sch, tname) = split(&ix.table);
+                out.push(vec![
+                    s(""),
+                    s(sch),
+                    s(tname),
+                    s(split(&ix.name).1),
+                    s("INDEX"),
+                    s(if ix.interleaved { tname } else { "" }),
+                    b(ix.unique),
+                    b(ix.null_filtered),
+                    s("READ_WRITE"),
+                    Value::Null,
+                    b(true),
+                    Value::Null,
+                    Value::Null,
+                ]);
+            }
             for si in schema.search_indexes.values() {
                 let (sch, tname) = split(&si.table);
                 let arr = |v: Vec<String>| {
@@ -311,6 +329,27 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
             }
         }
         "INDEX_COLUMNS" => {
+            for ix in managed_indexes(schema) {
+                let Some(t) = schema.table(&ix.table) else {
+                    continue;
+                };
+                let (sch, tname) = split(&t.name);
+                for (pos, col) in ix.cols.iter().enumerate() {
+                    let Some(c) = t.column(col) else { continue };
+                    // A key column keeps its table ordering; every other column is ascending.
+                    let order = t
+                        .primary_key
+                        .iter()
+                        .find(|k| k.column.eq_ignore_ascii_case(col))
+                        .map_or(&SortOrder::Asc, |k| &k.order);
+                    out.push(index_col_row(
+                        [sch, tname, split(&ix.name).1, "INDEX", &c.name],
+                        Some((pos + 1, order)),
+                        !c.not_null && !ix.null_filtered,
+                        &ddl_type(&c.ty),
+                    ));
+                }
+            }
             for t in schema.tables.values() {
                 let (sch, name) = split(&t.name);
                 for (pos, k) in t.primary_key.iter().enumerate() {
@@ -510,6 +549,181 @@ fn index_col_row(
     ]
 }
 
+/// An index the emulator creates to back a foreign key (`SPANNER_IS_MANAGED`). Names follow the
+/// emulator's `GlobalSchemaNames::GenerateManagedIndexName`.
+struct ManagedIndex {
+    /// Fully qualified, as the emulator names it: `mon.IDX_alerts_code_U_…` in a named schema.
+    name: String,
+    /// The indexed table, fully qualified.
+    table: String,
+    cols: Vec<String>,
+    unique: bool,
+    null_filtered: bool,
+    /// The index is interleaved in its own table (the table's key is a prefix of its columns).
+    interleaved: bool,
+}
+
+/// Longest schema identifier; generated names are truncated to fit.
+const MAX_IDENTIFIER: usize = 128;
+
+/// The emulator's `MakeFingerprint`: Fingerprint64 of a seeded signature, as 16 hex digits.
+fn make_fingerprint(signature: &str) -> String {
+    let text = format!("2695C62E33338E4B_{signature}");
+    format!("{:016X}", crate::func_hash::fingerprint64(text.as_bytes()))
+}
+
+/// The emulator's `MakeName`: `base_suffix`, with `base` cut so the whole fits in 128 bytes.
+fn make_name(base: &str, suffix: &str) -> String {
+    let len = base.len() + 1 + suffix.len();
+    let mut base = base;
+    if len > MAX_IDENTIFIER {
+        base = base
+            .get(..base.len().saturating_sub(len - MAX_IDENTIFIER))
+            .unwrap_or("");
+        base = base.strip_suffix('_').unwrap_or(base);
+    }
+    format!("{base}_{suffix}")
+}
+
+fn managed_index_name(table: &str, cols: &[String], null_filtered: bool, unique: bool) -> String {
+    let (sch, tname) = split(table);
+    let prefix = if sch.is_empty() {
+        "IDX".to_string()
+    } else {
+        format!("{sch}.IDX")
+    };
+    let base = format!("{prefix}_{tname}_{}", cols.join("_"));
+    // One code: U for unique indexes (null-filtered or not), else N for null-filtered ones.
+    let codes = if unique {
+        "U"
+    } else if null_filtered {
+        "N"
+    } else {
+        ""
+    };
+    if codes.is_empty() {
+        make_name(&base, &make_fingerprint(&base))
+    } else {
+        let fp = make_fingerprint(&format!("{base}_{codes}"));
+        make_name(&base, &format!("{codes}_{fp}"))
+    }
+}
+
+fn managed_index(t: &Table, cols: Vec<String>, unique: bool) -> ManagedIndex {
+    let null_filtered = cols
+        .iter()
+        .any(|c| t.column(c).is_some_and(|c| !c.not_null));
+    let interleaved = t.primary_key.len() <= cols.len()
+        && t.primary_key
+            .iter()
+            .zip(&cols)
+            .all(|(k, c)| k.column.eq_ignore_ascii_case(c));
+    ManagedIndex {
+        name: managed_index_name(&t.name, &cols, null_filtered, unique),
+        table: t.name.clone(),
+        cols,
+        unique,
+        null_filtered,
+        interleaved,
+    }
+}
+
+/// The indexes the emulator creates for a foreign key of table `t`: a unique index on the
+/// referenced columns unless they are exactly the referenced table's primary key, and (enforced
+/// keys only) an index on the referencing columns unless they are a non-null prefix of `t`'s
+/// primary key in the same order. Ports `CreateForeignKeyConstraint` and the
+/// `EvaluateForeignKeyRefere*PrimaryKey` helpers of the emulator's schema updater.
+fn fk_indexes(
+    schema: &Schema,
+    t: &Table,
+    fk: &ForeignKey,
+) -> (Option<ManagedIndex>, Option<ManagedIndex>) {
+    let Some(rt) = schema.table(&fk.ref_table) else {
+        return (None, None);
+    };
+    let n = fk.ref_columns.len();
+    let pos = |name: &str| {
+        fk.ref_columns
+            .iter()
+            .position(|c| c.eq_ignore_ascii_case(name))
+    };
+    // Referenced columns in index order: the matching primary key prefix, then table order.
+    let mut order: Vec<usize> = Vec::with_capacity(n);
+    let mut referenced_required = None;
+    for k in &rt.primary_key {
+        let Some(p) = pos(&k.column) else { break };
+        order.push(p);
+        if order.len() == n {
+            referenced_required = Some(rt.primary_key.len() != n);
+            break;
+        }
+    }
+    let referenced_required = referenced_required.unwrap_or_else(|| {
+        for c in &rt.columns {
+            if let Some(p) = pos(&c.name)
+                && !order.contains(&p)
+            {
+                order.push(p);
+                if order.len() == n {
+                    break;
+                }
+            }
+        }
+        order.len() == n
+    });
+    if order.len() != n || fk.columns.len() != n {
+        return (None, None);
+    }
+    let referenced = referenced_required.then(|| {
+        let cols = order.iter().map(|&p| fk.ref_columns[p].clone()).collect();
+        managed_index(rt, cols, true)
+    });
+    if !fk.enforced {
+        return (referenced, None);
+    }
+    let nullable = fk
+        .columns
+        .iter()
+        .any(|c| t.column(c).is_some_and(|c| !c.not_null));
+    let referencing_required = n > t.primary_key.len() || nullable || {
+        let at = |name: &str| {
+            fk.columns
+                .iter()
+                .position(|c| c.eq_ignore_ascii_case(name))
+                .map(|i| order[i])
+        };
+        let matching = t
+            .primary_key
+            .iter()
+            .enumerate()
+            .take_while(|(i, k)| at(&k.column) == Some(*i))
+            .count();
+        matching != n
+    };
+    let referencing = referencing_required.then(|| {
+        let cols = order.iter().map(|&p| fk.columns[p].clone()).collect();
+        managed_index(t, cols, false)
+    });
+    (referenced, referencing)
+}
+
+/// Every foreign key's managed indexes, once each (keys with the same columns share one), in
+/// schema order.
+fn managed_indexes(schema: &Schema) -> Vec<ManagedIndex> {
+    let mut out: Vec<ManagedIndex> = Vec::new();
+    for t in schema.tables.values() {
+        for fk in &t.foreign_keys {
+            let (a, b) = fk_indexes(schema, t, fk);
+            for ix in [a, b].into_iter().flatten() {
+                if !out.iter().any(|o| o.name == ix.name) {
+                    out.push(ix);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// A constraint: name, type, the table it uses (FK: referenced table) and its columns there.
 struct Constraint {
     name: String,
@@ -561,26 +775,64 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
             });
         }
         for fk in &t.foreign_keys {
-            let ref_pk: Vec<String> = schema
-                .table(&fk.ref_table)
-                .map(|r| {
-                    r.primary_key
-                        .iter()
-                        .map(|k| k.column.to_ascii_lowercase())
-                        .collect()
-                })
-                .unwrap_or_default();
-            let refs: Vec<String> = fk
-                .ref_columns
-                .iter()
-                .map(|c| c.to_ascii_lowercase())
-                .collect();
             let (rsch, rname) = split(&fk.ref_table);
-            let unique_name = if refs == ref_pk {
-                format!("PK_{rname}")
-            } else {
-                format!("IDX_{rname}_{}_U", fk.ref_columns.join("_"))
-            };
+            // A key onto the referenced primary key names it; any other key names the unique
+            // index backing it, which is also a UNIQUE constraint of the referenced table. The
+            // emulator lists that constraint once per foreign key using it, and names it with its
+            // schema in TABLE_CONSTRAINTS and CONSTRAINT_TABLE_USAGE only.
+            let unique = fk_indexes(schema, t, fk).0;
+            let unique_name = unique
+                .as_ref()
+                .map_or_else(|| format!("PK_{rname}"), |ix| split(&ix.name).1.to_string());
+            if let Some(ix) = &unique {
+                let short = split(&ix.name).1;
+                match which {
+                    "TABLE_CONSTRAINTS" => out.push(vec![
+                        s(""),
+                        s(""),
+                        s(&ix.name),
+                        s(""),
+                        s(rsch),
+                        s(rname),
+                        s("UNIQUE"),
+                        s("NO"),
+                        s("NO"),
+                        s("YES"),
+                    ]),
+                    "KEY_COLUMN_USAGE" => {
+                        for (p, c) in ix.cols.iter().enumerate() {
+                            out.push(vec![
+                                s(""),
+                                s(rsch),
+                                s(short),
+                                s(""),
+                                s(rsch),
+                                s(rname),
+                                s(c),
+                                i(p + 1),
+                                Value::Null,
+                            ]);
+                        }
+                    }
+                    "CONSTRAINT_TABLE_USAGE" => {
+                        out.push(vec![s(""), s(rsch), s(rname), s(""), s(rsch), s(&ix.name)])
+                    }
+                    "CONSTRAINT_COLUMN_USAGE" => {
+                        for c in &ix.cols {
+                            out.push(vec![
+                                s(""),
+                                s(rsch),
+                                s(rname),
+                                s(c),
+                                s(""),
+                                s(rsch),
+                                s(short),
+                            ]);
+                        }
+                    }
+                    _ => {}
+                }
+            }
             match which {
                 "REFERENTIAL_CONSTRAINTS" => out.push(vec![
                     s(""),
@@ -678,5 +930,41 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn managed_index_names_match_the_emulator() {
+        // Recorded from emulator 1.5.59 (conformance/cases/sql/information_schema_fk.case).
+        let cols = |c: &[&str]| c.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            managed_index_name("Parents", &cols(&["Code"]), false, true),
+            "IDX_Parents_Code_U_1138935A6D4FCC53"
+        );
+        assert_eq!(
+            managed_index_name("mon.alerts", &cols(&["code"]), true, true),
+            "mon.IDX_alerts_code_U_54EEBC5310A8EBE2"
+        );
+        assert_eq!(
+            managed_index_name("mon.comments", &cols(&["alert_id"]), false, false),
+            "mon.IDX_comments_alert_id_D5970CE6F9EF9329"
+        );
+        assert_eq!(
+            managed_index_name("Children", &cols(&["PA", "PB"]), true, false),
+            "IDX_Children_PA_PB_N_34E3181FE3AAD541"
+        );
+    }
+
+    #[test]
+    fn long_managed_index_names_are_cut_to_128_bytes() {
+        let col = "C".repeat(120);
+        let name = managed_index_name("T", &[col], true, true);
+        assert_eq!(name.len(), MAX_IDENTIFIER);
+        assert!(name.starts_with("IDX_T_CCC"));
+        assert!(name.ends_with(&format!("_U_{}", &name[name.len() - 16..])));
     }
 }

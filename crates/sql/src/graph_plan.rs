@@ -671,6 +671,15 @@ impl Planner<'_> {
             .first()
             .is_some_and(|a| is_graph_type(super::expr_type(a)));
         if !graph_arg {
+            // Arrays of elements may be counted and unnested, but never serialised.
+            let serialises = matches!(name, "to_json" | "to_json_string" | "format");
+            let nested = b
+                .argument_list
+                .iter()
+                .any(|a| super::expr_type(a).is_some_and(crate::types::has_graph));
+            if serialises && nested {
+                return Err(unimplemented(format!("Function {name} on graph elements")));
+            }
             return Ok(None);
         }
         let args = b

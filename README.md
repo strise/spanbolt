@@ -124,7 +124,7 @@ native/googlesql      the C++ shim around GoogleSQL
 ## Contributing
 
 Issues and pull requests are welcome. Both must use the repository's templates: open issues from
-the bug report or unsupported feature form, and fill in the pull request template. See
+the bug report, unsupported feature or question form, and fill in the pull request template. See
 `CONTRIBUTING.md`.
 
 ## License

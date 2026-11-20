@@ -1,5 +1,11 @@
 # Turns on squash auto-merge for Dependabot PRs, so each one lands as soon as the required checks
 # pass. A PR whose checks fail stays open for a maintainer (or the scheduled triage) to fix.
+#
+# Except GitHub Actions major bumps: most actions (docker/*, setup-bazel, the release steps) only
+# run in image.yml, shim.yml and release.yml on main or tags, so PR CI never exercises them. Those
+# PRs wait for a maintainer, who can run the workflows on the PR branch (workflow_dispatch) first.
+# "Major" follows semver: X in X.y.z changes, or for 0.y.z the y changes. Cargo and docker majors,
+# and all minor/patch updates (grouped actions PRs are minor/patch only), keep auto-merging.
 name: dependabot-auto-merge
 
 on:
@@ -17,7 +23,35 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Hold GitHub Actions major bumps
+        id: policy
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          merge=true
+          if [[ "$HEAD_REF" == dependabot/github_actions/* ]]; then
+            re='from v?([0-9]+)\.?([0-9]*)[^ ]* to v?([0-9]+)\.?([0-9]*)'
+            if [[ "$TITLE" =~ $re ]]; then
+              from_major=${BASH_REMATCH[1]} from_minor=${BASH_REMATCH[2]:-0}
+              to_major=${BASH_REMATCH[3]} to_minor=${BASH_REMATCH[4]:-0}
+              if [ "$from_major" != "$to_major" ]; then
+                merge=false
+              elif [ "$from_major" = 0 ] && [ "$from_minor" != "$to_minor" ]; then
+                merge=false
+              fi
+            elif [[ "$TITLE" != *"bump the "*" group "* ]]; then
+              # A single-update title we can't read: leave it to a maintainer.
+              merge=false
+            fi
+          fi
+          echo "merge=$merge" >> "$GITHUB_OUTPUT"
+          if [ "$merge" = false ]; then
+            echo "::notice::GitHub Actions major bump, not auto-merging: $TITLE"
+            echo "Run image.yml/shim.yml/release.yml on this branch (workflow_dispatch) before merging." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Enable auto-merge
+        if: steps.policy.outputs.merge == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}

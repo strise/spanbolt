@@ -1,10 +1,11 @@
-# Draft: not run yet. Multi-arch image (linux/amd64 + linux/arm64) from the prebuilt shim,
-# each architecture built on a native runner, smoke-tested, pushed by digest, then merged into one
-# manifest list. ghcr.io/strise/spanbolt is a placeholder name.
+# Multi-arch image (linux/amd64 + linux/arm64) from the prebuilt shim, each architecture built on a
+# native runner, smoke-tested, pushed by digest, then merged into one manifest list. Every push to
+# main publishes :main and :sha-<short>; a v* tag adds the semver tags.
 name: image
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -31,12 +32,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      # The release may be private, so fetch the pinned archive with the workflow token and hand it
+      # to the build as the shim-archives context instead of letting the Dockerfile download it.
+      - name: Fetch the prebuilt shim
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          . native/googlesql-shim.env
+          case "$ARCH" in amd64) p=linux-x86_64 ;; arm64) p=linux-arm64 ;; esac
+          gh release download "shim-${GOOGLESQL_VERSION}-s${SHIM_VERSION}" -R "$GITHUB_REPOSITORY" \
+            -p "googlesql-shim-*-$p.tar.gz" -D "$RUNNER_TEMP/shim"
       - name: Build for the smoke test
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.platform }}
           build-args: SHIM=prebuilt
+          build-contexts: shim-archives=${{ runner.temp }}/shim
           load: true
           tags: spanbolt:ci
           cache-from: type=gha,scope=image-${{ matrix.arch }}
@@ -55,6 +68,7 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           build-args: SHIM=prebuilt
+          build-contexts: shim-archives=${{ runner.temp }}/shim
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=image-${{ matrix.arch }}
       - name: Export the digest
@@ -94,6 +108,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=main,enable={{is_default_branch}}
             type=sha
       - name: Create the manifest list
         working-directory: ${{ runner.temp }}/digests

@@ -1,0 +1,24 @@
+# Turns on squash auto-merge for Dependabot PRs, so each one lands as soon as the required checks
+# pass. A PR whose checks fail stays open for a maintainer (or the scheduled triage) to fix.
+name: dependabot-auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

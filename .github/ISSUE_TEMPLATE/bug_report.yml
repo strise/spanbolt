@@ -1,0 +1,75 @@
+name: Bug report
+description: spanbolt answers differently from Cloud Spanner or the official emulator, errors, or crashes.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        spanbolt's reference is Cloud Spanner, then the official emulator. The most useful report is
+        a small schema and request that give a different answer on spanbolt than on the emulator.
+        Security problems: report them privately (Security tab), not here.
+  - type: input
+    id: version
+    attributes:
+      label: spanbolt version
+      description: "`spanbolt --version`, or the image tag/digest (e.g. ghcr.io/strise/spanbolt:0.1.0)."
+    validations:
+      required: true
+  - type: dropdown
+    id: run
+    attributes:
+      label: How you run it
+      options:
+        - Docker image (default, production behaviour)
+        - Docker image with --emulator-compat
+        - Binary (default, production behaviour)
+        - Binary with --emulator-compat
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client library, language and version
+      description: e.g. google-cloud-spanner 3.50 (Python), cloud.google.com/go/spanner v1.80 (Go), JDBC 2.30, raw gRPC or REST.
+    validations:
+      required: true
+  - type: textarea
+    id: ddl
+    attributes:
+      label: Schema (DDL)
+      description: The smallest set of CREATE statements that shows the problem.
+      render: sql
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: Query, DML, mutation or API call
+      description: Include parameters and the RPC used (ExecuteSql, Read, Commit, ...) if it matters.
+      render: sql
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What spanbolt returns
+      description: Rows, or the error status code and message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the official emulator returns
+      description: Its version too (e.g. gcr.io/cloud-spanner-emulator/emulator:1.5.x). If you can't run it, say why you expect something else.
+    validations:
+      required: true
+  - type: textarea
+    id: spanner
+    attributes:
+      label: What Cloud Spanner returns (optional)
+      description: If you checked against a real instance, and it differs from the emulator.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Logs, a repro repository, OS/architecture.

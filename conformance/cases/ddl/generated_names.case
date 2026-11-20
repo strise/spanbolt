@@ -1,0 +1,177 @@
+# Names Spanner generates for foreign keys and CHECK constraints declared without `CONSTRAINT name`:
+# FK_<table>_<referenced table> / CK_<table>, a fingerprint of that base and a sequence number that
+# counts up from 1 until the name is free, cut to 128 bytes; in a named schema the schema comes first.
+# The names show in INFORMATION_SCHEMA and in constraint violation errors; GetDatabaseDdl omits them.
+tags: ddl information_schema
+schema:
+  CREATE TABLE Parents (
+    ParentId INT64 NOT NULL,
+    Code STRING(16),
+  ) PRIMARY KEY (ParentId);
+  CREATE UNIQUE INDEX ParentsByCode ON Parents(Code);
+  CREATE TABLE Others (
+    OtherId INT64 NOT NULL,
+    ParentId INT64,
+    ParentCode STRING(16),
+    PrevId INT64,
+    Qty INT64,
+    FOREIGN KEY (ParentId) REFERENCES Parents (ParentId),
+    FOREIGN KEY (ParentCode) REFERENCES Parents (Code),
+    FOREIGN KEY (PrevId) REFERENCES Others (OtherId),
+    CHECK (Qty > 0),
+    CHECK (Qty < 100),
+  ) PRIMARY KEY (OtherId);
+  CREATE SCHEMA sch;
+  CREATE TABLE sch.Items (
+    Id INT64 NOT NULL,
+    ParentId INT64,
+    N INT64,
+    FOREIGN KEY (ParentId) REFERENCES Parents (ParentId),
+  ) PRIMARY KEY (Id);
+  CREATE TABLE A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit (
+    Id INT64 NOT NULL,
+    ParentId INT64,
+    FOREIGN KEY (ParentId) REFERENCES Parents (ParentId),
+    CHECK (Id > 0),
+  ) PRIMARY KEY (Id)
+
+case table_constraints
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE
+  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE CONSTRAINT_TYPE IN ('FOREIGN KEY', 'CHECK') AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%'
+  ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_NAME STRING, CONSTRAINT_TYPE STRING
+  ["","A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit","CK_A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Ident_F8F5568198A9F57B_1","CHECK"]
+  ["","A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit","FK_A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Ident_DBF1128D12F3B22C_1","FOREIGN KEY"]
+  ["","Others","CK_Others_B1162681556A2BED_1","CHECK"]
+  ["","Others","CK_Others_B1162681556A2BED_2","CHECK"]
+  ["","Others","FK_Others_Others_9A67C58514E55A35_1","FOREIGN KEY"]
+  ["","Others","FK_Others_Parents_77D2EFE8327295FC_1","FOREIGN KEY"]
+  ["","Others","FK_Others_Parents_77D2EFE8327295FC_2","FOREIGN KEY"]
+  ["sch","Items","FK_Items_Parents_7EC0040F058CA24C_1","FOREIGN KEY"]
+
+case referential_constraints
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, UNIQUE_CONSTRAINT_NAME
+  FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+  ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_NAME STRING
+  ["","FK_A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Ident_DBF1128D12F3B22C_1","PK_Parents"]
+  ["","FK_Others_Others_9A67C58514E55A35_1","PK_Others"]
+  ["","FK_Others_Parents_77D2EFE8327295FC_1","PK_Parents"]
+  ["","FK_Others_Parents_77D2EFE8327295FC_2","IDX_Parents_Code_U_1138935A6D4FCC53"]
+  ["sch","FK_Items_Parents_7EC0040F058CA24C_1","PK_Parents"]
+
+case check_constraints
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, CHECK_CLAUSE
+  FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
+  WHERE CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%'
+  ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, CHECK_CLAUSE STRING
+  ["","CK_A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Ident_F8F5568198A9F57B_1","Id > 0"]
+  ["","CK_Others_B1162681556A2BED_1","Qty > 0"]
+  ["","CK_Others_B1162681556A2BED_2","Qty < 100"]
+
+case get_ddl_omits_generated_names
+get_ddl
+expect:
+  statements:
+  "CREATE SCHEMA sch"
+  "CREATE TABLE Parents (\n  ParentId INT64 NOT NULL,\n  Code STRING(16),\n) PRIMARY KEY(ParentId)"
+  "CREATE UNIQUE INDEX ParentsByCode ON Parents(Code)"
+  "CREATE TABLE Others (\n  OtherId INT64 NOT NULL,\n  ParentId INT64,\n  ParentCode STRING(16),\n  PrevId INT64,\n  Qty INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n  FOREIGN KEY(ParentCode) REFERENCES Parents(Code),\n  FOREIGN KEY(PrevId) REFERENCES Others(OtherId),\n  CHECK(Qty > 0),\n  CHECK(Qty < 100),\n) PRIMARY KEY(OtherId)"
+  "CREATE TABLE sch.Items (\n  Id INT64 NOT NULL,\n  ParentId INT64,\n  N INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n) PRIMARY KEY(Id)"
+  "CREATE TABLE A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit (\n  Id INT64 NOT NULL,\n  ParentId INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n  CHECK(Id > 0),\n) PRIMARY KEY(Id)"
+
+case violations_name_the_constraint
+insert Others cols=OtherId,Qty:
+  [1, 0]
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `Others`.`CK_Others_B1162681556A2BED_1` is violated for key {Int64(1)}
+insert Others cols=OtherId,Qty:
+  [1, 100]
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `Others`.`CK_Others_B1162681556A2BED_2` is violated for key {Int64(1)}
+insert Others cols=OtherId,ParentId,Qty:
+  [1, 7, 1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `FK_Others_Parents_77D2EFE8327295FC_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(7)}` in table `Parents`.
+insert Others cols=OtherId,ParentCode,Qty:
+  [1, "x", 1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `FK_Others_Parents_77D2EFE8327295FC_2` constraint violation on table `Others`. Cannot find referenced key `{String("x")}` in table `Parents`.
+insert Others cols=OtherId,PrevId,Qty:
+  [1, 9, 1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `FK_Others_Others_9A67C58514E55A35_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(9)}` in table `Others`.
+insert sch.Items cols=Id,ParentId:
+  [1, 7]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `sch.FK_Items_Parents_7EC0040F058CA24C_1` constraint violation on table `sch.Items`. Cannot find referenced key `{Int64(7)}` in table `Parents`.
+
+case named_schema_check
+ddl:
+  ALTER TABLE sch.Items ADD CHECK (N >= 0)
+expect:
+  error: UNIMPLEMENTED
+  message: not yet supported in named schema: sch.CK_Items_D34EFD3F812532C3_1.
+
+case alter_adds_the_next_free_number
+ddl:
+  ALTER TABLE Others ADD FOREIGN KEY (PrevId) REFERENCES Parents (ParentId);
+  ALTER TABLE Others ADD CHECK (Qty <> 50)
+query:
+  SELECT CONSTRAINT_NAME
+  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_NAME = 'Others' AND CONSTRAINT_TYPE IN ('FOREIGN KEY', 'CHECK')
+    AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%'
+  ORDER BY CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_NAME STRING
+  ["CK_Others_B1162681556A2BED_1"]
+  ["CK_Others_B1162681556A2BED_2"]
+  ["CK_Others_B1162681556A2BED_3"]
+  ["FK_Others_Others_9A67C58514E55A35_1"]
+  ["FK_Others_Parents_77D2EFE8327295FC_1"]
+  ["FK_Others_Parents_77D2EFE8327295FC_2"]
+  ["FK_Others_Parents_77D2EFE8327295FC_3"]
+
+case dropped_numbers_are_reused
+ddl:
+  ALTER TABLE Others DROP CONSTRAINT CK_Others_B1162681556A2BED_1;
+  ALTER TABLE Others DROP CONSTRAINT FK_Others_Parents_77D2EFE8327295FC_1;
+  ALTER TABLE Others ADD CHECK (Qty <> 50);
+  ALTER TABLE Others ADD FOREIGN KEY (PrevId) REFERENCES Parents (ParentId)
+query:
+  SELECT CONSTRAINT_NAME
+  FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+  WHERE TABLE_NAME = 'Others' AND CONSTRAINT_TYPE IN ('FOREIGN KEY', 'CHECK')
+    AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%'
+  ORDER BY CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_NAME STRING
+  ["CK_Others_B1162681556A2BED_1"]
+  ["CK_Others_B1162681556A2BED_2"]
+  ["FK_Others_Others_9A67C58514E55A35_1"]
+  ["FK_Others_Parents_77D2EFE8327295FC_1"]
+  ["FK_Others_Parents_77D2EFE8327295FC_2"]
+query:
+  SELECT CONSTRAINT_NAME, CHECK_CLAUSE
+  FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS
+  WHERE CONSTRAINT_NAME LIKE 'CK_Others_%'
+  ORDER BY CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_NAME STRING, CHECK_CLAUSE STRING
+  ["CK_Others_B1162681556A2BED_1","Qty <> 50"]
+  ["CK_Others_B1162681556A2BED_2","Qty < 100"]

@@ -2,6 +2,7 @@
 
 mod apply;
 mod lexer;
+pub mod names;
 mod parser;
 mod printer;
 mod schema;

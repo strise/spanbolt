@@ -34,8 +34,8 @@ gsql_catalog* gsql_catalog_new(const char* json, size_t json_len,
                                gsql_buf* error);
 void gsql_catalog_free(gsql_catalog* catalog);
 
-// Builds one table from {"name":"schema.T","columns":[...]} (column format as
-// above). Tables are immutable and may be shared by any number of catalogs.
+// Builds one table from {"name":"schema.T","columns":[...],"primary_key":[0]}
+// (column format as above; primary_key, column positions, is optional). Tables are immutable and may be shared by any number of catalogs.
 // Returns NULL on failure and sets *error.
 gsql_table* gsql_table_new(const char* json, size_t json_len, gsql_buf* error);
 // Frees a table. Every catalog that refers to it must be freed first.
@@ -54,6 +54,26 @@ gsql_catalog* gsql_catalog_from_tables(const gsql_table* const* tables,
 gsql_result gsql_analyze(const gsql_catalog* catalog, const char* sql,
                          size_t sql_len, const char* params_json,
                          size_t params_len);
+
+// Adds a property graph to `catalog` (call before the catalog is shared). The
+// graph JSON names element tables of the catalog:
+// {"name":"G","properties":[{"name":"id","type":"STRING"}],
+//  "labels":[{"name":"Person","properties":["id"]}],
+//  "nodes":[{"name":"Person","table":"Person","key":["id"],
+//            "labels":["Person"],"properties":[{"name":"id","sql":"id"}]}],
+//  "edges":[{<node fields>,
+//            "source":{"node":"Person","edge_columns":["src"],
+//                      "node_columns":["id"]},"destination":{...}}]}
+// Returns an absl::StatusCode (0 = OK) and sets *error otherwise.
+int32_t gsql_catalog_add_property_graph(gsql_catalog* catalog,
+                                        const char* json, size_t json_len,
+                                        gsql_buf* error);
+
+// Analyses a CREATE [OR REPLACE] PROPERTY GRAPH statement against the
+// catalog's tables. On OK, `proto` holds an AnyResolvedStatementProto with a
+// ResolvedCreatePropertyGraphStmt.
+gsql_result gsql_analyze_ddl(const gsql_catalog* catalog, const char* sql,
+                             size_t sql_len);
 
 void gsql_buf_free(gsql_buf buf);
 

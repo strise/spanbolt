@@ -6,7 +6,7 @@ use spanbolt_storage::{Code, Error, Result};
 
 use crate::catalog::SqlCatalog;
 
-fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
+pub(crate) fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
     // absl status codes share gRPC numbering.
     let code = match e.code {
         5 => Code::NotFound,

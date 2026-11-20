@@ -21,6 +21,15 @@ pub trait ExprEvaluator: Send + Sync {
     fn validate(&self, _expr: &str, _table: &TableMeta, _kind: &ExprKind) -> Result<()> {
         Ok(())
     }
+
+    /// Checks the property graph `name` of `schema` when DDL creates or replaces it.
+    fn validate_property_graph(
+        &self,
+        _schema: &Arc<spanbolt_ddl::Schema>,
+        _name: &str,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Where a schema expression appears.

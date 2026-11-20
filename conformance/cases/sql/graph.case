@@ -1,0 +1,200 @@
+# Spanner Graph: property graph DDL, INFORMATION_SCHEMA.PROPERTY_GRAPHS and GQL queries. Each edge
+# table here has one definition per base table: the emulator keeps only one of several.
+tags: graph
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Country STRING(MAX)) PRIMARY KEY (Id);
+  CREATE TABLE Company (Id STRING(MAX) NOT NULL, Name STRING(MAX), Bankrupt BOOL) PRIMARY KEY (Id);
+  CREATE TABLE PersonOwns (Id STRING(MAX) NOT NULL, Src STRING(MAX), Dst STRING(MAX), Share FLOAT64, Active BOOL) PRIMARY KEY (Id);
+  CREATE TABLE CompanyOwns (Id STRING(MAX) NOT NULL, Src STRING(MAX), Dst STRING(MAX), Share FLOAT64, Active BOOL) PRIMARY KEY (Id);
+  CREATE PROPERTY GRAPH Ownership
+    NODE TABLES (
+      Person KEY (Id) LABEL Person PROPERTIES ALL COLUMNS LABEL Entity PROPERTIES (Id, Name),
+      Company KEY (Id) LABEL Company PROPERTIES ALL COLUMNS LABEL Entity PROPERTIES (Id, Name)
+    )
+    EDGE TABLES (
+      PersonOwns KEY (Id) SOURCE KEY (Src) REFERENCES Person (Id) DESTINATION KEY (Dst) REFERENCES Company (Id) LABEL Owns PROPERTIES ALL COLUMNS,
+      CompanyOwns KEY (Id) SOURCE KEY (Src) REFERENCES Company (Id) DESTINATION KEY (Dst) REFERENCES Company (Id) LABEL Owns PROPERTIES ALL COLUMNS
+    )
+insert Person cols=Id,Name,Country:
+  ["p1", "Ola", "NO"]
+  ["p2", "Kari", "SE"]
+insert Company cols=Id,Name,Bankrupt:
+  ["c1", "Nordvik AS", false]
+  ["c2", "Holding AS", false]
+  ["c3", "Top AS", false]
+  ["c4", "Bankrupt AS", true]
+insert PersonOwns cols=Id,Src,Dst,Share,Active:
+  ["po1", "p1", "c1", 40.0, true]
+  ["po2", "p2", "c3", 100.0, true]
+  ["po9", "gone", "c1", 1.0, true]
+insert CompanyOwns cols=Id,Src,Dst,Share,Active:
+  ["co1", "c2", "c1", 60.0, true]
+  ["co2", "c3", "c2", 100.0, true]
+  ["co3", "c4", "c1", 10.0, false]
+
+case property_graphs_listed
+query:
+  SELECT PROPERTY_GRAPH_CATALOG, PROPERTY_GRAPH_SCHEMA, PROPERTY_GRAPH_NAME FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS
+expect:
+  columns: PROPERTY_GRAPH_CATALOG STRING, PROPERTY_GRAPH_SCHEMA STRING, PROPERTY_GRAPH_NAME STRING
+  ["","","Ownership"]
+
+case property_graph_metadata
+# Label order in the emulator's metadata follows a hash set, so labels are left out.
+query:
+  SELECT JSON_QUERY(PROPERTY_GRAPH_METADATA_JSON, '$.nodeTables') AS node_tables,
+    JSON_QUERY(PROPERTY_GRAPH_METADATA_JSON, '$.edgeTables') AS edge_tables,
+    JSON_QUERY(PROPERTY_GRAPH_METADATA_JSON, '$.propertyDeclarations') AS properties,
+    JSON_VALUE(PROPERTY_GRAPH_METADATA_JSON, '$.name') AS name
+  FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS
+expect:
+  columns: node_tables JSON, edge_tables JSON, properties JSON, name STRING
+  ["[{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"Company\",\"keyColumns\":[\"Id\"],\"kind\":\"NODE\",\"labelNames\":[\"Company\",\"Entity\"],\"name\":\"Company\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Name\",\"valueExpressionSql\":\"Name\"},{\"propertyDeclarationName\":\"Bankrupt\",\"valueExpressionSql\":\"Bankrupt\"}]},{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"Person\",\"keyColumns\":[\"Id\"],\"kind\":\"NODE\",\"labelNames\":[\"Person\",\"Entity\"],\"name\":\"Person\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Name\",\"valueExpressionSql\":\"Name\"},{\"propertyDeclarationName\":\"Country\",\"valueExpressionSql\":\"Country\"}]}]","[{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"CompanyOwns\",\"destinationNodeTable\":{\"edgeTableColumns\":[\"Dst\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"},\"keyColumns\":[\"Id\"],\"kind\":\"EDGE\",\"labelNames\":[\"Owns\"],\"name\":\"CompanyOwns\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Src\",\"valueExpressionSql\":\"Src\"},{\"propertyDeclarationName\":\"Dst\",\"valueExpressionSql\":\"Dst\"},{\"propertyDeclarationName\":\"Share\",\"valueExpressionSql\":\"Share\"},{\"propertyDeclarationName\":\"Active\",\"valueExpressionSql\":\"Active\"}],\"sourceNodeTable\":{\"edgeTableColumns\":[\"Src\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"}},{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"PersonOwns\",\"destinationNodeTable\":{\"edgeTableColumns\":[\"Dst\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"},\"keyColumns\":[\"Id\"],\"kind\":\"EDGE\",\"labelNames\":[\"Owns\"],\"name\":\"PersonOwns\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Src\",\"valueExpressionSql\":\"Src\"},{\"propertyDeclarationName\":\"Dst\",\"valueExpressionSql\":\"Dst\"},{\"propertyDeclarationName\":\"Share\",\"valueExpressionSql\":\"Share\"},{\"propertyDeclarationName\":\"Active\",\"valueExpressionSql\":\"Active\"}],\"sourceNodeTable\":{\"edgeTableColumns\":[\"Src\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Person\"}}]","[{\"name\":\"Id\",\"type\":\"STRING\"},{\"name\":\"Name\",\"type\":\"STRING\"},{\"name\":\"Country\",\"type\":\"STRING\"},{\"name\":\"Bankrupt\",\"type\":\"BOOL\"},{\"name\":\"Src\",\"type\":\"STRING\"},{\"name\":\"Dst\",\"type\":\"STRING\"},{\"name\":\"Share\",\"type\":\"FLOAT64\"},{\"name\":\"Active\",\"type\":\"BOOL\"}]","Ownership"]
+
+case match_node_filter_order_limit
+# The emulator ignores ORDER BY before LIMIT in a GQL RETURN; the outer query orders instead.
+query:
+  SELECT id, name FROM GRAPH_TABLE(Ownership
+    MATCH (c:Company WHERE c.Bankrupt = false)
+    COLUMNS (c.Id AS id, c.Name AS name))
+  ORDER BY name DESC
+  LIMIT 2
+expect:
+  columns: id STRING, name STRING
+  ["c3","Top AS"]
+  ["c1","Nordvik AS"]
+
+case edge_properties_and_labels
+query:
+  GRAPH Ownership
+  MATCH (o)-[e:Owns WHERE e.Active]->(c:Company WHERE c.Id = 'c1')
+  RETURN o.Id AS owner, e.Share AS share, ARRAY_TO_STRING(ARRAY(SELECT l FROM UNNEST(LABELS(o)) l ORDER BY l), ',') AS labels
+expect:
+  columns: owner STRING, share FLOAT64, labels STRING
+  ["p1",40.0,"Entity,Person"]
+  ["c2",60.0,"Company,Entity"]
+
+case dangling_edges_do_not_match
+query:
+  GRAPH Ownership
+  MATCH ()-[e:Owns]->(c WHERE c.Id = 'c1')
+  RETURN e.Id AS edge
+expect:
+  columns: edge STRING
+  ["co1"]
+  ["po1"]
+  ["co3"]
+
+case quantified_path
+query:
+  GRAPH Ownership
+  MATCH (c:Company WHERE c.Id = 'c1')<-[e:Owns]-{1,3}(top)
+  RETURN top.Id AS top, ARRAY_LENGTH(e) AS hops
+expect:
+  columns: top STRING, hops INT64
+  ["c4","1"]
+  ["p1","1"]
+  ["c2","1"]
+  ["p2","3"]
+  ["c3","2"]
+
+case quantified_path_for_and_next
+query:
+  GRAPH Ownership
+  MATCH (c:Company WHERE c.Id = 'c1')<-[e:Owns WHERE e.Active]-{1,6}(top)
+  FOR x IN e
+  RETURN DISTINCT x.Id AS edge_id
+  NEXT
+  MATCH (s)-[o:Owns]->(d:Company)
+  WHERE o.Id = edge_id
+  RETURN s.Id AS src, d.Id AS dst
+expect:
+  columns: src STRING, dst STRING
+  ["p1","c1"]
+  ["c2","c1"]
+  ["p2","c3"]
+  ["c3","c2"]
+
+case optional_match
+query:
+  GRAPH Ownership
+  MATCH (c:Company WHERE c.Id IN ('c3', 'c4'))
+  OPTIONAL MATCH (c)<-[:Owns]-(x)
+  RETURN c.Id AS company, x.Id AS owner
+expect:
+  columns: company STRING, owner STRING
+  ["c3","p2"]
+  ["c4",null]
+
+case any_direction
+query:
+  GRAPH Ownership
+  MATCH (c:Company WHERE c.Id = 'c2')-[o:Owns]-(x)
+  RETURN x.Id AS other, o.Id AS edge
+expect:
+  columns: other STRING, edge STRING
+  ["c3","co2"]
+  ["c1","co1"]
+
+case paths_sharing_a_variable
+query:
+  GRAPH Ownership
+  MATCH (a:Company)-[:Owns]->(b:Company), (b)-[:Owns]->(c:Company)
+  WHERE a.Id != c.Id
+  RETURN a.Id AS a, b.Id AS b, c.Id AS c
+expect:
+  columns: a STRING, b STRING, c STRING
+  ["c3","c2","c1"]
+
+case filter_statement
+query:
+  GRAPH Ownership
+  MATCH (c:Company)
+  FILTER c.Bankrupt
+  RETURN c.Id AS id
+expect:
+  columns: id STRING
+  ["c4"]
+
+case label_shared_by_tables
+query:
+  GRAPH Ownership
+  MATCH (n:Entity)
+  RETURN COUNT(*) AS n
+expect:
+  columns: n INT64
+  ["6"]
+
+case graph_table
+query:
+  SELECT owner, dst FROM GRAPH_TABLE(Ownership
+    MATCH (a)-[o:Owns]->(b:Company WHERE b.Id = 'c1')
+    COLUMNS (a.Id AS owner, b.Id AS dst))
+  ORDER BY owner
+expect:
+  columns: owner STRING, dst STRING
+  ["c2","c1"]
+  ["c4","c1"]
+  ["p1","c1"]
+
+case returning_a_node_is_rejected
+query:
+  GRAPH Ownership MATCH (c:Company) RETURN c
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:42]
+
+case graph_over_a_missing_table
+ddl:
+  CREATE PROPERTY GRAPH Broken NODE TABLES (Missing KEY (Id) LABEL X PROPERTIES ALL COLUMNS)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: Missing [at 1:43]
+
+case drop_property_graph
+ddl:
+  DROP PROPERTY GRAPH Ownership
+query:
+  SELECT PROPERTY_GRAPH_NAME FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS
+expect:
+  columns: PROPERTY_GRAPH_NAME STRING

@@ -455,6 +455,19 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                 out.push(vec![s(""), s(sch), s(name), s(&v.sql), s(security)]);
             }
         }
+        "PROPERTY_GRAPHS" => {
+            let mut graphs: Vec<_> = cat.graphs.values().collect();
+            graphs.sort_by(|a, b| a.name.cmp(&b.name));
+            for g in graphs {
+                let meta = crate::graph::metadata_json(g, &cat.storage);
+                out.push(vec![
+                    s(""),
+                    s(""),
+                    s(&g.name),
+                    Value::Json(meta.to_string().into()),
+                ]);
+            }
+        }
         "SEQUENCES" => {
             for q in schema.sequences.values() {
                 let (sch, name) = split(&q.name);

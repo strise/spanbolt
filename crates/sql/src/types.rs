@@ -52,6 +52,10 @@ pub fn from_proto(t: &TypeProto) -> Result<Type> {
             }
             Type::Struct(fields)
         }
+        // Graph elements are carried as structs (see `graph_exec`).
+        Some(TypeKind::TypeGraphElement) => {
+            Type::Struct(vec![(Some("$graph_element".into()), Type::Int64)])
+        }
         other => {
             return Err(unimplemented(format!(
                 "Type {}",
@@ -59,6 +63,24 @@ pub fn from_proto(t: &TypeProto) -> Result<Type> {
             )));
         }
     })
+}
+
+/// Whether a value of type `t` holds graph elements or paths.
+pub fn has_graph(t: &TypeProto) -> bool {
+    match t.type_kind.and_then(|k| TypeKind::try_from(k).ok()) {
+        Some(TypeKind::TypeGraphElement) | Some(TypeKind::TypeGraphPath) => true,
+        Some(TypeKind::TypeArray) => t
+            .array_type
+            .as_ref()
+            .and_then(|a| a.element_type.as_deref())
+            .is_some_and(has_graph),
+        Some(TypeKind::TypeStruct) => t
+            .struct_type
+            .iter()
+            .flat_map(|s| &s.field)
+            .any(|f| f.field_type.as_ref().is_some_and(has_graph)),
+        _ => false,
+    }
 }
 
 /// Spanner wire type for result metadata.

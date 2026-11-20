@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
 use prost_types::value::Kind;
+use spanbolt_ddl::Schema;
 use spanbolt_proto::spanner as pb;
 use spanbolt_storage::{Code, DbState, Error, Result, Value};
 use spanbolt_txn::{Database, ReadOnlyTxn, ReadWriteTxn};
@@ -83,6 +84,29 @@ impl Engine {
             .get(&state.schema, &state.catalog, self.opts.extra_features())
     }
 
+    /// Checks the property graph `name` of `schema` against its tables, as `CREATE PROPERTY GRAPH`
+    /// does: the analyser's error is the statement's error.
+    pub fn validate_property_graph(&self, schema: &Arc<Schema>, name: &str) -> Result<()> {
+        let Some(g) = schema
+            .opaque
+            .iter()
+            .find(|o| o.kind == "PROPERTY GRAPH" && o.name.eq_ignore_ascii_case(name))
+        else {
+            return Ok(());
+        };
+        // Analysed against the other objects, as the graph itself is not defined yet.
+        let mut others = (**schema).clone();
+        others
+            .opaque
+            .retain(|o| !(o.kind == "PROPERTY GRAPH" && o.name.eq_ignore_ascii_case(name)));
+        let others = Arc::new(others);
+        let storage = Arc::new(spanbolt_storage::Catalog::build(&others)?);
+        let cat = self
+            .cache
+            .get(&others, &storage, self.opts.extra_features())?;
+        crate::graph::analyse(&cat.gsql, &storage, &g.ddl).map(|_| ())
+    }
+
     /// GoogleSQL catalogs this engine holds (pruned when the next catalog is looked up).
     pub fn cached_catalogs(&self) -> usize {
         self.cache.len()
@@ -158,6 +182,11 @@ impl Engine {
                         .column
                         .as_ref()
                         .ok_or_else(|| Error::internal("output column without column"))?;
+                    if c.r#type.as_ref().is_some_and(crate::types::has_graph) {
+                        return Err(crate::types::unimplemented(
+                            "Returning graph elements or paths from a query",
+                        ));
+                    }
                     ids.push(c.column_id.unwrap_or(-1));
                     // Anonymous columns (`$col1`) have no name on the wire.
                     let name = oc

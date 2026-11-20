@@ -517,7 +517,7 @@ impl<'a> Parser<'a> {
                 || (self.is_kw("FOREIGN") && self.kw_at(1, "KEY"))
                 || (self.is_kw("CHECK") && matches!(self.tok_at(1), Tok::Sym("(")))
             {
-                match self.constraint(&table.name)? {
+                match self.constraint()? {
                     Constraint::Fk(fk) => table.foreign_keys.push(fk),
                     Constraint::Check(c) => table.checks.push(c),
                 }
@@ -613,7 +613,7 @@ impl<'a> Parser<'a> {
         Ok(RowDeletionPolicy { column, days })
     }
 
-    fn constraint(&mut self, table: &str) -> R<Constraint> {
+    fn constraint(&mut self) -> R<Constraint> {
         let name = if self.eat_kw("CONSTRAINT") {
             Some(self.ident()?)
         } else {
@@ -622,7 +622,7 @@ impl<'a> Parser<'a> {
         if self.eat_kw("CHECK") {
             let expr = self.paren_text()?;
             let generated_name = name.is_none();
-            let name = name.unwrap_or_else(|| generated_check_name(table, &expr));
+            let name = name.unwrap_or_default();
             return Ok(Constraint::Check(CheckConstraint {
                 name,
                 expr,
@@ -649,8 +649,7 @@ impl<'a> Parser<'a> {
             )));
         }
         let generated_name = name.is_none();
-        let name =
-            name.unwrap_or_else(|| generated_fk_name(table, &columns, &ref_table, &ref_columns));
+        let name = name.unwrap_or_default();
         Ok(Constraint::Fk(ForeignKey {
             name,
             columns,
@@ -946,7 +945,7 @@ impl<'a> Parser<'a> {
     fn alter(&mut self) -> R<Statement> {
         if self.eat_kw("TABLE") {
             let table = self.path()?;
-            let action = self.alter_table_action(&table)?;
+            let action = self.alter_table_action()?;
             return Ok(Statement::AlterTable { table, action });
         }
         if self.eat_kw("INDEX") {
@@ -1008,7 +1007,7 @@ impl<'a> Parser<'a> {
         Err(self.encountered("ALTER statement"))
     }
 
-    fn alter_table_action(&mut self, table: &str) -> R<AlterTable> {
+    fn alter_table_action(&mut self) -> R<AlterTable> {
         if self.eat_kw("ADD") {
             if self.eat_kw("COLUMN") {
                 let if_not_exists = self.if_not_exists();
@@ -1026,7 +1025,7 @@ impl<'a> Parser<'a> {
             if self.eat_kw("SYNONYM") {
                 return Ok(AlterTable::AddSynonym(self.path()?));
             }
-            return Ok(match self.constraint(table)? {
+            return Ok(match self.constraint()? {
                 Constraint::Fk(fk) => AlterTable::AddForeignKey(fk),
                 Constraint::Check(c) => AlterTable::AddCheck(c),
             });
@@ -1353,33 +1352,4 @@ pub(crate) fn join_idents(cols: &[String]) -> String {
         .map(|c| quote_ident(c))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn fnv(parts: &[&str]) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for p in parts {
-        for b in p.to_ascii_lowercase().bytes().chain([0u8]) {
-            h ^= b as u64;
-            h = h.wrapping_mul(0x100000001b3);
-        }
-    }
-    h
-}
-
-fn generated_fk_name(table: &str, cols: &[String], ref_table: &str, ref_cols: &[String]) -> String {
-    let key = [table, &cols.join(","), ref_table, &ref_cols.join(",")];
-    format!(
-        "FK_{}_{}_{:016X}_1",
-        table.replace('.', "_"),
-        ref_table.replace('.', "_"),
-        fnv(&key)
-    )
-}
-
-fn generated_check_name(table: &str, expr: &str) -> String {
-    format!(
-        "CK_{}_{:016X}_1",
-        table.replace('.', "_"),
-        fnv(&[table, expr])
-    )
 }

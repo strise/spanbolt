@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use spanbolt_ddl::names::{make_fingerprint, make_name};
 use spanbolt_ddl::{ColumnType, ForeignKey, OnDelete, Schema, SortOrder, Table};
 use spanbolt_storage::{Result, Value};
 
@@ -563,28 +564,6 @@ struct ManagedIndex {
     interleaved: bool,
 }
 
-/// Longest schema identifier; generated names are truncated to fit.
-const MAX_IDENTIFIER: usize = 128;
-
-/// The emulator's `MakeFingerprint`: Fingerprint64 of a seeded signature, as 16 hex digits.
-fn make_fingerprint(signature: &str) -> String {
-    let text = format!("2695C62E33338E4B_{signature}");
-    format!("{:016X}", crate::func_hash::fingerprint64(text.as_bytes()))
-}
-
-/// The emulator's `MakeName`: `base_suffix`, with `base` cut so the whole fits in 128 bytes.
-fn make_name(base: &str, suffix: &str) -> String {
-    let len = base.len() + 1 + suffix.len();
-    let mut base = base;
-    if len > MAX_IDENTIFIER {
-        base = base
-            .get(..base.len().saturating_sub(len - MAX_IDENTIFIER))
-            .unwrap_or("");
-        base = base.strip_suffix('_').unwrap_or(base);
-    }
-    format!("{base}_{suffix}")
-}
-
 fn managed_index_name(table: &str, cols: &[String], null_filtered: bool, unique: bool) -> String {
     let (sch, tname) = split(table);
     let prefix = if sch.is_empty() {
@@ -776,6 +755,9 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
         }
         for fk in &t.foreign_keys {
             let (rsch, rname) = split(&fk.ref_table);
+            // A name generated in a named schema carries the schema (`sch.FK_T_R_..._1`); the
+            // views show the in-schema part.
+            let fk_name = split(&fk.name).1;
             // A key onto the referenced primary key names it; any other key names the unique
             // index backing it, which is also a UNIQUE constraint of the referenced table. The
             // emulator lists that constraint once per foreign key using it, and names it with its
@@ -837,7 +819,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                 "REFERENTIAL_CONSTRAINTS" => out.push(vec![
                     s(""),
                     s(sch),
-                    s(&fk.name),
+                    s(fk_name),
                     s(""),
                     s(rsch),
                     s(&unique_name),
@@ -851,7 +833,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                         out.push(vec![
                             s(""),
                             s(sch),
-                            s(&fk.name),
+                            s(fk_name),
                             s(""),
                             s(sch),
                             s(name),
@@ -864,7 +846,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                 "TABLE_CONSTRAINTS" => out.push(vec![
                     s(""),
                     s(sch),
-                    s(&fk.name),
+                    s(fk_name),
                     s(""),
                     s(sch),
                     s(name),
@@ -874,7 +856,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                     s(if fk.enforced { "YES" } else { "NO" }),
                 ]),
                 _ => list.push(Constraint {
-                    name: fk.name.clone(),
+                    name: fk_name.to_string(),
                     kind: "FOREIGN KEY",
                     used: fk.ref_table.clone(),
                     cols: fk.ref_columns.clone(),
@@ -963,7 +945,7 @@ mod tests {
     fn long_managed_index_names_are_cut_to_128_bytes() {
         let col = "C".repeat(120);
         let name = managed_index_name("T", &[col], true, true);
-        assert_eq!(name.len(), MAX_IDENTIFIER);
+        assert_eq!(name.len(), spanbolt_ddl::names::MAX_IDENTIFIER);
         assert!(name.starts_with("IDX_T_CCC"));
         assert!(name.ends_with(&format!("_U_{}", &name[name.len() - 16..])));
     }

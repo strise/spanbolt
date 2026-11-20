@@ -93,7 +93,8 @@ pub struct ForeignKey {
     pub on_delete: OnDelete,
     /// `NOT ENFORCED` foreign keys are informational.
     pub enforced: bool,
-    /// Declared without `CONSTRAINT name`; `name` was generated and is not printed.
+    /// Declared without `CONSTRAINT name`: `name` is generated when the statement is applied
+    /// (empty until then) and is not printed.
     pub generated_name: bool,
     /// `ON DELETE` was written out (GetDatabaseDdl prints it only then).
     pub on_delete_explicit: bool,
@@ -104,7 +105,8 @@ pub struct CheckConstraint {
     pub name: String,
     /// SQL text of the boolean expression.
     pub expr: String,
-    /// Declared without `CONSTRAINT name`; `name` was generated and is not printed.
+    /// Declared without `CONSTRAINT name`: `name` is generated when the statement is applied
+    /// (empty until then) and is not printed.
     pub generated_name: bool,
 }
 

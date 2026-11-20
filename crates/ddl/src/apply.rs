@@ -2,6 +2,7 @@
 
 use crate::DdlError;
 use crate::lexer::{Tok, tokenize};
+use crate::names;
 use crate::parser::{ChangeStream, CsTarget};
 use crate::schema::*;
 
@@ -330,16 +331,23 @@ impl Schema {
         Ok(())
     }
 
-    /// Picks a free generated constraint name (`..._1`, `..._2`, ...).
-    fn free_generated(&self, name: &str, taken: &[String]) -> String {
-        let base = name.strip_suffix("_1").unwrap_or(name);
-        let mut n = 1;
-        loop {
-            let cand = format!("{base}_{n}");
-            if !self.name_taken(&cand) && !taken.iter().any(|t| t.eq_ignore_ascii_case(&cand)) {
-                return cand;
+    /// The emulator's name for an unnamed constraint: `FK_<table>_<referenced table>` (or
+    /// `CK_<table>` for a check) with a fingerprint and the first sequence number whose name is
+    /// free in the schema and in `taken` (names already given out by the same statement).
+    fn generated_name(&self, table: &Table, fk: Option<&ForeignKey>, taken: &[String]) -> String {
+        let free =
+            |n: &str| !self.name_taken(n) && !taken.iter().any(|t| t.eq_ignore_ascii_case(n));
+        match fk {
+            Some(fk) => {
+                let referenced = if fk.ref_table.eq_ignore_ascii_case(&table.name) {
+                    table.name.as_str()
+                } else {
+                    self.resolve_table(&fk.ref_table)
+                        .map_or(fk.ref_table.as_str(), |r| r.name.as_str())
+                };
+                names::foreign_key_name(&table.name, referenced, |n| !free(n))
             }
-            n += 1;
+            None => names::check_name(&table.name, |n| !free(n)),
         }
     }
 
@@ -457,7 +465,7 @@ impl Schema {
         let mut names: Vec<String> = Vec::new();
         for i in 0..t.foreign_keys.len() {
             if t.foreign_keys[i].generated_name {
-                t.foreign_keys[i].name = self.free_generated(&t.foreign_keys[i].name, &names);
+                t.foreign_keys[i].name = self.generated_name(&t, Some(&t.foreign_keys[i]), &names);
             }
             let fk = &t.foreign_keys[i];
             if (!fk.generated_name && self.name_taken(&fk.name))
@@ -471,9 +479,10 @@ impl Schema {
         }
         for i in 0..t.checks.len() {
             if t.checks[i].generated_name {
-                t.checks[i].name = self.free_generated(&t.checks[i].name, &names);
+                t.checks[i].name = self.generated_name(&t, None, &names);
             }
             let c = &t.checks[i];
+            check_name_in_default_schema(&c.name)?;
             if self.name_taken(&c.name)
                 || names.iter().any(|n| n.eq_ignore_ascii_case(&c.name))
                 || c.name.eq_ignore_ascii_case(&t.name)
@@ -801,7 +810,7 @@ impl Schema {
             AlterTable::AddForeignKey(fk) => {
                 let mut fk = fk.clone();
                 if fk.generated_name {
-                    fk.name = self.free_generated(&fk.name, &[]);
+                    fk.name = self.generated_name(t, Some(&fk), &[]);
                 } else if self.name_taken(&fk.name) {
                     return Err(dup(&fk.name));
                 }
@@ -811,10 +820,11 @@ impl Schema {
             AlterTable::AddCheck(c) => {
                 let mut c = c.clone();
                 if c.generated_name {
-                    c.name = self.free_generated(&c.name, &[]);
+                    c.name = self.generated_name(t, None, &[]);
                 } else if self.name_taken(&c.name) {
                     return Err(dup(&c.name));
                 }
+                check_name_in_default_schema(&c.name)?;
                 self.table_mut(&k)?.checks.push(c);
             }
             AlterTable::DropConstraint { name } => {
@@ -1688,4 +1698,15 @@ fn sql_mentions(sql: &str, name: &str) -> bool {
         i += 1;
     }
     false
+}
+
+/// The emulator rejects a CHECK constraint whose name carries a schema, which is every unnamed one
+/// on a table in a named schema (`sch.CK_T_..._1`). Its message has no object kind.
+fn check_name_in_default_schema(name: &str) -> R<()> {
+    if name.contains('.') {
+        return Err(DdlError::Unimplemented(format!(
+            " not yet supported in named schema: {name}."
+        )));
+    }
+    Ok(())
 }

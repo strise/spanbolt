@@ -6,7 +6,8 @@ data in it.
 
 ## Reporting a vulnerability
 
-Report it privately through GitHub's "Report a vulnerability" on this repository's Security tab.
+Report it privately through GitHub's "Report a vulnerability" on this repository's Security tab
+(<https://github.com/strise/spanbolt/security/advisories/new>).
 Don't open a public issue. We aim to reply within a week.
 
 Supported version: the latest release only.

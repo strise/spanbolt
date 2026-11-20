@@ -1,38 +1,71 @@
 # Contributing
 
 Issues and pull requests are welcome. For anything larger than a fix, open an issue first so we
-can agree on the approach.
+can agree on the approach. Bugs are most useful with a small schema and request that give a
+different answer on spanbolt than on the official emulator (the bug report form asks for this).
 
-## Before you open a pull request
+## Setup
 
-1. Read `DESIGN.md`: it sets the architecture and the rules (no `unwrap()` on request paths, errors
-   map to Spanner's status codes and messages).
-2. Run the checks:
+You need Rust 1.91+, `curl` and `tar`. Read `DESIGN.md` first: it sets the architecture and the
+rules (no `unwrap()` on request paths, errors map to Spanner's status codes and messages).
 
-   ```sh
-   cargo fmt --all
-   cargo clippy --workspace --all-targets -- -D warnings
-   cargo test --workspace
-   ```
+The workspace's default members build without any native code:
 
-   Changes to SQL, the server or anything that needs the GoogleSQL shim (`docs/building.md`):
+```sh
+cargo build
+cargo test
+```
 
-   ```sh
-   source scripts/googlesql-env.sh
-   scripts/gate.sh        # fmt, clippy, tests, conformance in both modes
-   ```
+The SQL engine (`crates/sql`) and `googlesql-sys` call GoogleSQL's analyser through a C++ shim. You
+don't build it yourself: the first build with the engine downloads the prebuilt shim pinned in
+`native/googlesql-shim.env` and checks its SHA-256. Prebuilt shims exist for macOS arm64 and Linux
+x86_64/arm64 (glibc 2.38+).
 
-3. Use conventional commit messages: `type(scope): description`, for example
-   `fix(sql): keep NULLs last in DESC order`.
+```sh
+cargo build --release -p spanbolt-server --features googlesql   # the real server
+cargo test --release -p spanbolt-sql
+```
+
+Only if you change the shim itself (`native/googlesql`) do you need Bazel; see `docs/building.md`.
+
+## Checks
+
+```sh
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+scripts/gate.sh   # what CI runs: the above with and without the engine, license checks, conformance in both modes
+```
 
 ## Behaviour changes need conformance cases
 
-spanbolt's reference is real Spanner, then the official emulator. A change in behaviour comes with
-cases in `conformance/cases` whose expectations are recorded from the official emulator (or real
-Spanner), never written by hand or edited to make spanbolt pass. How to record:
-`crates/conformance/README.md`.
+spanbolt's reference is Cloud Spanner, then the official emulator. A change in behaviour comes with
+cases in `conformance/cases` whose expectations are recorded from the official emulator (or Cloud
+Spanner), never written by hand or edited to make spanbolt pass. If spanbolt can't support
+something, it must return `UNIMPLEMENTED`, not a different answer.
 
-If spanbolt can't support something, it must return `UNIMPLEMENTED`, not a different answer.
+Record and check (details and the case format: `crates/conformance/README.md`):
+
+```sh
+docker run -d --name sb-conf-oracle -p 19210:9010 gcr.io/cloud-spanner-emulator/emulator:1.5.59
+cargo run --release -p spanbolt-conformance -- record --target 127.0.0.1:19210 --filter <case>
+docker rm -f sb-conf-oracle
+
+cargo run --release -p spanbolt-server --features googlesql -- --host-port 127.0.0.1:19220 &
+cargo run --release -p spanbolt-conformance -- check --target 127.0.0.1:19220
+```
+
+Review the recorded diff before committing.
+
+## Pull requests
+
+- PRs are squash-merged, and the **PR title becomes the commit message**. It must be a conventional
+  commit, `type(scope): description`, for example `fix(sql): keep NULLs last in DESC order`
+  (types: feat, fix, perf, refactor, docs, test, ci, build, chore, revert; `!` marks a breaking
+  change). CI checks the title.
+- The PR description becomes the commit body: say why, what changed and how you tested it.
+- CI runs `scripts/gate.sh` on Linux x86_64, Linux arm64 and macOS. It has to pass before merge.
+- A first-time contributor's workflows wait for a maintainer to approve them.
 
 ## License
 

@@ -603,7 +603,13 @@ async fn handler(
     uri: Uri,
     body: Bytes,
 ) -> Response {
-    match gw.handle(method, &uri, &body).await {
+    // On the blocking pool, like the gRPC calls (`offload`): handlers run engine work inline.
+    let out = crate::offload::run({
+        let gw = gw.clone();
+        async move { gw.handle(method, &uri, &body).await }
+    })
+    .await;
+    match out {
         Ok(json) => json_response(StatusCode::OK, json),
         Err(f) => f.into_response(&gw.pool),
     }

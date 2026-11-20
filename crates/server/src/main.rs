@@ -55,6 +55,10 @@ fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        // Every call's handler runs on the blocking pool (`offload`), and a streaming call also
+        // holds a producer thread there while its client reads. Past the cap, calls queue for a
+        // thread; tokio's default of 512 is reachable with a few hundred concurrent streams.
+        .max_blocking_threads(4096)
         .build()
     {
         Ok(r) => r,

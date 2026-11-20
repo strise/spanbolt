@@ -3,6 +3,7 @@
 pub mod convert;
 pub mod emulator;
 pub mod names;
+pub mod offload;
 mod page;
 pub mod rest;
 mod services;
@@ -56,6 +57,7 @@ pub async fn serve(
     let result = tonic::transport::Server::builder()
         .tcp_nodelay(true)
         .layer(timing::TimingLayer)
+        .layer(offload::OffloadLayer)
         .add_service(wire::SpannerRouter::new(
             services::spanner::SpannerService { emu: emu.clone() },
             MAX_MESSAGE,

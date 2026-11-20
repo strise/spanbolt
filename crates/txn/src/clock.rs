@@ -40,6 +40,23 @@ impl Clock {
         }
     }
 
+    /// `CURRENT_TIMESTAMP()` for a statement in a read-write transaction: every later commit
+    /// timestamp is greater, so the value can be written to a commit-timestamp column.
+    pub fn statement_ts(&self) -> Timestamp {
+        let now = self.now_micros();
+        self.last_micros.fetch_max(now, Ordering::AcqRel);
+        Timestamp::from_micros(now)
+    }
+
+    /// The latest timestamp a write may hold before its commit timestamp is chosen: no earlier
+    /// than any `statement_ts` or commit timestamp handed out, and no later than the next commit.
+    pub fn write_horizon(&self) -> Timestamp {
+        Timestamp::from_micros(
+            self.now_micros()
+                .max(self.last_micros.load(Ordering::Acquire)),
+        )
+    }
+
     /// The next commit timestamp: `max(now, last + 1µs)`.
     pub fn next_commit_ts(&self) -> Timestamp {
         let now = self.now_micros();

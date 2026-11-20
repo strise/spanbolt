@@ -1,0 +1,17 @@
+# Groups the generated release notes (release.yml workflow) by PR label.
+changelog:
+  exclude:
+    labels: [ignore-for-release]
+  categories:
+    - title: Breaking changes
+      labels: [breaking]
+    - title: Features
+      labels: [enhancement, unimplemented]
+    - title: Fixes
+      labels: [bug, divergence]
+    - title: Documentation
+      labels: [documentation]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Other changes
+      labels: ["*"]

@@ -51,7 +51,9 @@ jobs:
           sudo swapon "$dir/spanbolt-swap"
           free -h
           df -h / /mnt
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Check the tag matches native/googlesql-shim.env
         if: github.ref_type == 'tag'
         run: |
@@ -66,12 +68,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang-18 lld-18
       - name: Install protoc
+        env:
+          PROTOC_PLATFORM: ${{ matrix.protoc }}
         run: |
           curl -fsSL -o "$RUNNER_TEMP/protoc.zip" \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-${{ matrix.protoc }}.zip"
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-${PROTOC_PLATFORM}.zip"
           unzip -q "$RUNNER_TEMP/protoc.zip" -d "$RUNNER_TEMP/protoc"
           echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
-      - uses: bazel-contrib/setup-bazel@0.15.0
+      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
         with:
           bazelisk-cache: true
           repository-cache: true
@@ -79,7 +83,7 @@ jobs:
       # so a rerun resumes where the last one stopped.
       - name: Restore the Bazel disk cache
         id: disk-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/spanbolt-bazel-disk
           key: bazel-disk-${{ matrix.platform }}-${{ hashFiles('native/googlesql/**') }}
@@ -106,22 +110,26 @@ jobs:
           bazel build --jobs="$jobs" "${extra[@]}" //:libgooglesql_shim.so
       - name: Save the Bazel disk cache
         if: always() && steps.disk-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/spanbolt-bazel-disk
           key: bazel-disk-${{ matrix.platform }}-${{ hashFiles('native/googlesql/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Package
-        run: scripts/package-shim.sh --platform ${{ matrix.platform }} --out dist
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: scripts/package-shim.sh --platform "$PLATFORM" --out dist
       - name: Compare with the pinned checksum
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
           . native/googlesql-shim.env
-          var="SHA256_$(echo ${{ matrix.platform }} | tr - _)"
+          var="SHA256_$(echo "$PLATFORM" | tr - _)"
           pinned="${!var}"
           read -r got _ < dist/*.sha256
           if [ -n "$pinned" ] && [ "$pinned" != "$got" ]; then
             echo "::warning::built $got, native/googlesql-shim.env pins $pinned; pin the release's checksums"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: shim-${{ matrix.platform }}
           path: dist/*
@@ -133,7 +141,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: shim-*
           path: dist

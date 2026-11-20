@@ -1,8 +1,20 @@
 # Contributing
 
 Issues and pull requests are welcome. For anything larger than a fix, open an issue first so we
-can agree on the approach. Bugs are most useful with a small schema and request that give a
-different answer on spanbolt than on the official emulator (the bug report form asks for this).
+can agree on the approach.
+
+## Use the templates
+
+Issues and pull requests must follow the repository's templates. We may close ones that don't, or
+ask you to fill them in first.
+
+- **Issues**: pick the **Bug report** or **Unsupported feature** form under "New issue". A bug
+  report needs the client library and language, the DDL, the request, what spanbolt returns and
+  what the official emulator returns. A small schema and request that answer differently on
+  spanbolt than on the emulator is the most useful report there is.
+- **Pull requests**: fill in the template's Why, What and How it was tested sections, and link
+  the issue (`Fixes #123`). The title must be a conventional commit (see below).
+- **Security problems** never go in an issue: report them privately (`SECURITY.md`).
 
 ## Setup
 

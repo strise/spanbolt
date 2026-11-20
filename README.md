@@ -121,6 +121,12 @@ native/googlesql      the C++ shim around GoogleSQL
 
 `DESIGN.md` has the architecture.
 
+## Contributing
+
+Issues and pull requests are welcome. Both must use the repository's templates: open issues from
+the bug report or unsupported feature form, and fill in the pull request template. See
+`CONTRIBUTING.md`.
+
 ## License
 
 Apache-2.0. See `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.md`. Parts of the full-text search and

@@ -1,0 +1,97 @@
+tags: mutations
+# Key columns with a volatile DEFAULT (GENERATE_UUID()) that the mutations leave out: every row
+# gets its own value, and the row is keyed by it (found by mito's AmsPublishersRepositoryTest).
+schema:
+  CREATE TABLE U (
+    Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
+    Source STRING(MAX) NOT NULL,
+    Kind STRING(MAX),
+  ) PRIMARY KEY (Id);
+  CREATE TABLE P (
+    P INT64 NOT NULL,
+  ) PRIMARY KEY (P);
+  CREATE TABLE C (
+    P INT64 NOT NULL,
+    Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
+    V STRING(MAX),
+  ) PRIMARY KEY (P, Id),
+    INTERLEAVE IN PARENT P ON DELETE CASCADE
+insert P cols=P:
+  [1]
+
+case insert_or_update_rows_one_mutation
+insert_or_update U cols=Source,Kind:
+  ["a", "k"]
+  ["b", "k"]
+  ["c", "k"]
+  ["d", "k"]
+query:
+  SELECT COUNT(*) AS n, COUNT(DISTINCT Id) AS ids, MIN(LENGTH(Id)) AS len FROM U
+expect:
+  columns: n INT64, ids INT64, len INT64
+  ["4","4","36"]
+
+case insert_or_update_mutations_one_commit
+begin txn=t
+insert_or_update U cols=Source,Kind txn=t:
+  ["a", "k"]
+insert_or_update U cols=Source,Kind txn=t:
+  ["b", "k"]
+insert_or_update U cols=Source,Kind txn=t:
+  ["c", "k"]
+insert_or_update U cols=Source,Kind txn=t:
+  ["d", "k"]
+commit txn=t
+query:
+  SELECT Source FROM U ORDER BY Source
+expect:
+  columns: Source STRING
+  ["a"]
+  ["b"]
+  ["c"]
+  ["d"]
+
+case insert_mutations_one_commit
+begin txn=t
+insert U cols=Source txn=t:
+  ["a"]
+  ["b"]
+insert U cols=Source txn=t:
+  ["c"]
+commit txn=t
+query:
+  SELECT COUNT(DISTINCT Id) AS ids FROM U
+expect:
+  columns: ids INT64
+  ["3"]
+
+case key_lookup_by_generated_id
+insert_or_update U cols=Source:
+  ["a"]
+  ["b"]
+query:
+  SELECT b.Source FROM U AS a JOIN U AS b ON b.Id = a.Id WHERE a.Source = "b"
+expect:
+  columns: Source STRING
+  ["b"]
+query:
+  SELECT Source FROM U WHERE Id = (SELECT Id FROM U WHERE Source = "a")
+expect:
+  columns: Source STRING
+  ["a"]
+
+case interleaved_child_default_key
+begin txn=t
+insert_or_update C cols=P,V txn=t:
+  [1, "x"]
+  [1, "y"]
+insert_or_update C cols=P,V txn=t:
+  [1, "z"]
+commit txn=t
+query:
+  SELECT V FROM C WHERE P = 1 ORDER BY V
+expect:
+  columns: V STRING
+  ["x"]
+  ["y"]
+  ["z"]

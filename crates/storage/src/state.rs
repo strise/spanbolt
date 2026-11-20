@@ -923,24 +923,21 @@ impl Writer {
             self.check_value(tm, c, v)?;
         }
         self.mutations += columns.len();
-        let mut identity_key = None;
+        let mut computed_row = None;
         if tm.computed && key_pos.iter().any(Option::is_none) {
-            // An identity key column the write leaves out gets its value before the row is keyed.
+            // A key column the write leaves out (DEFAULT, identity or generated) gets its value
+            // before the row is keyed. The whole new row is computed here, once, so a volatile
+            // default such as GENERATE_UUID() is evaluated once per row and the key matches it.
             let mut row = vec![Value::Null; tm.columns.len()];
             for (v, &c) in values.iter().zip(columns) {
                 row[c] = v.clone();
             }
-            crate::expr::compute_row(
-                tm,
-                &mut row,
-                &|c| tm.columns[c].identity && !columns.contains(&c),
-                &|_| false,
-            )?;
-            identity_key = Some(row);
+            crate::expr::compute_row(tm, &mut row, &|c| !columns.contains(&c), &|_| true)?;
+            computed_row = Some(row);
         }
         self.buf.clear();
         for ((kp, &desc), &c) in key_pos.iter().zip(&tm.pk_desc).zip(&tm.pk) {
-            let v = match (kp, &identity_key) {
+            let v = match (kp, &computed_row) {
                 (Some(p), _) => &values[*p],
                 (None, Some(row)) => &row[c],
                 (None, None) => &Value::Null,
@@ -999,7 +996,8 @@ impl Writer {
                     }
                     self.delete_row(t, &key)?;
                 }
-                let mut new_row = identity_key.unwrap_or_else(|| {
+                let precomputed = computed_row.is_some();
+                let mut new_row = computed_row.unwrap_or_else(|| {
                     let mut row = vec![Value::Null; tm.columns.len()];
                     for (v, &c) in values.iter().zip(columns) {
                         row[c] = v.clone();
@@ -1020,7 +1018,9 @@ impl Writer {
                 }
                 if tm.computed {
                     let missing = |c: usize| !columns.contains(&c);
-                    crate::expr::compute_row(tm, &mut new_row, &missing, &|_| true)?;
+                    if !precomputed {
+                        crate::expr::compute_row(tm, &mut new_row, &missing, &|_| true)?;
+                    }
                     for (c, cm) in tm.columns.iter().enumerate() {
                         if missing(c) && !cm.identity {
                             self.check_value(tm, c, &new_row[c])?;

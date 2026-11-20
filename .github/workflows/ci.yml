@@ -1,6 +1,7 @@
-# Draft: not run yet. The PR gate: what scripts/gate.sh runs locally.
-# The GoogleSQL shim comes from the release assets pinned in native/googlesql-shim.env, so these
-# jobs need them published (workflow shim.yml) and the repository public (or a token for curl).
+# The PR gate: what scripts/gate.sh runs locally.
+# The GoogleSQL shim comes from the release assets pinned in native/googlesql-shim.env (published by
+# shim.yml). They are fetched with the workflow token, which works while the repository is private;
+# googlesql-sys still checks the archive's SHA-256 against the pin.
 name: ci
 
 on:
@@ -39,10 +40,26 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Cache the prebuilt GoogleSQL shim
+        id: shim-cache
         uses: actions/cache@v4
         with:
           path: .shim-cache
           key: shim-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/googlesql-shim.env') }}
+      - name: Download the pinned GoogleSQL shim
+        if: steps.shim-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . native/googlesql-shim.env
+          case "$RUNNER_OS-$RUNNER_ARCH" in
+            Linux-X64) p=linux-x86_64 ;;
+            Linux-ARM64) p=linux-arm64 ;;
+            macOS-ARM64) p=darwin-arm64 ;;
+            *) echo "::error::no prebuilt shim for $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+          esac
+          gh release download "shim-${GOOGLESQL_VERSION}-s${SHIM_VERSION}" -R "$GITHUB_REPOSITORY" \
+            -p "googlesql-shim-*-$p.tar.gz" -D "$RUNNER_TEMP/shim"
+          echo "SPANBOLT_SHIM_URL=file://$RUNNER_TEMP/shim" >> "$GITHUB_ENV"
       - name: Gate (fmt, clippy, tests, conformance in prod and emulator modes)
         run: scripts/gate.sh
       - name: Upload gate output

@@ -848,3 +848,70 @@ fn window_functions_and_null_order_follow_prod() {
             .starts_with("NULLS FIRST and NULLS LAST are not supported")
     );
 }
+
+/// Production Spanner cannot read a field of an ARRAY<STRUCT> subquery value the query also
+/// returns, unless the subquery yields exactly one row. The emulator accepts it.
+#[test]
+fn reading_a_field_of_a_returned_struct_array_follows_prod() {
+    let (e, db) = (Engine::default(), database());
+    let albums = "ARRAY(SELECT AS STRUCT a.AlbumId, a.Title FROM Albums a \
+                  WHERE a.SingerId = s.SingerId ORDER BY a.AlbumId DESC LIMIT 1)";
+    let singers = format!("(SELECT s.SingerId, {albums} AS last FROM Singers s)");
+    let wrap =
+        |array: &str| format!("SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY({array}) AS a)");
+    let rejected = [
+        format!("SELECT c.SingerId, c.last, c.last[SAFE_OFFSET(0)].Title FROM {singers} c"),
+        format!("SELECT c.last FROM {singers} c WHERE c.last[SAFE_OFFSET(0)].AlbumId = 2"),
+        format!("SELECT c.last FROM {singers} c ORDER BY c.last[SAFE_OFFSET(0)].Title"),
+        format!(
+            "SELECT c.last, ARRAY(SELECT AS STRUCT b.Title FROM Albums b WHERE b.SingerId = c.SingerId \
+             AND b.AlbumId <= c.last[SAFE_OFFSET(0)].AlbumId) FROM {singers} c"
+        ),
+        format!("SELECT c.last, t.Title FROM {singers} c, UNNEST(c.last) t"),
+        format!(
+            "WITH c AS {singers} SELECT c.last, ARRAY_FIRST(c.last).Title FROM c WHERE c.SingerId = 1"
+        ),
+        format!("SELECT ARRAY_REVERSE(c.last), c.last[SAFE_OFFSET(0)].Title FROM {singers} c"),
+        wrap("SELECT AS STRUCT v AS x FROM UNNEST([1, 2]) v"),
+        wrap("SELECT AS STRUCT v AS x FROM UNNEST([1, 1, 2]) v GROUP BY v"),
+        wrap("SELECT AS STRUCT d.x FROM (SELECT 1 AS x UNION ALL SELECT 2 AS x) d"),
+        wrap("SELECT AS STRUCT COUNT(*) AS x FROM Singers s GROUP BY s.Team"),
+        wrap("SELECT AS STRUCT MAX(s.Name) AS x FROM Singers s HAVING COUNT(*) > 0"),
+        wrap("SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v LIMIT 0"),
+    ];
+    for sql in &rejected {
+        let err = run(&e, &db, &request(sql, &[])).expect_err(sql);
+        assert_eq!(err.code, Code::Unimplemented, "{sql}");
+        assert_eq!(
+            err.message,
+            "Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.",
+            "{sql}"
+        );
+    }
+    let accepted = [
+        format!("SELECT c.SingerId, c.last FROM {singers} c"),
+        format!("SELECT c.SingerId, c.last[SAFE_OFFSET(0)].Title FROM {singers} c"),
+        format!("SELECT c.last, ARRAY_LENGTH(c.last), c.last[SAFE_OFFSET(0)] IS NULL FROM {singers} c"),
+        format!(
+            "SELECT d.n, d.t FROM (SELECT ARRAY_LENGTH(c.last) AS n, c.last[SAFE_OFFSET(0)].Title AS t \
+             FROM {singers} c) d"
+        ),
+        format!("SELECT c.last, d.last[SAFE_OFFSET(0)].Title FROM {singers} c JOIN {singers} d USING (SingerId)"),
+        format!("SELECT ANY_VALUE(c.last) FROM {singers} c GROUP BY c.last[SAFE_OFFSET(0)].Title"),
+        "SELECT a, a[OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT s.Name AS x) AS a FROM Singers s)".to_string(),
+        wrap("SELECT AS STRUCT 1 AS x"),
+        wrap("SELECT AS STRUCT v AS x FROM UNNEST([1]) v WHERE v > 0"),
+        wrap("SELECT AS STRUCT MAX(s.Name) AS x FROM Singers s"),
+        wrap("SELECT AS STRUCT d.x FROM (SELECT 1 AS x) d CROSS JOIN (SELECT 2 AS y) f"),
+    ];
+    for sql in &accepted {
+        run(&e, &db, &request(sql, &[])).unwrap_or_else(|err| panic!("{sql}: {}", err.message));
+    }
+    let compat = Engine::new(Options {
+        emulator_compat: true,
+    });
+    for sql in &rejected {
+        run(&compat, &db, &request(sql, &[]))
+            .unwrap_or_else(|err| panic!("{sql}: {}", err.message));
+    }
+}

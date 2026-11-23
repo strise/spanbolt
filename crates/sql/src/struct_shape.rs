@@ -1,0 +1,549 @@
+//! Cloud Spanner's rule that a query cannot read a field of a struct it also returns.
+//!
+//! Spanner returns an `ARRAY(SELECT AS STRUCT ...)` as a nested table unless the subquery yields
+//! exactly one row whatever the data. A query that returns such a nested table and also reads a
+//! field of one of its structs fails with UNIMPLEMENTED. The rule is mapped from probes against
+//! Cloud Spanner; where the probes leave a shape open, the query is accepted.
+
+use std::collections::HashMap;
+
+use googlesql_sys::proto::any_resolved_aggregate_scan_base_proto::Node as AggNode;
+use googlesql_sys::proto::any_resolved_expr_proto::Node as E;
+use googlesql_sys::proto::any_resolved_function_call_base_proto::Node as FB;
+use googlesql_sys::proto::any_resolved_non_scalar_function_call_base_proto::Node as NS;
+use googlesql_sys::proto::any_resolved_scan_proto::Node as S;
+use googlesql_sys::proto::resolved_subquery_expr_enums::SubqueryType;
+use googlesql_sys::proto::value_proto::Value as V;
+use googlesql_sys::proto::*;
+use spanbolt_storage::{Code, Error, Result};
+
+use crate::plan::{call_base, computed, expr_type, fn_name, scan_columns};
+
+/// Bounds the walk through column definitions.
+const MAX_DEPTH: usize = 64;
+
+/// A nested table: the address of its array subquery node.
+type Origin = usize;
+
+/// How a column gets its value, for the columns the rule follows.
+enum Def<'a> {
+    Expr(&'a AnyResolvedExprProto),
+    /// An element of this array (`UNNEST`).
+    ElementOf(&'a AnyResolvedExprProto),
+    /// The same value as one of these columns (a WITH reference, a set operation).
+    Same(Vec<i64>),
+}
+
+/// What is asked of an expression: which nested tables' structs its value holds, which nested
+/// tables it is, or which nested tables it is one struct of.
+#[derive(Clone, Copy)]
+enum Flow {
+    Contained,
+    Array,
+    Element,
+}
+
+#[derive(Default)]
+struct Shape<'a> {
+    defs: HashMap<i64, Def<'a>>,
+    /// WITH entries in scope while collecting.
+    with: HashMap<String, &'a AnyResolvedScanProto>,
+    /// The entry each WITH reference (by node address) reads.
+    with_refs: HashMap<usize, &'a AnyResolvedScanProto>,
+    /// The struct operand of every field access.
+    accessed: Vec<&'a AnyResolvedExprProto>,
+}
+
+pub fn check(q: &ResolvedQueryStmtProto) -> Result<()> {
+    let Some(scan) = q.query.as_ref() else {
+        return Ok(());
+    };
+    let mut shape = Shape::default();
+    shape.scan(scan);
+    if shape.accessed.is_empty() {
+        return Ok(());
+    }
+    let mut returned = Vec::new();
+    for oc in &q.output_column_list {
+        if let Some(c) = &oc.column
+            && c.r#type.as_ref().is_some_and(has_struct)
+        {
+            shape.column(Flow::Contained, c.column_id.unwrap_or(-1), 0, &mut returned);
+        }
+    }
+    if returned.is_empty() {
+        return Ok(());
+    }
+    for base in &shape.accessed {
+        let mut read = Vec::new();
+        shape.element_of(base, 0, &mut read);
+        if read.iter().any(|o| returned.contains(o)) {
+            return Err(Error::new(
+                Code::Unimplemented,
+                "Unsupported query shape: Accessing fields of a struct value also present in the \
+                 final result is not supported.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn kind(t: &TypeProto) -> Option<TypeKind> {
+    t.type_kind.and_then(|k| TypeKind::try_from(k).ok())
+}
+
+fn element_type(t: &TypeProto) -> Option<&TypeProto> {
+    t.array_type.as_ref()?.element_type.as_deref()
+}
+
+fn has_struct(t: &TypeProto) -> bool {
+    match kind(t) {
+        Some(TypeKind::TypeStruct) => true,
+        Some(TypeKind::TypeArray) => element_type(t).is_some_and(has_struct),
+        _ => false,
+    }
+}
+
+fn is_struct_array(t: &TypeProto) -> bool {
+    kind(t) == Some(TypeKind::TypeArray)
+        && element_type(t).and_then(kind) == Some(TypeKind::TypeStruct)
+}
+
+fn column_id(c: &Option<ResolvedColumnProto>) -> i64 {
+    c.as_ref().and_then(|c| c.column_id).unwrap_or(-1)
+}
+
+fn subquery_type(s: &ResolvedSubqueryExprProto) -> Option<SubqueryType> {
+    s.subquery_type.and_then(|t| SubqueryType::try_from(t).ok())
+}
+
+fn literal(e: &AnyResolvedExprProto) -> Option<&V> {
+    match e.node.as_ref()? {
+        E::ResolvedLiteralNode(l) => l.value.as_ref()?.value.as_ref()?.value.as_ref(),
+        _ => None,
+    }
+}
+
+/// An array known to hold exactly one element: `[x]`.
+fn one_element(e: &AnyResolvedExprProto) -> bool {
+    if let Some(V::ArrayValue(a)) = literal(e) {
+        return a.element.len() == 1;
+    }
+    call_base(e).is_some_and(|b| fn_name(b) == "$make_array" && b.argument_list.len() == 1)
+}
+
+impl<'a> Shape<'a> {
+    // ------------------------------------------------------------ collecting
+
+    fn scan(&mut self, s: &'a AnyResolvedScanProto) {
+        match s.node.as_ref() {
+            Some(S::ResolvedProjectScanNode(p)) => {
+                self.input(&p.input_scan);
+                for c in &p.expr_list {
+                    self.define(c);
+                }
+            }
+            Some(S::ResolvedFilterScanNode(f)) => {
+                self.input(&f.input_scan);
+                self.opt_expr(&f.filter_expr);
+            }
+            Some(S::ResolvedJoinScanNode(j)) => {
+                self.input(&j.left_scan);
+                self.input(&j.right_scan);
+                self.opt_expr(&j.join_expr);
+            }
+            Some(S::ResolvedArrayScanNode(a)) => {
+                self.input(&a.input_scan);
+                for (array, element) in a.array_expr_list.iter().zip(&a.element_column_list) {
+                    self.expr(array);
+                    if let Some(id) = element.column_id {
+                        self.defs.insert(id, Def::ElementOf(array));
+                    }
+                }
+                self.opt_expr(&a.join_expr);
+            }
+            Some(S::ResolvedAggregateScanBaseNode(a)) => {
+                if let Some(AggNode::ResolvedAggregateScanNode(x)) = a.node.as_ref()
+                    && let Some(base) = &x.parent
+                {
+                    self.input(&base.input_scan);
+                    for g in &base.group_by_list {
+                        self.define(g);
+                    }
+                    // An aggregate's result is a new value: its column gets no definition.
+                    for c in &base.aggregate_list {
+                        if let Some(e) = computed(c).and_then(|c| c.expr.as_ref()) {
+                            self.expr(e);
+                        }
+                    }
+                }
+            }
+            Some(S::ResolvedOrderByScanNode(o)) => self.input(&o.input_scan),
+            Some(S::ResolvedLimitOffsetScanNode(l)) => self.input(&l.input_scan),
+            Some(S::ResolvedSetOperationScanNode(so)) => {
+                let out = scan_columns(s);
+                let mut sources = vec![Vec::new(); out.len()];
+                for item in &so.input_item_list {
+                    if let Some(sc) = &item.scan {
+                        self.scan(sc);
+                    }
+                    for (src, c) in sources.iter_mut().zip(&item.output_column_list) {
+                        src.push(c.column_id.unwrap_or(-1));
+                    }
+                }
+                for (id, src) in out.into_iter().zip(sources) {
+                    self.defs.insert(id, Def::Same(src));
+                }
+            }
+            Some(S::ResolvedWithScanNode(w)) => {
+                let mut shadowed = Vec::new();
+                for e in &w.with_entry_list {
+                    if let Some(sub) = &e.with_subquery {
+                        self.scan(sub);
+                        let name = e.with_query_name.clone().unwrap_or_default();
+                        shadowed.push((name.clone(), self.with.insert(name, sub)));
+                    }
+                }
+                self.input(&w.query);
+                for (name, previous) in shadowed.into_iter().rev() {
+                    match previous {
+                        Some(p) => self.with.insert(name, p),
+                        None => self.with.remove(&name),
+                    };
+                }
+            }
+            Some(S::ResolvedWithRefScanNode(r)) => {
+                let name = r.with_query_name.as_deref().unwrap_or_default();
+                if let Some(&sub) = self.with.get(name) {
+                    self.with_refs.insert(r as *const _ as usize, sub);
+                    for (id, src) in scan_columns(s).into_iter().zip(scan_columns(sub)) {
+                        self.defs.insert(id, Def::Same(vec![src]));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn input(&mut self, s: &'a Option<Box<AnyResolvedScanProto>>) {
+        if let Some(s) = s.as_deref() {
+            self.scan(s);
+        }
+    }
+
+    fn define(&mut self, c: &'a ResolvedComputedColumnProto) {
+        if let Some(e) = c.expr.as_ref() {
+            self.expr(e);
+            self.defs.insert(column_id(&c.column), Def::Expr(e));
+        }
+    }
+
+    fn opt_expr(&mut self, e: &'a Option<Box<AnyResolvedExprProto>>) {
+        if let Some(e) = e.as_deref() {
+            self.expr(e);
+        }
+    }
+
+    fn expr(&mut self, e: &'a AnyResolvedExprProto) {
+        match e.node.as_ref() {
+            Some(E::ResolvedFunctionCallBaseNode(b)) => {
+                let base = match b.node.as_ref() {
+                    Some(FB::ResolvedFunctionCallNode(f)) => f.parent.as_ref(),
+                    Some(FB::ResolvedNonScalarFunctionCallBaseNode(n)) => match n.node.as_ref() {
+                        Some(NS::ResolvedAggregateFunctionCallNode(a)) => {
+                            a.parent.as_ref().and_then(|p| p.parent.as_ref())
+                        }
+                        _ => None,
+                    },
+                    None => None,
+                };
+                for a in base.iter().flat_map(|b| &b.argument_list) {
+                    self.expr(a);
+                }
+            }
+            Some(E::ResolvedCastNode(c)) => self.opt_expr(&c.expr),
+            Some(E::ResolvedMakeStructNode(m)) => {
+                for f in &m.field_list {
+                    self.expr(f);
+                }
+            }
+            Some(E::ResolvedGetStructFieldNode(g)) => {
+                if let Some(base) = g.expr.as_deref() {
+                    self.accessed.push(base);
+                    self.expr(base);
+                }
+            }
+            Some(E::ResolvedGetJsonFieldNode(g)) => self.opt_expr(&g.expr),
+            Some(E::ResolvedSubqueryExprNode(s)) => {
+                self.opt_expr(&s.in_expr);
+                self.input(&s.subquery);
+            }
+            Some(E::ResolvedWithExprNode(w)) => {
+                for a in &w.assignment_list {
+                    self.define(a);
+                }
+                self.opt_expr(&w.expr);
+            }
+            _ => {}
+        }
+    }
+
+    // ------------------------------------------------------------ nested tables
+
+    /// The nested table an array subquery makes, unless it yields exactly one row.
+    fn origin(&self, e: &AnyResolvedExprProto, s: &ResolvedSubqueryExprProto) -> Option<Origin> {
+        if subquery_type(s) != Some(SubqueryType::Array)
+            || !expr_type(e).is_some_and(is_struct_array)
+        {
+            return None;
+        }
+        let outer: Vec<i64> = s
+            .parameter_list
+            .iter()
+            .map(|p| column_id(&p.column))
+            .collect();
+        let scan = s.subquery.as_deref()?;
+        (!self.single_row(scan, &outer, 0)).then_some(s as *const _ as Origin)
+    }
+
+    /// Whether Spanner takes `s` to yield exactly one row. `outer` holds the columns of the
+    /// enclosing query that the subquery reads.
+    fn single_row(&self, s: &AnyResolvedScanProto, outer: &[i64], depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return false;
+        }
+        let single = |s: &Option<Box<AnyResolvedScanProto>>| {
+            s.as_deref()
+                .is_some_and(|s| self.single_row(s, outer, depth + 1))
+        };
+        let constant = |e: &Option<Box<AnyResolvedExprProto>>| {
+            e.as_deref().is_none_or(|e| self.constant(e, outer, 0))
+        };
+        match s.node.as_ref() {
+            Some(S::ResolvedSingleRowScanNode(_)) => true,
+            Some(S::ResolvedProjectScanNode(p)) => single(&p.input_scan),
+            Some(S::ResolvedOrderByScanNode(o)) => single(&o.input_scan),
+            Some(S::ResolvedAggregateScanBaseNode(a)) => match a.node.as_ref() {
+                Some(AggNode::ResolvedAggregateScanNode(x)) => x.parent.as_ref().is_some_and(|b| {
+                    b.group_by_list.is_empty()
+                        && b.grouping_set_list.is_empty()
+                        && b.rollup_column_list.is_empty()
+                }),
+                _ => false,
+            },
+            Some(S::ResolvedArrayScanNode(a)) => {
+                a.array_offset_column.is_none()
+                    && matches!(a.array_expr_list.as_slice(), [array] if one_element(array))
+                    && (a.input_scan.is_none() || single(&a.input_scan))
+                    && constant(&a.join_expr)
+            }
+            Some(S::ResolvedJoinScanNode(j)) => {
+                single(&j.left_scan) && single(&j.right_scan) && constant(&j.join_expr)
+            }
+            Some(S::ResolvedFilterScanNode(f)) => single(&f.input_scan) && constant(&f.filter_expr),
+            Some(S::ResolvedLimitOffsetScanNode(l)) => {
+                let int = |e: &Option<Box<AnyResolvedExprProto>>| match e.as_deref().map(literal) {
+                    Some(Some(V::Int64Value(i))) => Some(*i),
+                    _ => None,
+                };
+                single(&l.input_scan)
+                    && int(&l.limit).is_none_or(|n| n >= 1)
+                    && int(&l.offset).is_none_or(|n| n == 0)
+            }
+            Some(S::ResolvedWithScanNode(w)) => single(&w.query),
+            Some(S::ResolvedWithRefScanNode(r)) => self
+                .with_refs
+                .get(&(r as *const _ as usize))
+                .is_some_and(|sub| self.single_row(sub, outer, depth + 1)),
+            _ => false,
+        }
+    }
+
+    /// Whether `e` is the same for every row of the subquery and every outer row.
+    fn constant(&self, e: &AnyResolvedExprProto, outer: &[i64], depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return false;
+        }
+        match e.node.as_ref() {
+            Some(E::ResolvedLiteralNode(_)) | Some(E::ResolvedParameterNode(_)) => true,
+            Some(E::ResolvedColumnRefNode(c)) => {
+                let id = column_id(&c.column);
+                !outer.contains(&id)
+                    && match self.defs.get(&id) {
+                        Some(Def::Expr(x)) | Some(Def::ElementOf(x)) => {
+                            self.constant(x, outer, depth + 1)
+                        }
+                        _ => false,
+                    }
+            }
+            Some(E::ResolvedCastNode(c)) => c
+                .expr
+                .as_deref()
+                .is_some_and(|x| self.constant(x, outer, depth + 1)),
+            Some(E::ResolvedFunctionCallBaseNode(_)) => call_base(e).is_some_and(|b| {
+                b.generic_argument_list.is_empty()
+                    && b.argument_list
+                        .iter()
+                        .all(|a| self.constant(a, outer, depth + 1))
+            }),
+            _ => false,
+        }
+    }
+
+    // ------------------------------------------------------------ value flow
+
+    fn column(&self, flow: Flow, id: i64, depth: usize, out: &mut Vec<Origin>) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        match (self.defs.get(&id), flow) {
+            (Some(Def::Expr(x)), _) => self.follow(flow, x, depth + 1, out),
+            (Some(Def::ElementOf(x)), Flow::Contained) => self.contained_in(x, depth + 1, out),
+            (Some(Def::ElementOf(x)), Flow::Element) => self.array_of(x, depth + 1, out),
+            (Some(Def::Same(ids)), _) => {
+                for &src in ids {
+                    self.column(flow, src, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn follow(&self, flow: Flow, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+        match flow {
+            Flow::Contained => self.contained_in(e, depth, out),
+            Flow::Array => self.array_of(e, depth, out),
+            Flow::Element => self.element_of(e, depth, out),
+        }
+    }
+
+    /// The first output column of a subquery expression.
+    fn subquery_column(
+        &self,
+        flow: Flow,
+        s: &ResolvedSubqueryExprProto,
+        depth: usize,
+        out: &mut Vec<Origin>,
+    ) {
+        if let Some(id) = s
+            .subquery
+            .as_deref()
+            .and_then(|q| scan_columns(q).first().copied())
+        {
+            self.column(flow, id, depth + 1, out);
+        }
+    }
+
+    /// The nested tables whose structs are part of `e`'s value.
+    fn contained_in(&self, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+        if depth > MAX_DEPTH || !expr_type(e).is_some_and(has_struct) {
+            return;
+        }
+        match e.node.as_ref() {
+            Some(E::ResolvedColumnRefNode(c)) => {
+                self.column(Flow::Contained, column_id(&c.column), depth, out)
+            }
+            Some(E::ResolvedSubqueryExprNode(s)) => {
+                out.extend(self.origin(e, s));
+                self.subquery_column(Flow::Contained, s, depth, out);
+            }
+            // Scalar calls pass their arguments' structs on; an aggregate makes a new value.
+            Some(E::ResolvedFunctionCallBaseNode(_)) => {
+                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
+                    self.contained_in(a, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedMakeStructNode(m)) => {
+                for f in &m.field_list {
+                    self.contained_in(f, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedGetStructFieldNode(g)) => {
+                if let Some(x) = g.expr.as_deref() {
+                    self.contained_in(x, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedCastNode(c)) => {
+                if let Some(x) = c.expr.as_deref() {
+                    self.contained_in(x, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedWithExprNode(w)) => {
+                if let Some(x) = w.expr.as_deref() {
+                    self.contained_in(x, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The nested tables `e` is: the array itself, possibly through array functions.
+    fn array_of(&self, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+        if depth > MAX_DEPTH || !expr_type(e).is_some_and(is_struct_array) {
+            return;
+        }
+        match e.node.as_ref() {
+            Some(E::ResolvedColumnRefNode(c)) => {
+                self.column(Flow::Array, column_id(&c.column), depth, out)
+            }
+            Some(E::ResolvedSubqueryExprNode(s)) => match self.origin(e, s) {
+                Some(o) => out.push(o),
+                None if subquery_type(s) == Some(SubqueryType::Scalar) => {
+                    self.subquery_column(Flow::Array, s, depth, out)
+                }
+                None => {}
+            },
+            Some(E::ResolvedFunctionCallBaseNode(_)) => {
+                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
+                    self.array_of(a, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedCastNode(c)) => {
+                if let Some(x) = c.expr.as_deref() {
+                    self.array_of(x, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedWithExprNode(w)) => {
+                if let Some(x) = w.expr.as_deref() {
+                    self.array_of(x, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The nested tables `e` is one struct of.
+    fn element_of(&self, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+        if depth > MAX_DEPTH || expr_type(e).and_then(kind) != Some(TypeKind::TypeStruct) {
+            return;
+        }
+        match e.node.as_ref() {
+            Some(E::ResolvedColumnRefNode(c)) => {
+                self.column(Flow::Element, column_id(&c.column), depth, out)
+            }
+            Some(E::ResolvedSubqueryExprNode(s))
+                if subquery_type(s) == Some(SubqueryType::Scalar) =>
+            {
+                self.subquery_column(Flow::Element, s, depth, out)
+            }
+            // `a[OFFSET(0)]`, `ARRAY_FIRST(a)`, `IFNULL(a[OFFSET(0)], a[OFFSET(1)])`.
+            Some(E::ResolvedFunctionCallBaseNode(_)) => {
+                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
+                    self.array_of(a, depth + 1, out);
+                    self.element_of(a, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedCastNode(c)) => {
+                if let Some(x) = c.expr.as_deref() {
+                    self.element_of(x, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedWithExprNode(w)) => {
+                if let Some(x) = w.expr.as_deref() {
+                    self.element_of(x, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}

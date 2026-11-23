@@ -36,8 +36,8 @@ It also adds what the emulator lacks:
 - **Test controls:** a settable clock and deterministic `ABORTED` injection.
 - **Production behaviour by default.** Where the emulator and production Spanner disagree and we
   have recorded production's answer (full-text search, `NULL_FILTERED` indexes, window functions,
-  filtered indexes), spanbolt follows production. `--emulator-compat` restores the emulator's
-  behaviour.
+  filtered indexes, reading a field of a returned `ARRAY<STRUCT>` subquery), spanbolt follows
+  production. `--emulator-compat` restores the emulator's behaviour.
 
 The extra features live in a small `spanbolt.v1.Control` gRPC service
 (`crates/proto/proto/spanbolt/v1/control.proto`).

@@ -999,3 +999,123 @@ expect:
   [[["1"]],"1"]
 expect@spanner:
   same
+
+# A nested table inside a single-row array (probe v14) is rejected once read through the outer
+# struct. A constant filter is folded: FALSE or NULL leaves no row, so the subquery is a nested
+# table; TRUE keeps it single-row.
+
+case nested_table_in_single_row_array
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x ARRAY<STRUCT<y STRING>>>>, y STRING
+  [[[[["reviews"]]]],"reviews"]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case nested_table_in_no_from_array
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x ARRAY<STRUCT<y STRING>>>>, y STRING
+  [[[[["reviews"]]]],"reviews"]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case nested_table_in_single_row_array_read_in_where
+query:
+  SELECT a FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a) WHERE a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y IS NOT NULL
+expect:
+  columns: a ARRAY<STRUCT<x ARRAY<STRUCT<y STRING>>>>
+  [[[[["reviews"]]]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case nested_table_returned_through_field
+query:
+  SELECT a[SAFE_OFFSET(0)].x AS x, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y AS y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)
+expect:
+  columns: x ARRAY<STRUCT<y STRING>>, y STRING
+  [[["reviews"]],"reviews"]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case nested_table_in_single_row_array_read_only
+query:
+  SELECT a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y AS y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)
+expect:
+  columns: y STRING
+  ["reviews"]
+expect@spanner:
+  same
+
+case nested_table_in_single_row_array_outer_field_read
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x IS NULL AS n FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x ARRAY<STRUCT<y STRING>>>>, n BOOL
+  [[[[["reviews"]]]],false]
+expect@spanner:
+  same
+
+case nested_single_row_in_single_row_array
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT 'reviews' AS y) AS x FROM UNNEST([1]) v) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x ARRAY<STRUCT<y STRING>>>>, y STRING
+  [[[[["reviews"]]]],"reviews"]
+expect@spanner:
+  same
+
+case one_element_unnest_false_filter
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v WHERE FALSE) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x INT64>>, x INT64
+  [[],null]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case one_element_unnest_one_equals_two
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v WHERE 1 = 2) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x INT64>>, x INT64
+  [[],null]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case one_element_unnest_null_filter
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v WHERE NULL) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x INT64>>, x INT64
+  [[],null]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case derived_single_row_false_filter
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT d.x FROM (SELECT 1 AS x) d WHERE FALSE) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x INT64>>, x INT64
+  [[],null]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+
+case one_element_unnest_true_filter
+query:
+  SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v WHERE TRUE) AS a)
+expect:
+  columns: a ARRAY<STRUCT<x INT64>>, x INT64
+  [[["1"]],"1"]
+expect@spanner:
+  same

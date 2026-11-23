@@ -3,6 +3,11 @@ name = "googlesql-sys"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+description = "Rust bindings to a C++ shim around Google's GoogleSQL analyser."
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 links = "googlesql_shim"
 
 [dependencies]

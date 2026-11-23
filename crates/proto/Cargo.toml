@@ -3,6 +3,11 @@ name = "spanbolt-proto"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+description = "Google Cloud Spanner API protos and spanbolt's Control service, for the spanbolt Spanner emulator."
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 prost.workspace = true

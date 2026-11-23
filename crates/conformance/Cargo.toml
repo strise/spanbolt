@@ -3,6 +3,8 @@ name = "spanbolt-conformance"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Differential conformance harness: record expectations from the official emulator, check any Spanner gRPC endpoint against them."
 
 [[bin]]

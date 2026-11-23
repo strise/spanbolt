@@ -2,3 +2,4 @@ target/
 .mcp-output/
 *.snap
 dist/
+_site/

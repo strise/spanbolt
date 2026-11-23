@@ -3,6 +3,11 @@ name = "spanbolt-ddl"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+description = "Spanner DDL parser, schema model and GetDatabaseDdl printer for the spanbolt Spanner emulator."
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 thiserror = "2"

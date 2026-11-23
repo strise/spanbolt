@@ -204,6 +204,9 @@ impl Engine {
                 check_no_struct_columns(&fields)?;
                 let p = planner.scan(scan, &Scope::TOP)?;
                 planner.finish_search()?;
+                if !self.opts.emulator_compat {
+                    crate::struct_shape::check(&q)?;
+                }
                 let positions = positions(&p.layout, &ids)?;
                 Ok(Prepared {
                     body: Body::Query {

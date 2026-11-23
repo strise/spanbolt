@@ -50,6 +50,19 @@ Memory bounds the build: googlesql's generated sources need 5+ GB per compile jo
 `--jobs` of about RAM / 6 GB and `--repo_env=CC=clang-18 --repo_env=CXX=clang++-18`. More notes:
 `native/googlesql/SPIKE.md`.
 
+cargo picks up `native/googlesql/bazel-bin` in the checkout that built it. To use the build from
+other checkouts and worktrees, unpack it into the local prefix that `scripts/googlesql-env.sh` reads:
+
+```sh
+scripts/package-shim.sh --out /tmp/shim
+rm -rf ~/.cache/spanbolt/local && mkdir -p ~/.cache/spanbolt/local
+tar -xzf /tmp/shim/googlesql-shim-*.tar.gz -C ~/.cache/spanbolt/local
+```
+
+`googlesql-env.sh` uses the prefix only while its `MANIFEST` matches the shim sources of the tree
+it runs in. After a shim change, or in a checkout on other shim sources, it warns and skips the
+prefix, so the build falls back to the pinned archive instead of linking an outdated shim.
+
 ## The archive
 
 `scripts/package-shim.sh` turns a Bazel build (or a prefix) into

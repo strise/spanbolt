@@ -23,8 +23,8 @@ docs/building.md cover setup.
   executable's directory: ship the library next to `spanbolt`). It needs zoneinfo for
   America/Los_Angeles, Spanner's default time zone (install tzdata in images).
 - Changing the shim (`native/googlesql/shim`): `cd native/googlesql && bazelisk build //:libgooglesql_shim.so`
-  (seconds with a warm disk cache), then copy `bazel-bin/libgooglesql_shim.so` into the prefix
-  `scripts/googlesql-env.sh` points at. Full build notes: `docs/building.md`, `native/googlesql/SPIKE.md`.
+  (seconds with a warm disk cache). Other worktrees use it once it is packaged and unpacked into
+  the prefix `scripts/googlesql-env.sh` reads (`docs/building.md`); a prefix from other shim sources is skipped. Full build notes: `docs/building.md`, `native/googlesql/SPIKE.md`.
 - SQL engine layout (`crates/sql`): `catalog` (GoogleSQL catalog per schema + plan cache; GoogleSQL tables and analysed views are shared across schema versions, builtin functions live in one shim-wide parent catalog),
   `analyze`/`validate` (analyser call, hint names, supported-function allowlist), `plan` (resolved
   AST to operators, key/index range pushdown), `access`/`ops`/`agg` (operators), `func*` (scalar

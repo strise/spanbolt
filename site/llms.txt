@@ -1,0 +1,28 @@
+# spanbolt
+
+> spanbolt is an open-source (Apache-2.0), drop-in replacement for the Google Cloud Spanner emulator, written in Rust, for tests and CI. It serves the emulator's gRPC API on port 9010 and REST gateway on port 9020, so `SPANNER_EMULATOR_HOST=localhost:9010` and the Spanner client libraries work unchanged. SQL is analysed by Google's GoogleSQL, so names, types and errors resolve as in Spanner; storage, planning and transactions are new and much faster than the official emulator.
+
+Key facts:
+
+- Run it: `docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2` (linux/amd64 and linux/arm64).
+- Testcontainers (Java): `new SpannerEmulatorContainer(DockerImageName.parse("ghcr.io/strise/spanbolt:0.2").asCompatibleSubstituteFor("gcr.io/cloud-spanner-emulator/emulator"))`.
+- Tested with the Java and Python clients, the Spanner JDBC driver, Liquibase, Apache Beam SpannerIO and Testcontainers' SpannerEmulatorContainer.
+- Versus official emulator 1.5.59: point query on a 100k-row table ~70 µs vs 88–122 ms (key lookup vs full scan); single-row commit ~60 µs vs ~4 ms; 8 concurrent writers ~27,000 commits/s vs ~14 transactions/s (the emulator serialises read-write transactions per database); 530-statement schema 13 ms vs 8.5 s; startup ~5 ms vs ~1 s. A real 3,700-test suite ran 5–7x faster end to end.
+- Extras the emulator lacks, via the `spanbolt.v1.Control` gRPC service: O(1) copy-on-write database clones (`CloneDatabase`), snapshots (`SaveSnapshot`/`LoadSnapshot`, or `--snapshot <file>` at startup), a settable clock (`SetClock`) and deterministic ABORTED injection (`InjectAbort`).
+- Follows production Spanner where it differs from the emulator and production's answer is recorded; `--emulator-compat` restores the emulator's behaviour.
+- Unsupported features return UNIMPLEMENTED. Not supported: backups, IAM policies, APPROX_* distance functions with options, the emulator's own command-line flags, graph path variables and ANY/SHORTEST search.
+- Not affiliated with Google. Maintained by Strise.
+
+## Docs
+
+- [README](https://github.com/strise/spanbolt/blob/main/README.md): overview, benchmarks, status, quick start
+- [Docker and Testcontainers](https://github.com/strise/spanbolt/blob/main/docs/docker.md): image, drop-in notes, REST coverage, pre-seeded images
+- [Building](https://github.com/strise/spanbolt/blob/main/docs/building.md): building from source and the GoogleSQL shim
+- [Design](https://github.com/strise/spanbolt/blob/main/DESIGN.md): architecture
+- [Control API](https://github.com/strise/spanbolt/blob/main/crates/proto/proto/spanbolt/v1/control.proto): clones, snapshots, clock, abort injection
+- [Full text for LLMs](https://strise.github.io/spanbolt/llms-full.txt): README and Docker docs in one file
+
+## Optional
+
+- [Releases](https://github.com/strise/spanbolt/releases)
+- [Container image](https://github.com/strise/spanbolt/pkgs/container/spanbolt)

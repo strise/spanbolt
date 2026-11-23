@@ -1,0 +1,52 @@
+# Publishes the project site (site/, plus a sitemap and llms-full.txt built by scripts/build-site.sh)
+# to GitHub Pages at https://strise.github.io/spanbolt/ on every push to main that touches it.
+# Pull requests build the site but deploy nothing.
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths: [site/**, README.md, docs/docker.md, scripts/build-site.sh, .github/workflows/pages.yml]
+  pull_request:
+    paths: [site/**, README.md, docs/docker.md, scripts/build-site.sh, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the sitemap's lastmod comes from git log
+      - name: Build the site
+        run: scripts/build-site.sh _site
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

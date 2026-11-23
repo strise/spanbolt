@@ -2,6 +2,8 @@
 # native runner, smoke-tested, pushed by digest, then merged into one manifest list. Every push to
 # main publishes :main and :sha-<short>; a v* tag adds the semver tags. workflow_dispatch on any
 # other branch (e.g. a Dependabot PR) builds and smoke-tests both architectures but pushes nothing.
+# Docker Hub mirror: set the repository variable DOCKERHUB_IMAGE (e.g. docker.io/strise/spanbolt)
+# and the secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN, and the merge job pushes the same tags there.
 name: image
 
 on:
@@ -114,10 +116,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+      - if: vars.DOCKERHUB_IMAGE != ''
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.IMAGE }}
+            ${{ vars.DOCKERHUB_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

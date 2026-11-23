@@ -1,7 +1,7 @@
 # spanbolt
 
 A fast drop-in replacement for the [Cloud Spanner emulator](https://github.com/GoogleCloudPlatform/cloud-spanner-emulator),
-for tests and CI.
+for tests and CI. Site: [strise.github.io/spanbolt](https://strise.github.io/spanbolt/).
 
 spanbolt speaks the same gRPC API on port 9010 and the same REST gateway on 9020. Point
 `SPANNER_EMULATOR_HOST` at it and the client libraries work unchanged. Tested with the Java and
@@ -58,24 +58,33 @@ suite and the conformance cases exercise.
   emulator's own command-line flags.
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the
   client libraries already handle, but the timing differs.
-- Tested on macOS (arm64) and in the linux/arm64 image. linux/amd64 is untested.
+- Tested on macOS (arm64) and in the linux/arm64 image. CI smoke-tests the linux/amd64 image; the
+  full suite has not run on it.
 
 ## Quick start
 
 ### Docker
 
 ```sh
-docker build -t spanbolt .                 # the first build compiles GoogleSQL: 30–45 min
-docker run --rm -p 9010:9010 -p 9020:9020 spanbolt
+docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2
 export SPANNER_EMULATOR_HOST=localhost:9010
 ```
 
-With Testcontainers, tag the image under the emulator's name (`SpannerEmulatorContainer` checks
-it), then use the tag as the image:
+The image is published for linux/amd64 and linux/arm64: `:X.Y.Z` and `:X.Y` for releases, `:main`
+for the latest commit on main. `docker build -t spanbolt .` builds it locally (the first build
+compiles GoogleSQL unless you pass `--build-arg SHIM=prebuilt`).
 
-```sh
-docker tag spanbolt gcr.io/cloud-spanner-emulator/emulator:spanbolt
+With Testcontainers, mark the image as a substitute for the emulator (`SpannerEmulatorContainer`
+checks the name):
+
+```java
+var image = DockerImageName.parse("ghcr.io/strise/spanbolt:0.2")
+    .asCompatibleSubstituteFor("gcr.io/cloud-spanner-emulator/emulator");
+var spanner = new SpannerEmulatorContainer(image);
 ```
+
+Suites that take the image name from a property instead can tag it under the emulator's name:
+`docker tag ghcr.io/strise/spanbolt:0.2 gcr.io/cloud-spanner-emulator/emulator:spanbolt`.
 
 `docs/docker.md` covers multi-arch builds, a prebuilt GoogleSQL layer and pre-seeded images.
 

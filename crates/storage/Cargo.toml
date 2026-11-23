@@ -3,6 +3,11 @@ name = "spanbolt-storage"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+description = "Values, key encoding, persistent tables and indexes, and snapshots for the spanbolt Spanner emulator."
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 spanbolt-ddl.workspace = true

@@ -8,6 +8,10 @@ default-members = ["crates/proto", "crates/storage", "crates/txn", "crates/ddl",
 edition = "2024"
 version = "0.2.0"
 license = "Apache-2.0"
+repository = "https://github.com/strise/spanbolt"
+homepage = "https://strise.github.io/spanbolt/"
+keywords = ["spanner", "emulator", "googlesql", "testing", "grpc"]
+categories = ["database", "development-tools::testing", "emulators"]
 
 [workspace.dependencies]
 spanbolt-ddl = { path = "crates/ddl" }

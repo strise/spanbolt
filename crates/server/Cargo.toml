@@ -3,6 +3,12 @@ name = "spanbolt-server"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
+description = "spanbolt: a fast drop-in replacement for the Google Cloud Spanner emulator, for tests and CI."
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
 
 [[bin]]
 name = "spanbolt"

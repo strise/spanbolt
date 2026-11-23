@@ -7,9 +7,10 @@ run read-only against a Cloud Spanner database (GoogleSQL dialect) that has a ta
 gcloud spanner databases execute-sql <database> --instance <instance> --project <project> --sql="<statement>"
 ```
 
-The `expect@spanner:` blocks of the case file are transcribed from this table, because recording
-with `record --oracle spanner` needs an instance where scratch databases may be created. Accepted
-statements are listed as accepted without their rows, which depend on the database. Probes without
+The `expect@spanner:` blocks of the case file were first transcribed from this table, then recorded
+with `record --oracle spanner` (2026-11-23): the recording matched every transcribed block, and every
+accepted case returned the emulator's rows (`same`). Accepted statements are listed here without
+their rows, which depend on the database. Probes without
 a case either fail for another reason, have an array order the emulator does not fix (v09, w01, w07,
 w21: covered by `crates/sql/tests/engine.rs`), or are a known gap (v14: spanbolt accepts it).
 

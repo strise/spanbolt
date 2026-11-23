@@ -3,9 +3,8 @@
 # the query. It only applies when the array subquery can yield other than exactly one row (a table
 # scan, a multi-element UNNEST, GROUP BY, a filter that is not constant). The emulator accepts
 # every shape here.
-# `expect@spanner:` blocks here are transcribed from running the same statement read-only on Cloud
-# Spanner with `gcloud spanner databases execute-sql` (log: conformance/spanner-probes-struct-field-access.md),
-# not written by `record --oracle spanner`. Re-record them when a recording instance is at hand.
+# `expect@spanner:` blocks are recorded with `record --oracle spanner`. The probes that mapped the
+# rule are in conformance/spanner-probes-struct-field-access.md.
 tags: sql struct oracle
 schema:
   CREATE TABLE reviews (
@@ -504,6 +503,8 @@ query:
 expect:
   columns: TABLE_NAME STRING, at_or_before ARRAY<STRUCT<COLUMN_NAME STRING>>
   ["reviews",[["effective_at"]]]
+expect@spanner:
+  same
 
 case no_from_array_over_table_rows
 query:
@@ -511,6 +512,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_of_outer_table_column
 query:
@@ -518,6 +521,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case one_element_unnest_of_outer_table_column
 query:
@@ -525,6 +530,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case table_array_element_null_and_length
 query:
@@ -532,6 +539,8 @@ query:
 expect:
   columns: last_col ARRAY<STRUCT<COLUMN_NAME STRING, ORDINAL_POSITION INT64>>, n BOOL, len INT64
   [[["effective_at","3"]],false,"1"]
+expect@spanner:
+  same
 
 case table_array_read_only
 query:
@@ -539,6 +548,8 @@ query:
 expect:
   columns: TABLE_NAME STRING, n STRING
   ["reviews","effective_at"]
+expect@spanner:
+  same
 
 case table_array_returned_only
 query:
@@ -546,6 +557,8 @@ query:
 expect:
   columns: TABLE_NAME STRING, last_col ARRAY<STRUCT<COLUMN_NAME STRING, ORDINAL_POSITION INT64>>
   ["reviews",[["effective_at","3"]]]
+expect@spanner:
+  same
 
 case struct_field_only
 query:
@@ -553,6 +566,8 @@ query:
 expect:
   columns: a INT64
   ["1"]
+expect@spanner:
+  same
 
 case no_from_array_returned_and_read
 query:
@@ -560,6 +575,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>, x INT64
   [[["1","p"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_returned
 query:
@@ -567,6 +584,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>
   [[["1","p"]]]
+expect@spanner:
+  same
 
 case no_from_array_read_only
 query:
@@ -574,6 +593,8 @@ query:
 expect:
   columns: x INT64
   ["1"]
+expect@spanner:
+  same
 
 case no_from_array_read_in_where
 query:
@@ -581,6 +602,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>
   [[["1","p"]]]
+expect@spanner:
+  same
 
 case no_from_array_read_in_order_by
 query:
@@ -588,6 +611,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>
   [[["1","p"]]]
+expect@spanner:
+  same
 
 case no_from_array_unnested_in_subquery
 query:
@@ -595,6 +620,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>, xs ARRAY<INT64>
   [[["1","p"]],["1"]]
+expect@spanner:
+  same
 
 case no_from_array_read_in_scalar_subquery
 query:
@@ -602,6 +629,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>, c INT64
   [[["1","p"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_through_with
 query:
@@ -609,6 +638,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_written_twice
 query:
@@ -616,6 +647,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_length
 query:
@@ -623,6 +656,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>, INT64
   [[["1","p"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_element_is_null
 query:
@@ -630,6 +665,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>, BOOL
   [[["1","p"]],false]
+expect@spanner:
+  same
 
 case no_from_array_field_from_inner_select
 query:
@@ -637,6 +674,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64, y STRING>>, x INT64
   [[["1","p"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_per_outer_row
 query:
@@ -645,6 +684,8 @@ expect:
   columns: n INT64, a ARRAY<STRUCT<x INT64, y STRING>>, x INT64
   ["2",[["2","p"]],"2"]
   ["1",[["1","p"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_per_outer_row_where
 query:
@@ -652,6 +693,8 @@ query:
 expect:
   columns: n INT64, a ARRAY<STRUCT<x INT64, y STRING>>
   ["1",[["1","p"]]]
+expect@spanner:
+  same
 
 case no_from_array_per_outer_row_order_by
 query:
@@ -660,6 +703,8 @@ expect:
   columns: n INT64, a ARRAY<STRUCT<x INT64, y STRING>>
   ["1",[["1","p"]]]
   ["2",[["2","p"]]]
+expect@spanner:
+  same
 
 case no_from_array_per_outer_row_unnested
 query:
@@ -668,6 +713,8 @@ expect:
   columns: n INT64, a ARRAY<STRUCT<x INT64, y STRING>>, xs ARRAY<INT64>
   ["2",[["2","p"]],["2"]]
   ["1",[["1","p"]],["1"]]
+expect@spanner:
+  same
 
 case no_from_array_per_outer_row_read_only
 query:
@@ -676,6 +723,8 @@ expect:
   columns: n INT64, x INT64
   ["2","2"]
   ["1","1"]
+expect@spanner:
+  same
 
 case no_from_array_read_in_array_subquery
 query:
@@ -684,6 +733,8 @@ expect:
   columns: n INT64, a ARRAY<STRUCT<x INT64, y STRING>>, r ARRAY<STRUCT<v INT64>>
   ["2",[["2","p"]],[["1"],["2"]]]
   ["1",[["1","p"]],[["1"]]]
+expect@spanner:
+  same
 
 case no_from_array_with_table_scalar_subquery
 query:
@@ -691,6 +742,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case no_from_derived_table_array
 query:
@@ -698,6 +751,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case two_table_arrays_one_returned_one_read
 query:
@@ -705,6 +760,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case same_array_text_in_two_joined_subqueries
 query:
@@ -712,6 +769,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case table_array_dropped_by_outer_select
 query:
@@ -719,6 +778,8 @@ query:
 expect:
   columns: x STRING
   ["reviews"]
+expect@spanner:
+  same
 
 case table_array_length_returned
 query:
@@ -726,6 +787,8 @@ query:
 expect:
   columns: n INT64, x STRING
   ["1","reviews"]
+expect@spanner:
+  same
 
 case table_array_counted_through_unnest
 query:
@@ -733,6 +796,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>
   [[["reviews"]]]
+expect@spanner:
+  same
 
 case one_element_unnest_with_table_scalar_subquery
 query:
@@ -740,6 +805,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case derived_scalar_subquery_array
 query:
@@ -747,6 +814,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case derived_scalar_aggregate_over_table
 query:
@@ -754,6 +823,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case no_from_array_with_correlated_table_subquery
 query:
@@ -761,6 +832,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case scalar_aggregate_over_unnest
 query:
@@ -768,6 +841,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["2"]],"2"]
+expect@spanner:
+  same
 
 case no_from_array_with_table_subquery_per_row
 query:
@@ -776,6 +851,8 @@ expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case nested_table_array_length_only
 query:
@@ -783,6 +860,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x ARRAY<STRUCT<y STRING>>>>, INT64
   [[[[["reviews"]]]],"1"]
+expect@spanner:
+  same
 
 case any_value_of_table_array_grouped_by_field
 query:
@@ -790,6 +869,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>
   [[["reviews"]]]
+expect@spanner:
+  same
 
 case one_element_unnest_constant_filter
 query:
@@ -797,6 +878,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case no_from_array_limit_one
 query:
@@ -804,6 +887,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case scalar_aggregate_over_table
 query:
@@ -811,6 +896,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case one_element_unnest
 query:
@@ -818,6 +905,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case scalar_aggregate_limit_one
 query:
@@ -825,6 +914,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case derived_single_row_constant_filter
 query:
@@ -832,6 +923,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case cross_join_of_one_element_unnests
 query:
@@ -839,6 +932,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case cross_join_of_single_rows
 query:
@@ -846,6 +941,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case scalar_aggregate_order_by
 query:
@@ -853,6 +950,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x STRING>>, x STRING
   [[["reviews"]],"reviews"]
+expect@spanner:
+  same
 
 case nested_derived_single_row
 query:
@@ -860,6 +959,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case single_row_with_entry
 query:
@@ -867,6 +968,8 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case one_element_unnest_of_outer_column
 query:
@@ -875,6 +978,8 @@ expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["2"]],"2"]
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case scalar_aggregate_with_correlated_filter
 query:
@@ -883,6 +988,8 @@ expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
   [[["1"]],"1"]
+expect@spanner:
+  same
 
 case left_join_of_single_rows
 query:
@@ -890,3 +997,5 @@ query:
 expect:
   columns: a ARRAY<STRUCT<x INT64>>, x INT64
   [[["1"]],"1"]
+expect@spanner:
+  same

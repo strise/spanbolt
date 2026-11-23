@@ -340,7 +340,14 @@ impl<'a> Shape<'a> {
             Some(S::ResolvedJoinScanNode(j)) => {
                 single(&j.left_scan) && single(&j.right_scan) && constant(&j.join_expr)
             }
-            Some(S::ResolvedFilterScanNode(f)) => single(&f.input_scan) && constant(&f.filter_expr),
+            // Spanner folds a constant filter: one that is FALSE or NULL leaves no row.
+            Some(S::ResolvedFilterScanNode(f)) => {
+                single(&f.input_scan)
+                    && constant(&f.filter_expr)
+                    && f.filter_expr
+                        .as_deref()
+                        .is_none_or(|e| !matches!(self.eval(e, 0), Some(C::Null | C::Bool(false))))
+            }
             Some(S::ResolvedLimitOffsetScanNode(l)) => {
                 let int = |e: &Option<Box<AnyResolvedExprProto>>| match e.as_deref().map(literal) {
                     Some(Some(V::Int64Value(i))) => Some(*i),
@@ -409,7 +416,7 @@ impl<'a> Shape<'a> {
         }
     }
 
-    fn follow(&self, flow: Flow, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+    fn follow(&self, flow: Flow, e: &'a AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
         match flow {
             Flow::Contained => self.contained_in(e, depth, out),
             Flow::Array => self.array_of(e, depth, out),
@@ -421,7 +428,7 @@ impl<'a> Shape<'a> {
     fn subquery_column(
         &self,
         flow: Flow,
-        s: &ResolvedSubqueryExprProto,
+        s: &'a ResolvedSubqueryExprProto,
         depth: usize,
         out: &mut Vec<Origin>,
     ) {
@@ -435,7 +442,7 @@ impl<'a> Shape<'a> {
     }
 
     /// The nested tables whose structs are part of `e`'s value.
-    fn contained_in(&self, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+    fn contained_in(&self, e: &'a AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
         if depth > MAX_DEPTH || !expr_type(e).is_some_and(has_struct) {
             return;
         }
@@ -478,7 +485,7 @@ impl<'a> Shape<'a> {
     }
 
     /// The nested tables `e` is: the array itself, possibly through array functions.
-    fn array_of(&self, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+    fn array_of(&self, e: &'a AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
         if depth > MAX_DEPTH || !expr_type(e).is_some_and(is_struct_array) {
             return;
         }
@@ -498,6 +505,8 @@ impl<'a> Shape<'a> {
                     self.array_of(a, depth + 1, out);
                 }
             }
+            // `a[OFFSET(0)].x`: the array a struct field holds.
+            Some(E::ResolvedGetStructFieldNode(g)) => self.field(Flow::Array, g, depth, out),
             Some(E::ResolvedCastNode(c)) => {
                 if let Some(x) = c.expr.as_deref() {
                     self.array_of(x, depth + 1, out);
@@ -513,7 +522,7 @@ impl<'a> Shape<'a> {
     }
 
     /// The nested tables `e` is one struct of.
-    fn element_of(&self, e: &AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
+    fn element_of(&self, e: &'a AnyResolvedExprProto, depth: usize, out: &mut Vec<Origin>) {
         if depth > MAX_DEPTH || expr_type(e).and_then(kind) != Some(TypeKind::TypeStruct) {
             return;
         }
@@ -533,6 +542,7 @@ impl<'a> Shape<'a> {
                     self.element_of(a, depth + 1, out);
                 }
             }
+            Some(E::ResolvedGetStructFieldNode(g)) => self.field(Flow::Element, g, depth, out),
             Some(E::ResolvedCastNode(c)) => {
                 if let Some(x) = c.expr.as_deref() {
                     self.element_of(x, depth + 1, out);
@@ -545,5 +555,270 @@ impl<'a> Shape<'a> {
             }
             _ => {}
         }
+    }
+
+    // ------------------------------------------------------------ struct fields
+
+    /// The value of field `g` of a struct, followed as `flow`.
+    fn field(
+        &self,
+        flow: Flow,
+        g: &'a ResolvedGetStructFieldProto,
+        depth: usize,
+        out: &mut Vec<Origin>,
+    ) {
+        let (Some(base), Some(idx)) = (g.expr.as_deref(), g.field_idx) else {
+            return;
+        };
+        let mut fields = Vec::new();
+        self.struct_field(base, idx, depth + 1, &mut fields);
+        for f in fields {
+            self.follow(flow, f, depth + 1, out);
+        }
+    }
+
+    /// The expressions that can give field `idx` of struct `e`.
+    fn struct_field(
+        &self,
+        e: &'a AnyResolvedExprProto,
+        idx: i64,
+        depth: usize,
+        out: &mut Vec<&'a AnyResolvedExprProto>,
+    ) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        match e.node.as_ref() {
+            Some(E::ResolvedColumnRefNode(c)) => {
+                self.column_field(column_id(&c.column), idx, false, depth, out)
+            }
+            Some(E::ResolvedMakeStructNode(m)) => {
+                out.extend(usize::try_from(idx).ok().and_then(|i| m.field_list.get(i)));
+            }
+            Some(E::ResolvedSubqueryExprNode(s))
+                if subquery_type(s) == Some(SubqueryType::Scalar) =>
+            {
+                if let Some(id) = s
+                    .subquery
+                    .as_deref()
+                    .and_then(|q| scan_columns(q).first().copied())
+                {
+                    self.column_field(id, idx, false, depth + 1, out);
+                }
+            }
+            // `a[OFFSET(0)]`, `ARRAY_FIRST(a)`, `IFNULL(s, t)`.
+            Some(E::ResolvedFunctionCallBaseNode(_)) => {
+                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
+                    match expr_type(a).and_then(kind) {
+                        Some(TypeKind::TypeArray) => self.element_field(a, idx, depth + 1, out),
+                        Some(TypeKind::TypeStruct) => self.struct_field(a, idx, depth + 1, out),
+                        _ => {}
+                    }
+                }
+            }
+            Some(E::ResolvedCastNode(c)) => {
+                if let Some(x) = c.expr.as_deref() {
+                    self.struct_field(x, idx, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedWithExprNode(w)) => {
+                if let Some(x) = w.expr.as_deref() {
+                    self.struct_field(x, idx, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The expressions that can give field `idx` of the structs in array `e`.
+    fn element_field(
+        &self,
+        e: &'a AnyResolvedExprProto,
+        idx: i64,
+        depth: usize,
+        out: &mut Vec<&'a AnyResolvedExprProto>,
+    ) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        match e.node.as_ref() {
+            Some(E::ResolvedColumnRefNode(c)) => {
+                self.column_field(column_id(&c.column), idx, true, depth, out)
+            }
+            Some(E::ResolvedSubqueryExprNode(s)) => {
+                let Some(id) = s
+                    .subquery
+                    .as_deref()
+                    .and_then(|q| scan_columns(q).first().copied())
+                else {
+                    return;
+                };
+                // ARRAY(SELECT AS STRUCT ...) holds the structs of its column; a scalar subquery
+                // returns an array column.
+                let elements = subquery_type(s) == Some(SubqueryType::Scalar);
+                self.column_field(id, idx, elements, depth + 1, out);
+            }
+            Some(E::ResolvedFunctionCallBaseNode(_)) => {
+                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
+                    if expr_type(a).and_then(kind) == Some(TypeKind::TypeArray) {
+                        self.element_field(a, idx, depth + 1, out);
+                    }
+                }
+            }
+            Some(E::ResolvedCastNode(c)) => {
+                if let Some(x) = c.expr.as_deref() {
+                    self.element_field(x, idx, depth + 1, out);
+                }
+            }
+            Some(E::ResolvedWithExprNode(w)) => {
+                if let Some(x) = w.expr.as_deref() {
+                    self.element_field(x, idx, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Field `idx` of column `id`'s struct, or with `elements` of the structs in its array.
+    fn column_field(
+        &self,
+        id: i64,
+        idx: i64,
+        elements: bool,
+        depth: usize,
+        out: &mut Vec<&'a AnyResolvedExprProto>,
+    ) {
+        if depth > MAX_DEPTH {
+            return;
+        }
+        match self.defs.get(&id) {
+            Some(Def::Expr(x)) if elements => self.element_field(x, idx, depth + 1, out),
+            Some(Def::Expr(x)) => self.struct_field(x, idx, depth + 1, out),
+            Some(Def::ElementOf(x)) if !elements => self.element_field(x, idx, depth + 1, out),
+            Some(Def::Same(ids)) => {
+                for &src in ids {
+                    self.column_field(src, idx, elements, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // ------------------------------------------------------------ constant folding
+
+    /// The value of a constant expression, where it is simple enough to fold here.
+    fn eval(&self, e: &AnyResolvedExprProto, depth: usize) -> Option<C> {
+        if depth > MAX_DEPTH {
+            return None;
+        }
+        match e.node.as_ref()? {
+            E::ResolvedLiteralNode(_) => Some(match literal(e) {
+                None => C::Null,
+                Some(V::BoolValue(b)) => C::Bool(*b),
+                Some(V::Int64Value(i)) => C::Int(*i),
+                Some(V::StringValue(s)) => C::Str(s.clone()),
+                Some(_) => return None,
+            }),
+            E::ResolvedColumnRefNode(c) => match self.defs.get(&column_id(&c.column))? {
+                Def::Expr(x) => self.eval(x, depth + 1),
+                Def::ElementOf(x) => self.only_element(x, depth + 1),
+                Def::Same(_) => None,
+            },
+            E::ResolvedCastNode(c) => match self.eval(c.expr.as_deref()?, depth + 1)? {
+                C::Null => Some(C::Null),
+                _ => None,
+            },
+            E::ResolvedFunctionCallBaseNode(_) => {
+                let b = call_base(e)?;
+                let args: Vec<Option<C>> = b
+                    .argument_list
+                    .iter()
+                    .map(|a| self.eval(a, depth + 1))
+                    .collect();
+                fold(fn_name(b), &args)
+            }
+            _ => None,
+        }
+    }
+
+    /// The element of a one-element array.
+    fn only_element(&self, e: &AnyResolvedExprProto, depth: usize) -> Option<C> {
+        if let Some(V::ArrayValue(a)) = literal(e) {
+            let [v] = a.element.as_slice() else {
+                return None;
+            };
+            return Some(match v.value.as_ref() {
+                None => C::Null,
+                Some(V::BoolValue(b)) => C::Bool(*b),
+                Some(V::Int64Value(i)) => C::Int(*i),
+                Some(V::StringValue(s)) => C::Str(s.clone()),
+                Some(_) => return None,
+            });
+        }
+        let b = call_base(e)?;
+        match b.argument_list.as_slice() {
+            [x] if fn_name(b) == "$make_array" => self.eval(x, depth + 1),
+            _ => None,
+        }
+    }
+}
+
+/// A folded constant.
+#[derive(Clone, PartialEq, PartialOrd)]
+enum C {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Str(String),
+}
+
+/// Folds the boolean functions a filter is made of. `None`: not folded here.
+fn fold(name: &str, args: &[Option<C>]) -> Option<C> {
+    use std::cmp::Ordering;
+    let cmp = |want: fn(Ordering) -> bool| match args {
+        [Some(C::Null), Some(_)] | [Some(_), Some(C::Null)] => Some(C::Null),
+        [Some(a), Some(b)] => match (a, b) {
+            (C::Int(_), C::Int(_)) | (C::Str(_), C::Str(_)) | (C::Bool(_), C::Bool(_)) => {
+                a.partial_cmp(b).map(|o| C::Bool(want(o)))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    match name {
+        "$equal" => cmp(Ordering::is_eq),
+        "$not_equal" => cmp(Ordering::is_ne),
+        "$less" => cmp(Ordering::is_lt),
+        "$less_or_equal" => cmp(Ordering::is_le),
+        "$greater" => cmp(Ordering::is_gt),
+        "$greater_or_equal" => cmp(Ordering::is_ge),
+        "$not" => match args {
+            [Some(C::Bool(b))] => Some(C::Bool(!b)),
+            [Some(C::Null)] => Some(C::Null),
+            _ => None,
+        },
+        "$is_null" => match args {
+            [Some(v)] => Some(C::Bool(*v == C::Null)),
+            _ => None,
+        },
+        // Three-valued logic: FALSE wins AND, TRUE wins OR, else NULL if any is NULL.
+        "$and" | "$or" => {
+            let (wins, loses) = if name == "$and" {
+                (false, true)
+            } else {
+                (true, false)
+            };
+            let mut null = false;
+            for a in args {
+                match a {
+                    Some(C::Bool(b)) if *b == wins => return Some(C::Bool(wins)),
+                    Some(C::Bool(_)) => {}
+                    Some(C::Null) => null = true,
+                    _ => return None,
+                }
+            }
+            Some(if null { C::Null } else { C::Bool(loses) })
+        }
+        _ => None,
     }
 }

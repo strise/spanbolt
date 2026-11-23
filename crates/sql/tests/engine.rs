@@ -878,6 +878,14 @@ fn reading_a_field_of_a_returned_struct_array_follows_prod() {
         wrap("SELECT AS STRUCT COUNT(*) AS x FROM Singers s GROUP BY s.Team"),
         wrap("SELECT AS STRUCT MAX(s.Name) AS x FROM Singers s HAVING COUNT(*) > 0"),
         wrap("SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v LIMIT 0"),
+        // A constant filter that folds to FALSE or NULL leaves no row.
+        wrap("SELECT AS STRUCT 1 AS x FROM UNNEST([1]) v WHERE FALSE"),
+        wrap("SELECT AS STRUCT v AS x FROM UNNEST([1]) v WHERE v > 1"),
+        wrap("SELECT AS STRUCT d.x FROM (SELECT 1 AS x) d WHERE d.x = 2 OR NULL"),
+        // A nested table inside a single-row array, read through the outer struct.
+        "SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].Name FROM (SELECT ARRAY(SELECT AS STRUCT \
+         ARRAY(SELECT AS STRUCT s.Name FROM Singers s) AS x FROM UNNEST([1]) v) AS a)"
+            .to_string(),
     ];
     for sql in &rejected {
         let err = run(&e, &db, &request(sql, &[])).expect_err(sql);
@@ -903,6 +911,11 @@ fn reading_a_field_of_a_returned_struct_array_follows_prod() {
         wrap("SELECT AS STRUCT v AS x FROM UNNEST([1]) v WHERE v > 0"),
         wrap("SELECT AS STRUCT MAX(s.Name) AS x FROM Singers s"),
         wrap("SELECT AS STRUCT d.x FROM (SELECT 1 AS x) d CROSS JOIN (SELECT 2 AS y) f"),
+        wrap("SELECT AS STRUCT d.x FROM (SELECT 1 AS x) d WHERE d.x = 1 AND NOT FALSE"),
+        // The outer array is one row; reading its field without the inner table's is fine.
+        "SELECT a, a[SAFE_OFFSET(0)].x IS NULL FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS \
+         STRUCT s.Name FROM Singers s) AS x) AS a)"
+            .to_string(),
     ];
     for sql in &accepted {
         run(&e, &db, &request(sql, &[])).unwrap_or_else(|err| panic!("{sql}: {}", err.message));

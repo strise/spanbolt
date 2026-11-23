@@ -11,8 +11,10 @@ The `expect@spanner:` blocks of the case file were first transcribed from this t
 with `record --oracle spanner` (2026-11-23): the recording matched every transcribed block, and every
 accepted case returned the emulator's rows (`same`). Accepted statements are listed here without
 their rows, which depend on the database. Probes without
-a case either fail for another reason, have an array order the emulator does not fix (v09, w01, w07,
-w21: covered by `crates/sql/tests/engine.rs`), or are a known gap (v14: spanbolt accepts it).
+a case either fail for another reason or have an array order the emulator does not fix (v09, w01,
+w07, w21: covered by `crates/sql/tests/engine.rs`). v14 was a known gap until the cases at the end of
+the case file (nested tables inside single-row arrays, constant filters that fold to FALSE or NULL),
+which are recorded with `record --oracle spanner` directly rather than listed here.
 
 `rejected` stands for `UNIMPLEMENTED: Unsupported query shape: Accessing fields of a struct
 value also present in the final result is not supported.`
@@ -96,7 +98,7 @@ value also present in the final result is not supported.`
 | v11 | `no_from_array_with_table_subquery_per_row` | accepted | `SELECT a, a[SAFE_OFFSET(0)].x FROM (SELECT ARRAY(SELECT AS STRUCT (SELECT MAX(t.TABLE_NAME) FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x) AS a FROM UNNEST([1,2]) n)` |
 | v12 | - | UNIMPLEMENTED: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result. | `SELECT a, a[SAFE_OFFSET(0)].x.y FROM (SELECT ARRAY(SELECT AS STRUCT STRUCT(t.TABLE_NAME AS y) AS x FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS a)` |
 | v13 | `table_array_of_nested_array_read` | rejected | `SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y) AS x FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS a)` |
-| v14 | - | rejected | `SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)` |
+| v14 | `nested_table_in_single_row_array` | rejected | `SELECT a, a[SAFE_OFFSET(0)].x[SAFE_OFFSET(0)].y FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)` |
 | v15 | `nested_table_array_length_only` | accepted | `SELECT a, ARRAY_LENGTH(a[SAFE_OFFSET(0)].x) FROM (SELECT ARRAY(SELECT AS STRUCT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS y FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS x FROM UNNEST([1]) v) AS a)` |
 | v16 | `table_array_read_in_join_condition` | rejected | `SELECT c.a FROM (SELECT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS x FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS a) c JOIN UNNEST(['reviews']) k ON c.a[SAFE_OFFSET(0)].x = k` |
 | v17 | `any_value_of_table_array_grouped_by_field` | accepted | `SELECT ANY_VALUE(c.a) AS a FROM (SELECT ARRAY(SELECT AS STRUCT t.TABLE_NAME AS x FROM INFORMATION_SCHEMA.TABLES t WHERE t.TABLE_NAME = 'reviews') AS a) c GROUP BY c.a[SAFE_OFFSET(0)].x` |

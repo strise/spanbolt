@@ -1,7 +1,7 @@
 //! Recursive-descent parser for Spanner GoogleSQL DDL.
 
 use crate::DdlError;
-use crate::lexer::{Tok, Token, is_reserved, syntax, tokenize};
+use crate::lexer::{Tok, Token, first_word, is_reserved, syntax, tokenize};
 use crate::schema::*;
 
 pub(crate) struct Parser<'a> {
@@ -35,18 +35,14 @@ fn parse(sql: &str, emulator: bool) -> R<Statement> {
 }
 
 /// True if the statement starts with a DDL keyword (CREATE, ALTER, DROP, RENAME, GRANT, REVOKE, ANALYZE).
+/// Only the first word counts, so a statement the parser would reject later is still DDL.
 pub fn is_ddl(sql: &str) -> bool {
-    let Ok(toks) = tokenize(sql) else {
-        return false;
-    };
-    match toks.first().map(|t| &t.tok) {
-        Some(Tok::Ident(w)) => [
-            "CREATE", "ALTER", "DROP", "RENAME", "GRANT", "REVOKE", "ANALYZE",
-        ]
-        .iter()
-        .any(|k| k.eq_ignore_ascii_case(w)),
-        _ => false,
-    }
+    let w = first_word(sql);
+    [
+        "CREATE", "ALTER", "DROP", "RENAME", "GRANT", "REVOKE", "ANALYZE",
+    ]
+    .iter()
+    .any(|k| k.eq_ignore_ascii_case(w))
 }
 
 impl<'a> Parser<'a> {
@@ -1877,4 +1873,22 @@ pub(crate) fn parse_grant(ddl: &str) -> R<GrantStmt> {
         roles,
         column_privileges,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_ddl;
+
+    #[test]
+    fn is_ddl_reads_the_first_word_only() {
+        // The lexer rejects a quoted identifier starting with a digit; the statement is still DDL.
+        assert!(is_ddl("CREATE TABLE `1x` (K INT64) PRIMARY KEY (K)"));
+        assert!(is_ddl("  -- note\n/* c */ # x\n drop TABLE T"));
+        assert!(is_ddl("alter table T add column 'unterminated"));
+        assert!(!is_ddl("SELECT 1"));
+        assert!(!is_ddl("CREATED"));
+        assert!(!is_ddl("`CREATE` TABLE T"));
+        assert!(!is_ddl("/* unterminated CREATE"));
+        assert!(!is_ddl(""));
+    }
 }

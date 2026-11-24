@@ -31,6 +31,37 @@ const SYMS: &[&str] = &[
     "+", "-", "*", "/", "%", "&", "|", "^", "~", "[", "]", "{", "}", ":", "?", "@", "!", "$",
 ];
 
+/// The identifier the statement starts with, after whitespace and comments; empty if it starts
+/// with anything else.
+pub(crate) fn first_word(src: &str) -> &str {
+    let b = src.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_whitespace() {
+            i += 1;
+        } else if b[i] == b'#' || b[i..].starts_with(b"--") {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+        } else if b[i..].starts_with(b"/*") {
+            match src[i + 2..].find("*/") {
+                Some(end) => i += end + 4,
+                None => return "",
+            }
+        } else {
+            break;
+        }
+    }
+    let rest = &src[i..];
+    if !rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        return "";
+    }
+    let end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
 pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, DdlError> {
     let b = src.as_bytes();
     let mut out = Vec::with_capacity(src.len() / 4);

@@ -7,7 +7,7 @@ use spanbolt_storage::testing::*;
 use spanbolt_storage::{
     Code, DbState, KeyRange, KeySet, Mutation, Target, Timestamp, Value, WriteKind, scan,
 };
-use spanbolt_txn::{Clock, Database, ReadOnlyTxn, ReadWriteTxn, TimestampBound};
+use spanbolt_txn::{Clock, Database, OpenReadOnlyTxn, ReadOnlyTxn, ReadWriteTxn, TimestampBound};
 
 fn sv(s: &str) -> prost_types::Value {
     prost_types::Value {
@@ -566,4 +566,117 @@ fn schema_change_abort_names_the_change() {
     assert!(msg.contains("concurrent schema change"), "{msg}");
     assert!(msg.contains(&ts.to_rfc3339()), "{msg}");
     assert!(msg.ends_with(ddl), "{msg}");
+}
+
+fn read_k1(ro: &ReadOnlyTxn) -> Vec<Value> {
+    read_v(
+        &ro.read(|c| Ok((table_target(c)?, key(1))))
+            .unwrap_or_else(|e| panic!("{e}")),
+    )
+}
+
+#[test]
+fn open_read_only_txn_unpins_when_idle_and_reads_from_history() {
+    let db = db();
+    commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v1")]).unwrap_or_else(|e| panic!("{e}"));
+    let open = OpenReadOnlyTxn::begin(db.clone(), TimestampBound::Strong)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let ts = db.latest().ts;
+    commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v2")]).unwrap_or_else(|e| panic!("{e}"));
+
+    // Begun counts as a use: the first sweep keeps the pin, the second drops it.
+    assert!(!open.release_if_idle());
+    assert!(open.is_pinned());
+    assert!(open.release_if_idle());
+    assert!(!open.is_pinned());
+
+    // The next read finds the version by timestamp and pins it again.
+    let ro = open.reader().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(ro.version.ts, ts);
+    assert_eq!(read_k1(&ro), vec![Value::string("v1")]);
+    assert!(open.is_pinned());
+    // Read since the last sweep: kept.
+    assert!(!open.release_if_idle());
+    assert!(open.is_pinned());
+}
+
+#[test]
+fn open_read_only_txn_stays_readable_while_used() {
+    let db = db();
+    commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v1")]).unwrap_or_else(|e| panic!("{e}"));
+    let open = OpenReadOnlyTxn::begin(db.clone(), TimestampBound::Strong)
+        .unwrap_or_else(|e| panic!("{e}"));
+    // More commits than the history keeps: a transaction in use still reads its version.
+    for i in 0..5000 {
+        commit(
+            &ReadWriteTxn::new(db.clone()),
+            &[put(&db, 1, &format!("w{i}"))],
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
+        if i % 1000 == 0 {
+            assert!(!open.release_if_idle());
+            open.reader().unwrap_or_else(|e| panic!("{e}"));
+        }
+    }
+    let ro = open.reader().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(read_k1(&ro), vec![Value::string("v1")]);
+
+    // Once idle and unpinned, a version the history has dropped is gone.
+    assert!(!open.release_if_idle());
+    assert!(open.release_if_idle());
+    let gone = open
+        .reader()
+        .err()
+        .unwrap_or_else(|| panic!("expected an error"));
+    assert_eq!(gone.code, Code::FailedPrecondition);
+    assert!(
+        gone.message.contains("garbage collected"),
+        "{}",
+        gone.message
+    );
+}
+
+#[test]
+fn open_read_only_txn_fails_past_retention_even_when_pinned() {
+    let db = db();
+    let now = db.clock().now();
+    db.clock().set(Some(now));
+    let open = OpenReadOnlyTxn::begin(db.clone(), TimestampBound::Strong)
+        .unwrap_or_else(|e| panic!("{e}"));
+    db.clock().set(Some(Timestamp::from_micros(
+        now.as_micros() + 3_599_000_000,
+    )));
+    open.reader().unwrap_or_else(|e| panic!("{e}"));
+    db.clock().set(Some(Timestamp::from_micros(
+        now.as_micros() + 3_600_000_000,
+    )));
+    assert!(open.is_pinned());
+    let stale = open
+        .reader()
+        .err()
+        .unwrap_or_else(|| panic!("expected an error"));
+    assert_eq!(stale.code, Code::FailedPrecondition);
+    assert!(
+        stale
+            .message
+            .ends_with("has exceeded the maximum timestamp staleness"),
+        "{}",
+        stale.message
+    );
+}
+
+#[test]
+fn open_read_only_txn_on_a_long_unwritten_database_is_not_stale() {
+    // The latest version is two hours old, but a strong read happens now.
+    let db = db();
+    let written = db.latest().ts;
+    db.clock().set(Some(Timestamp::from_micros(
+        written.as_micros() + 7_200_000_000,
+    )));
+    let open = OpenReadOnlyTxn::begin(db.clone(), TimestampBound::Strong)
+        .unwrap_or_else(|e| panic!("{e}"));
+    let ro = open.reader().unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(ro.version.ts, written);
+    assert!(open.release_if_idle() || open.release_if_idle());
+    open.reader().unwrap_or_else(|e| panic!("{e}"));
 }

@@ -11,7 +11,7 @@ use spanbolt_ddl::Schema;
 use spanbolt_proto::longrunning::Operation;
 use spanbolt_storage::snapshot::{DatabaseImage, InstanceImage};
 use spanbolt_storage::{DbState, Timestamp};
-use spanbolt_txn::{Clock, Database, ReadOnlyTxn, ReadWriteTxn, Version};
+use spanbolt_txn::{Clock, Database, OpenReadOnlyTxn, ReadWriteTxn, Version};
 use tonic::Status;
 
 use crate::names;
@@ -128,7 +128,7 @@ impl IdleClock {
 
 pub enum TxnKind {
     ReadWrite(Arc<ReadWriteTxn>),
-    ReadOnly(ReadOnlyTxn),
+    ReadOnly(OpenReadOnlyTxn),
     PartitionedDml,
 }
 
@@ -588,14 +588,20 @@ impl Emulator {
 
     /// Drops sessions unused past their idle limit (clients that never delete theirs would
     /// otherwise grow the registry without bound), and transactions that clients never finished
-    /// (read-only ones are never closed explicitly) or whose session is gone.
+    /// (read-only ones are never closed explicitly) or whose session is gone. Read-only
+    /// transactions not read since the previous sweep stop pinning their version
+    /// (`OpenReadOnlyTxn`), so the ones clients abandon don't hold old database states.
     pub fn sweep(&self) {
         let now = self.idle.now();
         self.sessions.retain(|_, s| !s.expired(now));
         let txn_idle = TXN_IDLE.as_millis();
         self.txns.retain(|_, t| {
-            u128::from(now.saturating_sub(t.created)) < txn_idle
-                && self.sessions.contains_key(&t.session)
+            let keep = u128::from(now.saturating_sub(t.created)) < txn_idle
+                && self.sessions.contains_key(&t.session);
+            if keep && let TxnKind::ReadOnly(ro) = &t.kind {
+                ro.release_if_idle();
+            }
+            keep
         });
     }
 

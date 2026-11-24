@@ -50,7 +50,10 @@ clients ──gRPC──▶ spanbolt-server (tonic)
   (point keys and key ranges per table/index) and buffers writes. At commit, under a short per-database
   commit lock: if any commit since the transaction's start wrote a key in its read or write set,
   return `ABORTED` (clients retry); otherwise apply and assign a strictly increasing commit timestamp.
-- Read-only / snapshot transactions read a pinned version without locks.
+- Read-only / snapshot transactions read a pinned version without locks. A read-only transaction
+  kept between requests pins its version only while it is read: the session sweeper unpins idle
+  ones, and their next read finds the version in the history by timestamp. Every read checks
+  `version_retention_period`, as Spanner does.
 - DML inside a read-write transaction sees its own buffered writes (read-your-writes).
 - Partitioned DML: executed as independent batches.
 - Schema changes: serialized per database; they wait for in-flight commits, not for open transactions.

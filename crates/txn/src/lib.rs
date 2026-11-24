@@ -6,4 +6,4 @@ mod transaction;
 
 pub use clock::Clock;
 pub use database::{CommitInput, CommitOutcome, Database, ReadSet, TimestampBound, Version};
-pub use transaction::{ReadOnlyTxn, ReadView, ReadWriteTxn};
+pub use transaction::{OpenReadOnlyTxn, ReadOnlyTxn, ReadView, ReadWriteTxn};

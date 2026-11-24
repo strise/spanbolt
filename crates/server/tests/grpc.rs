@@ -15,6 +15,7 @@ use spanbolt_proto::longrunning::operation;
 use spanbolt_proto::longrunning::operations_client::OperationsClient;
 use spanbolt_proto::spanner as pb;
 use spanbolt_proto::spanner::spanner_client::SpannerClient;
+use spanbolt_server::emulator::TxnKind;
 use spanbolt_server::{Emulator, Running};
 use tonic::Code;
 use tonic::transport::Channel;
@@ -1255,4 +1256,69 @@ async fn startup_databases_create_their_instance_once() {
         .unwrap_or_else(|e| panic!("{e}"))
         .into_inner();
     assert_eq!(db.version_retention_period, "1h");
+}
+
+/// A read-only transaction nobody reads stops pinning its version at the second sweep (#61); its
+/// next read finds the version again by timestamp and still sees the transaction's snapshot.
+#[tokio::test]
+async fn idle_read_only_txn_unpins_and_still_reads_its_snapshot() {
+    let env = setup().await;
+    let session = env.session(DB).await;
+    seed(&env, &session).await;
+    let mut sp = env.spanner();
+    let txn = sp
+        .begin_transaction(pb::BeginTransactionRequest {
+            session: session.clone(),
+            options: Some(pb::TransactionOptions {
+                mode: Some(pb::transaction_options::Mode::ReadOnly(Default::default())),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    sp.commit(pb::CommitRequest {
+        session: session.clone(),
+        transaction: single_use_rw(),
+        mutations: vec![upsert(
+            "Accounts",
+            &["Id", "Balance"],
+            vec![row(&["1", "7"])],
+        )],
+        ..Default::default()
+    })
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+
+    let pinned = |env: &Env| match env
+        .server
+        .emulator
+        .txn(
+            &env.server
+                .emulator
+                .session(&session)
+                .unwrap_or_else(|e| panic!("{e}")),
+            &txn.id,
+        )
+        .unwrap_or_else(|e| panic!("{e}"))
+        .kind
+    {
+        TxnKind::ReadOnly(ref ro) => ro.is_pinned(),
+        _ => panic!("not a read-only transaction"),
+    };
+    env.server.emulator.sweep();
+    assert!(pinned(&env), "begun since the last sweep");
+    env.server.emulator.sweep();
+    assert!(!pinned(&env), "idle for a whole sweep interval");
+
+    let mut req = read_req(&session, keys(&["1"]));
+    req.transaction = by_id(txn.id.clone());
+    let rs = sp
+        .read(req)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert_eq!(rows(&rs), vec![vec!["1", "odd", "100"]]);
+    assert!(pinned(&env), "pinned again while in use");
 }

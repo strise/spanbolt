@@ -10,7 +10,8 @@ mod schema;
 pub use apply::DataCheck;
 pub use lexer::{identifiers, is_reserved};
 pub use parser::{
-    is_ddl, null_filter_columns, parse_statement, quote_ident, quote_path, quote_string,
+    ChangeStream, CsTarget, is_ddl, null_filter_columns, parse_statement,
+    parse_statement_emulator_compat, quote_ident, quote_path, quote_string,
 };
 pub use printer::print_statement;
 pub use schema::*;

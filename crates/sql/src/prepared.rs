@@ -22,6 +22,62 @@ pub struct Prepared {
     pub search: SearchUse,
     /// Subquery plans, for `explain`.
     pub subplans: Vec<(String, std::sync::Arc<BoxOp>)>,
+    /// The base-table columns the statement reads, for the pending commit timestamp check.
+    pub reads: Vec<ScanRead>,
+    /// The statement reads an INFORMATION_SCHEMA table.
+    pub reads_info_schema: bool,
+}
+
+/// The columns one table scan reads, and the index it is forced through.
+#[derive(Debug, Clone)]
+pub struct ScanRead {
+    pub table: spanbolt_storage::TableId,
+    pub index: Option<spanbolt_storage::IndexId>,
+    pub columns: Vec<usize>,
+}
+
+impl Prepared {
+    /// Cloud Spanner reads INFORMATION_SCHEMA only outside read-write transactions; the emulator
+    /// reads it anywhere.
+    pub fn check_read_write(&self, emulator_compat: bool) -> spanbolt_storage::Result<()> {
+        if self.reads_info_schema && !emulator_compat {
+            return Err(spanbolt_storage::Error::invalid_argument(
+                "Unsupported concurrency mode in query using INFORMATION_SCHEMA.",
+            ));
+        }
+        self.search.check_read_write()
+    }
+
+    /// Rejects the statement in a read-write transaction whose DML wrote, with
+    /// `PENDING_COMMIT_TIMESTAMP()`, a column it reads (or the key of an index it is forced
+    /// through, outside `--emulator-compat`).
+    pub fn check_pending_reads(
+        &self,
+        rw: &spanbolt_txn::ReadWriteTxn,
+        cat: &spanbolt_storage::Catalog,
+        emulator_compat: bool,
+    ) -> spanbolt_storage::Result<()> {
+        if self.reads.is_empty() {
+            return Ok(());
+        }
+        let pending = rw.pending_commit_ts();
+        if pending.is_empty() {
+            return Ok(());
+        }
+        for r in &self.reads {
+            // The emulator only checks the columns a query reads.
+            let index = r.index.filter(|_| !emulator_compat);
+            spanbolt_storage::pending::check_pending_read(
+                cat,
+                &pending,
+                r.table,
+                index,
+                &r.columns,
+                !emulator_compat,
+            )?;
+        }
+        Ok(())
+    }
 }
 
 /// What the emulator restricts in read-write transactions and partitioned queries.

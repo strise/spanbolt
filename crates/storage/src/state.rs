@@ -239,7 +239,9 @@ impl DbState {
                     return Ok(());
                 };
                 for r in m.values() {
-                    if ev.eval(&ck.expr, tm, r, &ColumnType::Bool)? == Value::Bool(false) {
+                    if ev.eval(&ck.expr, tm, r, &ColumnType::Bool, Timestamp::system_now())?
+                        == Value::Bool(false)
+                    {
                         // OUT_OF_RANGE, as for the same violation in a mutation.
                         return Err(Error::new(
                             Code::OutOfRange,
@@ -363,7 +365,13 @@ impl DbState {
     /// Moves the data to a new schema: columns are matched by name, indexes are reused when their
     /// definition is unchanged and backfilled otherwise.
     pub fn with_schema(&self, schema: Schema) -> Result<DbState> {
+        self.with_schema_at(schema, Timestamp::system_now())
+    }
+
+    /// `with_schema`, with `now` as `CURRENT_TIMESTAMP()` for the DEFAULT values it backfills.
+    pub fn with_schema_at(&self, schema: Schema, now: Timestamp) -> Result<DbState> {
         let catalog = Catalog::build(&schema)?;
+        let backfill_ts = Timestamp::from_micros(now.as_micros());
         let mut tables = Vector::new();
         for tm in &catalog.tables {
             let Some(old_id) = self.catalog.table_id(&tm.name) else {
@@ -386,11 +394,9 @@ impl DbState {
                 )));
             }
             let added = |c: usize| mapping[c].is_none();
-            let fill = tm
-                .columns
-                .iter()
-                .enumerate()
-                .any(|(c, cm)| added(c) && (cm.default.is_some() || cm.stored || cm.identity));
+            let fill = tm.columns.iter().enumerate().any(|(c, cm)| {
+                added(c) && (cm.default.is_some() || cm.expr.is_some() || cm.identity)
+            });
             let mut map = RowMap::new();
             for (_, row) in self.tables[old_id].iter() {
                 let mut new_row: Vec<Value> = mapping
@@ -398,7 +404,14 @@ impl DbState {
                     .map(|m| m.map_or(Value::Null, |i| row[i].clone()))
                     .collect();
                 if fill {
-                    crate::expr::compute_row(tm, &mut new_row, &added, &added)?;
+                    crate::expr::compute_row(tm, &mut new_row, now, &added, &added)?;
+                    // Spanner backfills a new `DEFAULT (PENDING_COMMIT_TIMESTAMP())` column with
+                    // the schema change's time (the emulator writes 9999-12-31, a bug).
+                    for (c, cm) in tm.columns.iter().enumerate() {
+                        if cm.default_commit_ts && added(c) {
+                            new_row[c] = Value::Timestamp(backfill_ts);
+                        }
+                    }
                 }
                 let new_row: Row = Arc::from(new_row);
                 let key = encode_key(
@@ -730,10 +743,14 @@ pub struct Writer {
     commit_ts: Timestamp,
     /// Timestamps later than this in an `allow_commit_timestamp` column are "in the future".
     max_ts: Timestamp,
+    /// `CURRENT_TIMESTAMP()` for DEFAULT values and generated columns.
+    now: Timestamp,
     written: Vec<(Target, Key)>,
     deferred: Vec<Deferred>,
     buf: Vec<u8>,
     mutations: usize,
+    /// `(table, column)`s written with the commit timestamp.
+    pending: Vec<(TableId, usize)>,
 }
 
 impl Writer {
@@ -742,10 +759,48 @@ impl Writer {
             state: base.clone(),
             commit_ts,
             max_ts: commit_ts,
+            now: commit_ts,
             written: Vec::new(),
             deferred: Vec::new(),
             buf: Vec::with_capacity(64),
             mutations: 0,
+            pending: Vec::new(),
+        }
+    }
+
+    /// The `(table, column)`s written with the commit timestamp so far: explicitly, or by a
+    /// `DEFAULT` or `ON UPDATE (PENDING_COMMIT_TIMESTAMP())`. DML staged before commit holds a
+    /// placeholder there, which the transaction must not read back.
+    pub fn pending_commit_ts(&self) -> &[(TableId, usize)] {
+        &self.pending
+    }
+
+    fn mark_pending(&mut self, t: TableId, c: usize) {
+        if !self.pending.contains(&(t, c)) {
+            self.pending.push((t, c));
+        }
+    }
+
+    /// Writes the commit timestamp into the columns of `row` the write leaves out whose
+    /// `DEFAULT` (insert) or `ON UPDATE` (update) is `PENDING_COMMIT_TIMESTAMP()`.
+    fn fill_commit_ts(
+        &mut self,
+        tm: &TableMeta,
+        t: TableId,
+        columns: &[usize],
+        row: &mut [Value],
+        update: bool,
+    ) {
+        for (c, cm) in tm.columns.iter().enumerate() {
+            let fills = if update {
+                cm.on_update_commit_ts
+            } else {
+                cm.default_commit_ts
+            };
+            if fills && !columns.contains(&c) {
+                row[c] = Value::Timestamp(self.commit_ts);
+                self.mark_pending(t, c);
+            }
         }
     }
 
@@ -754,6 +809,14 @@ impl Writer {
     /// than every `CURRENT_TIMESTAMP()` handed out so far.
     pub fn with_max_ts(mut self, max_ts: Timestamp) -> Writer {
         self.max_ts = max_ts;
+        self
+    }
+
+    /// Evaluates DEFAULT values at `now` (the database clock, which tests can fix) instead of the
+    /// commit timestamp, capped at `max_ts` so a commit-timestamp column accepts the value. Call
+    /// after `with_max_ts`.
+    pub fn with_now(mut self, now: Timestamp) -> Writer {
+        self.now = now.min(self.max_ts);
         self
     }
 
@@ -903,6 +966,7 @@ impl Writer {
                             break;
                         }
                         row.to_mut()[cc] = Value::Timestamp(self.commit_ts);
+                        self.mark_pending(*table, columns[cc]);
                         ts_cells.next();
                     }
                     self.write_row(tm, *table, *kind, columns, &key_pos, &row)?;
@@ -946,7 +1010,10 @@ impl Writer {
             for (v, &c) in values.iter().zip(columns) {
                 row[c] = v.clone();
             }
-            crate::expr::compute_row(tm, &mut row, &|c| !columns.contains(&c), &|_| true)?;
+            crate::expr::compute_row(tm, &mut row, self.now, &|c| !columns.contains(&c), &|_| {
+                true
+            })?;
+            self.fill_commit_ts(tm, t, columns, &mut row, false);
             computed_row = Some(row);
         }
         self.buf.clear();
@@ -981,18 +1048,17 @@ impl Writer {
                 for (v, &c) in values.iter().zip(columns) {
                     new_row[c] = v.clone();
                 }
+                self.fill_commit_ts(tm, t, columns, &mut new_row, true);
                 if tm.computed {
                     let regenerate = crate::expr::expr_evaluator().is_some()
-                        || tm.columns.iter().any(|cm| {
-                            cm.stored
-                                && cm.expr.as_deref().is_some_and(|e| {
-                                    columns
-                                        .iter()
-                                        .any(|&c| crate::expr::mentions(e, &tm.columns[c].name))
-                                })
-                        });
-                    crate::expr::compute_row(tm, &mut new_row, &|_| false, &|_| regenerate)?;
-                    crate::expr::check_row(tm, &new_row, &|| pk_debug(tm, &new_row))?;
+                        || tm
+                            .generated_order
+                            .iter()
+                            .any(|&g| tm.inputs[g].iter().any(|c| columns.contains(c)));
+                    crate::expr::compute_row(tm, &mut new_row, self.now, &|_| false, &|_| {
+                        regenerate
+                    })?;
+                    crate::expr::check_row(tm, &new_row, self.now, &|| pk_debug(tm, &new_row))?;
                 }
                 self.put_row(t, key, Some(old), Arc::from(new_row))
             }
@@ -1033,14 +1099,15 @@ impl Writer {
                 if tm.computed {
                     let missing = |c: usize| !columns.contains(&c);
                     if !precomputed {
-                        crate::expr::compute_row(tm, &mut new_row, &missing, &|_| true)?;
+                        crate::expr::compute_row(tm, &mut new_row, self.now, &missing, &|_| true)?;
+                        self.fill_commit_ts(tm, t, columns, &mut new_row, false);
                     }
                     for (c, cm) in tm.columns.iter().enumerate() {
                         if missing(c) && !cm.identity {
                             self.check_value(tm, c, &new_row[c])?;
                         }
                     }
-                    crate::expr::check_row(tm, &new_row, &|| pk_debug(tm, &new_row))?;
+                    crate::expr::check_row(tm, &new_row, self.now, &|| pk_debug(tm, &new_row))?;
                 }
                 self.check_parent(tm, &new_row)?;
                 self.put_row(t, key, None, Arc::from(new_row))

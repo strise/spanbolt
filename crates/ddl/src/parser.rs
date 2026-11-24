@@ -8,12 +8,27 @@ pub(crate) struct Parser<'a> {
     src: &'a str,
     toks: Vec<Token>,
     pos: usize,
+    /// Follow the official emulator's grammar where it differs from production Spanner.
+    emulator: bool,
+    /// Set by `column_rest_in` when the column carries `PRIMARY KEY`.
+    column_pk: bool,
 }
 
 type R<T> = Result<T, DdlError>;
 
 pub fn parse_statement(sql: &str) -> R<Statement> {
+    parse(sql, false)
+}
+
+/// `parse_statement` with the official emulator's grammar (`--emulator-compat`), which lacks
+/// some production statements (ALTER SEARCH INDEX) and words some errors differently.
+pub fn parse_statement_emulator_compat(sql: &str) -> R<Statement> {
+    parse(sql, true)
+}
+
+fn parse(sql: &str, emulator: bool) -> R<Statement> {
     let mut p = Parser::new(sql)?;
+    p.emulator = emulator;
     let stmt = p.statement()?;
     p.expect_eof()?;
     Ok(stmt)
@@ -40,6 +55,8 @@ impl<'a> Parser<'a> {
             src,
             toks: tokenize(src)?,
             pos: 0,
+            emulator: false,
+            column_pk: false,
         })
     }
 
@@ -150,12 +167,45 @@ impl<'a> Parser<'a> {
         )
     }
 
+    /// An error about the whole statement, in the emulator's wording.
+    fn statement_error(&self, msg: &str) -> DdlError {
+        DdlError::Syntax(format!(
+            "Error parsing Spanner DDL statement: {} : {msg}",
+            self.src
+        ))
+    }
+
+    fn pk_once(&self) -> DdlError {
+        self.statement_error("Can only specify PRIMARY KEY once.")
+    }
+
     fn encountered(&self, what: &str) -> DdlError {
         syntax(
             self.src,
             self.toks[self.pos].start,
             &format!("Encountered '{}' while parsing: {}", self.found(), what),
         )
+    }
+
+    /// Spanner DDL that spanbolt doesn't model: UNIMPLEMENTED rather than a syntax error, so a
+    /// client can tell "valid but unsupported" from "invalid".
+    fn unimplemented(&self, what: &str) -> DdlError {
+        DdlError::Unimplemented(format!("{what} is not supported by spanbolt yet."))
+    }
+
+    /// After CREATE/ALTER/DROP: the object kinds Spanner has and spanbolt doesn't support.
+    fn unsupported_kind(&self, verb: &str) -> Option<DdlError> {
+        const KINDS: &[(&[&str], &str)] = &[
+            (&["PROTO", "BUNDLE"], "PROTO BUNDLE"),
+            (&["VECTOR", "INDEX"], "VECTOR INDEX"),
+            (&["QUEUE"], "QUEUE"),
+            (&["PLACEMENT"], "PLACEMENT"),
+            (&["FUNCTION"], "FUNCTION"),
+        ];
+        KINDS
+            .iter()
+            .find(|(kws, _)| kws.iter().enumerate().all(|(i, k)| self.kw_at(i, k)))
+            .map(|(_, kind)| self.unimplemented(&format!("{verb} {kind}")))
     }
 
     fn unsupported(&self, what: &str) -> DdlError {
@@ -379,6 +429,19 @@ impl<'a> Parser<'a> {
         } else if self.is_kw("GRANT") || self.is_kw("REVOKE") {
             let kind = self.found().to_ascii_uppercase();
             let ddl = self.rest_text();
+            let grant = parse_grant(&ddl)?;
+            // The emulator reports one error per privilege with a column list.
+            let error = "Emulator does not yet support column level access controls";
+            if self.emulator && grant.column_privileges == 1 {
+                return Err(self.statement_error(error));
+            }
+            if self.emulator && grant.column_privileges > 1 {
+                return Err(DdlError::Syntax(format!(
+                    "Errors parsing Spanner DDL statement: {} has errors:{}",
+                    self.src,
+                    format!(" -{error}").repeat(grant.column_privileges)
+                )));
+            }
             Ok(opaque(&kind, "", ddl, false))
         } else if self.is_kw("ANALYZE") {
             self.bump();
@@ -386,6 +449,48 @@ impl<'a> Parser<'a> {
         } else {
             Err(self.encountered("ddl statement"))
         }
+    }
+
+    /// A `locality_group` option value: the group's name, or `None` for NULL.
+    fn locality_group_value(&self, v: &str) -> Option<String> {
+        (v != "NULL").then(|| unquote_option(v))
+    }
+
+    /// `OPTIONS (...)` of a table or an index, where only `locality_group` is known.
+    fn locality_options(&mut self, what: &str) -> R<Option<Option<String>>> {
+        let mut out = None;
+        for (k, v) in self.options()? {
+            if !k.eq_ignore_ascii_case("locality_group") {
+                return Err(self.statement_error(&format!("Option: {k} is unknown{what}.")));
+            }
+            out = Some(self.locality_group_value(&v));
+        }
+        Ok(out)
+    }
+
+    /// A locality group's name; the emulator also takes the keyword `default` unquoted.
+    fn locality_group_name(&mut self) -> R<String> {
+        if self.emulator && self.is_kw(DEFAULT_LOCALITY_GROUP) {
+            self.bump();
+            return Ok(DEFAULT_LOCALITY_GROUP.to_string());
+        }
+        self.ident()
+    }
+
+    fn locality_group_options(&mut self) -> R<Vec<(String, String)>> {
+        let options = self.options()?;
+        for (k, v) in &options {
+            if k.eq_ignore_ascii_case("storage") {
+                if !matches!(v.as_str(), "'ssd'" | "'hdd'" | "NULL") {
+                    return Err(self.statement_error(
+                        "Unexpected value for option: storage. Supported option values are \"ssd\" and \"hdd\".",
+                    ));
+                }
+            } else if !k.eq_ignore_ascii_case("ssd_to_hdd_spill_timespan") {
+                return Err(self.statement_error(&format!("Option: {k} is unknown.")));
+            }
+        }
+        Ok(options)
     }
 
     fn if_not_exists(&mut self) -> bool {
@@ -418,6 +523,19 @@ impl<'a> Parser<'a> {
         }
         if self.eat_kws(&["SEARCH", "INDEX"]) {
             return self.create_search_index();
+        }
+        if self.eat_kws(&["LOCALITY", "GROUP"]) {
+            let if_not_exists = self.if_not_exists();
+            let name = self.ident()?;
+            let options = if self.is_kw("OPTIONS") {
+                self.locality_group_options()?
+            } else {
+                Vec::new()
+            };
+            return Ok(Statement::CreateLocalityGroup {
+                group: LocalityGroup { name, options },
+                if_not_exists,
+            });
         }
         if self.eat_kw("SEQUENCE") {
             let if_not_exists = self.if_not_exists();
@@ -461,14 +579,16 @@ impl<'a> Parser<'a> {
             });
         }
         if self.eat_kws(&["CHANGE", "STREAM"]) {
+            let if_not_exists = self.if_not_exists();
             let name = self.path()?;
             let cs = self.change_stream_body(ChangeStream::new(name))?;
-            return Ok(opaque(
-                "CHANGE STREAM",
-                &cs.name.clone(),
-                cs.to_ddl(),
-                false,
-            ));
+            self.check_change_stream_options(&cs.options)?;
+            let mut ddl = cs.to_ddl();
+            if if_not_exists {
+                // `apply` reads IF NOT EXISTS back from the text and stores the canonical form.
+                ddl = ddl.replacen("CHANGE STREAM ", "CHANGE STREAM IF NOT EXISTS ", 1);
+            }
+            return Ok(opaque("CHANGE STREAM", &cs.name.clone(), ddl, false));
         }
         if self.eat_kw("ROLE") {
             let name = self.ident()?;
@@ -492,6 +612,9 @@ impl<'a> Parser<'a> {
                 return Ok(opaque(kind, &name, ddl, false));
             }
         }
+        if let Some(e) = self.unsupported_kind("CREATE") {
+            return Err(e);
+        }
         if or_replace {
             return Err(self.expecting("VIEW"));
         }
@@ -510,10 +633,22 @@ impl<'a> Parser<'a> {
             checks: Vec::new(),
             row_deletion_policy: None,
             synonym: None,
+            locality_group: None,
         };
+        // A PRIMARY KEY given inside the parentheses, on a column or as an element.
+        let mut inline_pk: Option<Vec<KeyPart>> = None;
+        let mut pk_column = false;
         self.expect_sym("(")?;
         while !self.eat_sym(")") {
-            if self.is_kw("CONSTRAINT")
+            if self.is_kw("PRIMARY") && self.kw_at(1, "KEY") {
+                self.bump();
+                self.bump();
+                let key = self.key_parts()?;
+                if inline_pk.is_some() {
+                    return Err(self.pk_once());
+                }
+                inline_pk = Some(key);
+            } else if self.is_kw("CONSTRAINT")
                 || (self.is_kw("FOREIGN") && self.kw_at(1, "KEY"))
                 || (self.is_kw("CHECK") && matches!(self.tok_at(1), Tok::Sym("(")))
             {
@@ -527,26 +662,49 @@ impl<'a> Parser<'a> {
                 table.synonym = Some(self.path()?);
                 self.expect_sym(")")?;
             } else {
-                table.columns.push(self.column_def()?);
+                let col = self.column_def()?;
+                if std::mem::take(&mut self.column_pk) {
+                    if pk_column {
+                        return Err(
+                            self.statement_error("Multiple columns declared as PRIMARY KEY")
+                        );
+                    }
+                    if inline_pk.is_some() {
+                        return Err(self.pk_once());
+                    }
+                    pk_column = true;
+                    inline_pk = Some(vec![KeyPart {
+                        column: col.name.clone(),
+                        order: SortOrder::Asc,
+                    }]);
+                }
+                table.columns.push(col);
             }
             if !self.eat_sym(",") {
                 self.expect_sym(")")?;
                 break;
             }
         }
-        if matches!(self.tok(), Tok::Eof) {
+        if let Some(key) = inline_pk {
+            if self.is_kw("PRIMARY") {
+                return Err(self.pk_once());
+            }
+            table.primary_key = key;
+        } else if matches!(self.tok(), Tok::Eof) {
             // No PRIMARY KEY: the emulator keys the table on a hidden identity column.
             table.columns.push(Column {
                 name: ROWID_COLUMN.into(),
                 ty: ColumnType::Int64,
                 not_null: true,
                 default: None,
+                on_update: None,
                 generated: Some(Generated::Identity {
                     options: Some("BIT_REVERSED_POSITIVE".into()),
                 }),
                 allow_commit_timestamp: false,
                 hidden: true,
                 vector_length: None,
+                locality_group: None,
             });
             table.primary_key = vec![KeyPart {
                 column: ROWID_COLUMN.into(),
@@ -556,23 +714,37 @@ impl<'a> Parser<'a> {
                 table,
                 if_not_exists,
             });
+        } else {
+            self.expect_kw("PRIMARY")?;
+            self.expect_kw("KEY")?;
+            table.primary_key = self.key_parts()?;
         }
-        self.expect_kw("PRIMARY")?;
-        self.expect_kw("KEY")?;
-        table.primary_key = self.key_parts()?;
         while self.eat_sym(",") {
             if self.eat_kw("INTERLEAVE") {
                 self.expect_kw("IN")?;
                 let in_parent = self.eat_kw("PARENT");
                 let parent = self.path()?;
-                let on_delete = self.on_delete()?.unwrap_or(OnDelete::NoAction);
+                let on_delete = self.on_delete()?;
+                if on_delete.is_some() && !in_parent {
+                    // Rows of an INTERLEAVE IN table have no parent row to follow.
+                    let t = &table.name;
+                    return Err(DdlError::Syntax(if self.emulator {
+                        format!("Cannot SET ON DELETE on an INTERLEAVE IN table {t}.")
+                    } else {
+                        format!(
+                            "table {t} uses INTERLEAVE IN and ON DELETE, which is not allowed since there is no parent/child relationship between rows of the two tables. Did you mean to use INTERLEAVE IN PARENT?"
+                        )
+                    }));
+                }
                 table.interleave = Some(Interleave {
                     parent,
-                    on_delete,
+                    on_delete: on_delete.unwrap_or(OnDelete::NoAction),
                     in_parent,
                 });
             } else if self.is_kw("ROW") {
                 table.row_deletion_policy = Some(self.row_deletion_policy()?);
+            } else if self.is_kw("OPTIONS") {
+                table.locality_group = self.locality_options(" in Table Options")?.flatten();
             } else {
                 return Err(self.expecting("INTERLEAVE"));
             }
@@ -668,34 +840,66 @@ impl<'a> Parser<'a> {
     }
 
     fn column_rest(&mut self, name: String) -> R<Column> {
+        self.column_rest_in(name, "column_def")
+    }
+
+    /// `ctx` names the grammar rule in the emulator's syntax errors.
+    fn column_rest_in(&mut self, name: String, ctx: &str) -> R<Column> {
         let (ty, vector_length) = self.column_type()?;
         let mut col = Column {
             name,
             ty,
             not_null: false,
             default: None,
+            on_update: None,
             generated: None,
             allow_commit_timestamp: false,
             hidden: false,
             vector_length,
+            locality_group: None,
         };
+        // ON UPDATE can't follow HIDDEN or OPTIONS.
+        let mut options_seen = false;
         loop {
             if self.eat_kws(&["NOT", "NULL"]) {
                 col.not_null = true;
             } else if self.eat_kw("DEFAULT") {
                 col.default = Some(self.paren_text()?);
+            } else if self.is_kw("ON")
+                && self.kw_at(1, "UPDATE")
+                && col.on_update.is_none()
+                && col.generated.is_none()
+                && !options_seen
+            {
+                // ON UPDATE goes with a DEFAULT, before or after it.
+                let on = self.pos;
+                self.bump();
+                self.bump();
+                col.on_update = Some(self.paren_text()?);
+                if col.default.is_none() && !self.is_kw("DEFAULT") {
+                    self.pos = on;
+                    return Err(self.encountered(ctx));
+                }
             } else if self.is_kw("AS") && col.default.is_some() {
                 return Err(self.expecting(")"));
             } else if self.eat_kw("AS") {
                 let expr = self.paren_text()?;
                 let stored = self.eat_kw("STORED");
                 col.generated = Some(Generated::Expr { expr, stored });
+            } else if self.is_kw("PRIMARY") && self.kw_at(1, "KEY") {
+                self.bump();
+                self.bump();
+                self.column_pk = true;
             } else if self.eat_kw("HIDDEN") {
                 col.hidden = true;
+                options_seen = true;
             } else if self.is_kw("OPTIONS") {
+                options_seen = true;
                 for (k, v) in self.options()? {
                     if k.eq_ignore_ascii_case("allow_commit_timestamp") {
                         col.allow_commit_timestamp = v == "true";
+                    } else if k.eq_ignore_ascii_case("locality_group") {
+                        col.locality_group = self.locality_group_value(&v);
                     } else {
                         return Err(DdlError::Syntax(format!(
                             "Error parsing Spanner DDL statement: {} : Option: {k} is unknown.",
@@ -812,6 +1016,23 @@ impl<'a> Parser<'a> {
         let name = self.path()?;
         self.expect_kw("ON")?;
         let table = self.path()?;
+        // An expression key, `ON T((expr), ...)`: Spanner indexes it through a hidden generated
+        // column, which spanbolt doesn't model.
+        let mut depth = 0usize;
+        for i in 0.. {
+            match self.tok_at(i) {
+                Tok::Sym("(")
+                    if depth == 1 && matches!(self.tok_at(i - 1), Tok::Sym("(" | ",")) =>
+                {
+                    return Err(self.unimplemented("An index key expression"));
+                }
+                Tok::Sym("(") => depth += 1,
+                Tok::Sym(")") if depth <= 1 => break,
+                Tok::Sym(")") => depth -= 1,
+                Tok::Eof => break,
+                _ => {}
+            }
+        }
         let key = self.key_parts()?;
         let mut index = Index {
             name,
@@ -822,6 +1043,7 @@ impl<'a> Parser<'a> {
             null_filtered,
             interleave_in: None,
             filter: None,
+            locality_group: None,
         };
         loop {
             if self.eat_kw("STORING") {
@@ -834,6 +1056,8 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.expect_kw("IN")?;
                 index.interleave_in = Some(self.path()?);
+            } else if self.is_kw("OPTIONS") {
+                index.locality_group = self.locality_options("")?.flatten();
             } else {
                 break;
             }
@@ -923,6 +1147,36 @@ impl<'a> Parser<'a> {
         Ok(cs)
     }
 
+    /// Change stream option names (case-sensitive) and value types, checked as the statement is
+    /// parsed.
+    fn check_change_stream_options(&self, options: &[(String, String)]) -> R<()> {
+        for (k, v) in options {
+            let supported = match k.as_str() {
+                "retention_period" | "value_capture_type" => (v == "NULL" || v.starts_with('\''))
+                    .then_some(())
+                    .ok_or("strings and NULL"),
+                "exclude_ttl_deletes"
+                | "exclude_insert"
+                | "exclude_update"
+                | "exclude_delete"
+                | "allow_txn_exclusion" => matches!(v.as_str(), "true" | "false" | "NULL")
+                    .then_some(())
+                    .ok_or(if self.emulator {
+                        "booleans and NULL"
+                    } else {
+                        "true, false, and null"
+                    }),
+                _ => return Err(self.statement_error(&format!("Option: {k} is unknown."))),
+            };
+            if let Err(what) = supported {
+                return Err(self.statement_error(&format!(
+                    "Unexpected value for option: {k}. Supported option values are {what}."
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn change_stream_target(&mut self) -> R<CsTarget> {
         if self.eat_kw("ALL") {
             return Ok(CsTarget::All);
@@ -944,9 +1198,41 @@ impl<'a> Parser<'a> {
 
     fn alter(&mut self) -> R<Statement> {
         if self.eat_kw("TABLE") {
+            let if_exists = self.if_exists();
             let table = self.path()?;
             let action = self.alter_table_action()?;
-            return Ok(Statement::AlterTable { table, action });
+            return Ok(Statement::AlterTable {
+                table,
+                action,
+                if_exists,
+            });
+        }
+        // The emulator's grammar has no ALTER SEARCH INDEX.
+        if self.is_kw("SEARCH") && self.kw_at(1, "INDEX") && !self.emulator {
+            self.bump();
+            self.bump();
+            let name = self.path()?;
+            let at = self.pos;
+            let add = if self.eat_kw("ADD") {
+                true
+            } else if self.eat_kw("DROP") {
+                false
+            } else {
+                return Err(self.encountered("alter_search_index_statement"));
+            };
+            let stored = self.eat_kw("STORED");
+            if !self.eat_kw("COLUMN") {
+                self.pos = at;
+                return Err(self.encountered("alter_search_index_statement"));
+            }
+            let column = self.ident()?;
+            let action = match (add, stored) {
+                (true, false) => AlterSearchIndex::AddColumn(column),
+                (false, false) => AlterSearchIndex::DropColumn(column),
+                (true, true) => AlterSearchIndex::AddStoredColumn(column),
+                (false, true) => AlterSearchIndex::DropStoredColumn(column),
+            };
+            return Ok(Statement::AlterSearchIndex { name, action });
         }
         if self.eat_kw("INDEX") {
             let name = self.path()?;
@@ -981,6 +1267,12 @@ impl<'a> Parser<'a> {
             }
             return Ok(Statement::AlterDatabase { options, name });
         }
+        if self.eat_kws(&["LOCALITY", "GROUP"]) {
+            let name = self.locality_group_name()?;
+            self.expect_kw("SET")?;
+            let options = self.locality_group_options()?;
+            return Ok(Statement::AlterLocalityGroup { name, options });
+        }
         if self.eat_kw("SEQUENCE") {
             let name = self.path()?;
             self.expect_kw("SET")?;
@@ -995,7 +1287,8 @@ impl<'a> Parser<'a> {
                 if self.eat_kw("FOR") {
                     self.change_stream_target()?;
                 } else {
-                    self.options()?;
+                    let options = self.options()?;
+                    self.check_change_stream_options(&options)?;
                 }
             } else {
                 self.expect_kw("DROP")?;
@@ -1004,20 +1297,34 @@ impl<'a> Parser<'a> {
             }
             return Ok(opaque("ALTER CHANGE STREAM", &name, ddl, false));
         }
-        Err(self.encountered("ALTER statement"))
+        if let Some(e) = self.unsupported_kind("ALTER") {
+            return Err(e);
+        }
+        Err(self.encountered("alter_statement"))
+    }
+
+    /// A column definition in ALTER TABLE, where PRIMARY KEY can't go.
+    fn alter_column_def(&mut self, column: R<Column>) -> R<Column> {
+        let column = column?;
+        if std::mem::take(&mut self.column_pk) {
+            return Err(self.statement_error("Unexpected PRIMARY KEY clause"));
+        }
+        Ok(column)
     }
 
     fn alter_table_action(&mut self) -> R<AlterTable> {
         if self.eat_kw("ADD") {
+            // COLUMN is optional: anything that isn't another kind of ADD is a column.
             if self.eat_kw("COLUMN") {
                 let if_not_exists = self.if_not_exists();
-                let column = self.column_def()?;
+                let def = self.column_def();
+                let column = self.alter_column_def(def)?;
                 return Ok(AlterTable::AddColumn {
                     column,
                     if_not_exists,
                 });
             }
-            if self.is_kw("ROW") {
+            if self.is_kw("ROW") && self.kw_at(1, "DELETION") {
                 return Ok(AlterTable::AddRowDeletionPolicy(
                     self.row_deletion_policy()?,
                 ));
@@ -1025,9 +1332,20 @@ impl<'a> Parser<'a> {
             if self.eat_kw("SYNONYM") {
                 return Ok(AlterTable::AddSynonym(self.path()?));
             }
-            return Ok(match self.constraint()? {
-                Constraint::Fk(fk) => AlterTable::AddForeignKey(fk),
-                Constraint::Check(c) => AlterTable::AddCheck(c),
+            if self.is_kw("CONSTRAINT")
+                || (self.is_kw("FOREIGN") && self.kw_at(1, "KEY"))
+                || (self.is_kw("CHECK") && matches!(self.tok_at(1), Tok::Sym("(")))
+            {
+                return Ok(match self.constraint()? {
+                    Constraint::Fk(fk) => AlterTable::AddForeignKey(fk),
+                    Constraint::Check(c) => AlterTable::AddCheck(c),
+                });
+            }
+            let def = self.column_def();
+            let column = self.alter_column_def(def)?;
+            return Ok(AlterTable::AddColumn {
+                column,
+                if_not_exists: false,
             });
         }
         if self.eat_kw("DROP") {
@@ -1047,7 +1365,9 @@ impl<'a> Parser<'a> {
             if self.eat_kw("SYNONYM") {
                 return Ok(AlterTable::DropSynonym(self.path()?));
             }
-            return Err(self.expecting("COLUMN"));
+            return Ok(AlterTable::DropColumn {
+                name: self.ident()?,
+            });
         }
         if self.eat_kw("REPLACE") {
             return Ok(AlterTable::ReplaceRowDeletionPolicy(
@@ -1055,27 +1375,36 @@ impl<'a> Parser<'a> {
             ));
         }
         if self.eat_kw("ALTER") {
-            self.expect_kw("COLUMN")?;
+            self.eat_kw("COLUMN");
             let name = self.ident()?;
             if self.eat_kw("SET") {
                 if self.eat_kw("DEFAULT") {
                     let default = Some(self.paren_text()?);
                     return Ok(AlterTable::SetColumnDefault { name, default });
                 }
+                if self.eat_kws(&["ON", "UPDATE"]) {
+                    let on_update = Some(self.paren_text()?);
+                    return Ok(AlterTable::SetColumnOnUpdate { name, on_update });
+                }
                 let opts = self.options()?;
                 let mut act = None;
+                let mut locality_group = None;
                 for (k, v) in opts {
-                    if !k.eq_ignore_ascii_case("allow_commit_timestamp") {
+                    if k.eq_ignore_ascii_case("allow_commit_timestamp") {
+                        act = Some(v == "true");
+                    } else if k.eq_ignore_ascii_case("locality_group") {
+                        locality_group = Some(self.locality_group_value(&v));
+                    } else {
                         return Err(DdlError::Syntax(format!(
                             "Error parsing Spanner DDL statement: {} : Option: {k} is unknown.",
                             self.src
                         )));
                     }
-                    act = Some(v == "true");
                 }
                 return Ok(AlterTable::SetColumnOptions {
                     name,
                     allow_commit_timestamp: act,
+                    locality_group,
                 });
             }
             if self.eat_kws(&["DROP", "DEFAULT"]) {
@@ -1084,10 +1413,21 @@ impl<'a> Parser<'a> {
                     default: None,
                 });
             }
-            let column = self.column_rest(name)?;
+            if self.eat_kws(&["DROP", "ON", "UPDATE"]) {
+                return Ok(AlterTable::SetColumnOnUpdate {
+                    name,
+                    on_update: None,
+                });
+            }
+            let def = self.column_rest_in(name, "column_def_alter_attrs");
+            let column = self.alter_column_def(def)?;
             return Ok(AlterTable::AlterColumn { column });
         }
         if self.eat_kw("SET") {
+            if self.is_kw("OPTIONS") {
+                let locality_group = self.locality_options(" in Table Options")?.flatten();
+                return Ok(AlterTable::SetOptions { locality_group });
+            }
             self.expect_kw("ON")?;
             self.expect_kw("DELETE")?;
             if self.eat_kw("CASCADE") {
@@ -1147,6 +1487,13 @@ impl<'a> Parser<'a> {
                 if_exists,
             });
         }
+        if self.eat_kws(&["LOCALITY", "GROUP"]) {
+            let if_exists = self.if_exists();
+            return Ok(Statement::DropLocalityGroup {
+                name: self.ident()?,
+                if_exists,
+            });
+        }
         if self.eat_kw("SCHEMA") {
             return Ok(Statement::DropSchema {
                 name: self.ident()?,
@@ -1165,7 +1512,10 @@ impl<'a> Parser<'a> {
                 return Ok(opaque(kind, &name, ddl.to_string(), true));
             }
         }
-        Err(self.encountered("DROP statement"))
+        if let Some(e) = self.unsupported_kind("DROP") {
+            return Err(e);
+        }
+        Err(self.encountered("drop_statement"))
     }
 
     fn rename(&mut self) -> R<Statement> {
@@ -1185,6 +1535,7 @@ impl<'a> Parser<'a> {
             return Ok(Statement::AlterTable {
                 table,
                 action: AlterTable::Rename { to },
+                if_exists: false,
             });
         }
         Ok(Statement::RenameTables { renames })
@@ -1194,6 +1545,21 @@ impl<'a> Parser<'a> {
 enum Constraint {
     Fk(ForeignKey),
     Check(CheckConstraint),
+}
+
+/// `'text'` → `text` for an option value the parser printed with `quote_string`.
+fn unquote_option(v: &str) -> String {
+    match tokenize(v).ok().as_deref() {
+        Some(
+            [
+                Token {
+                    tok: Tok::Str(s), ..
+                },
+                ..,
+            ],
+        ) => s.clone(),
+        _ => v.to_string(),
+    }
 }
 
 fn opaque(kind: &str, name: &str, ddl: String, drop: bool) -> Statement {
@@ -1209,15 +1575,20 @@ fn opaque(kind: &str, name: &str, ddl: String, drop: bool) -> Statement {
 
 // ---- change streams (stored as opaque objects with canonical DDL) ----
 
+/// What a change stream tracks.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CsTarget {
+pub enum CsTarget {
+    /// No FOR clause (or `DROP FOR ALL`).
     None,
     All,
+    /// `FOR T, U(a, b), V()`: each table with its columns; `None` is the whole table, an empty
+    /// list its key columns only.
     Tables(Vec<(String, Option<Vec<String>>)>),
 }
 
+/// A change stream, parsed from its canonical `CREATE CHANGE STREAM` statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChangeStream {
+pub struct ChangeStream {
     pub name: String,
     pub target: CsTarget,
     pub options: Vec<(String, String)>,
@@ -1261,7 +1632,7 @@ impl ChangeStream {
     }
 
     /// Parses a canonical `CREATE CHANGE STREAM` statement.
-    pub(crate) fn parse(ddl: &str) -> R<ChangeStream> {
+    pub fn parse(ddl: &str) -> R<ChangeStream> {
         let mut p = Parser::new(ddl)?;
         p.expect_kw("CREATE")?;
         p.expect_kw("CHANGE")?;
@@ -1281,9 +1652,18 @@ impl ChangeStream {
             if p.eat_kw("FOR") {
                 self.target = p.change_stream_target()?;
             } else {
-                // The emulator replaces the whole option set.
-                self.options = p.options()?;
-                self.options.retain(|(_, v)| v != "NULL");
+                // Options merge into the stream's; NULL removes one.
+                for (k, v) in p.options()? {
+                    let at = self.options.iter().position(|(o, _)| *o == k);
+                    match (at, v.as_str()) {
+                        (Some(i), "NULL") => {
+                            self.options.remove(i);
+                        }
+                        (Some(i), _) => self.options[i].1 = v,
+                        (None, "NULL") => {}
+                        (None, _) => self.options.push((k, v)),
+                    }
+                }
             }
         } else {
             self.target = CsTarget::None;
@@ -1352,4 +1732,111 @@ pub(crate) fn join_idents(cols: &[String]) -> String {
         .map(|c| quote_ident(c))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// A parsed `GRANT` or `REVOKE`: the privileges it names, without the grantee, and the roles.
+pub(crate) struct GrantStmt {
+    pub revoke: bool,
+    pub objects: Vec<GrantObject>,
+    pub roles: Vec<String>,
+    /// Privileges given a column list (`SELECT(a, b)`), which the emulator rejects.
+    pub column_privileges: usize,
+}
+
+/// Parses `GRANT ... TO ROLE ...` or `REVOKE ... FROM ROLE ...`.
+pub(crate) fn parse_grant(ddl: &str) -> R<GrantStmt> {
+    let mut p = Parser::new(ddl)?;
+    let revoke = if p.eat_kw("GRANT") {
+        false
+    } else {
+        p.expect_kw("REVOKE")?;
+        true
+    };
+    let names = |p: &mut Parser| -> R<Vec<String>> {
+        let mut out = vec![p.path()?];
+        while p.eat_sym(",") {
+            out.push(p.path()?);
+        }
+        Ok(out)
+    };
+    let mut objects = Vec::new();
+    let mut column_privileges = 0;
+    if p.eat_kw("ROLE") {
+        objects.extend(names(&mut p)?.into_iter().map(GrantObject::Role));
+    } else if p.eat_kw("EXECUTE") {
+        p.expect_kw("ON")?;
+        p.expect_kw("TABLE")?;
+        p.expect_kw("FUNCTION")?;
+        objects.extend(names(&mut p)?.into_iter().map(GrantObject::TableFunction));
+    } else {
+        let mut privileges: Vec<(Privilege, Option<Vec<String>>)> = Vec::new();
+        loop {
+            let privilege = if p.eat_kw("SELECT") {
+                Privilege::Select
+            } else if p.eat_kw("INSERT") {
+                Privilege::Insert
+            } else if p.eat_kw("UPDATE") {
+                Privilege::Update
+            } else if p.eat_kw("DELETE") {
+                Privilege::Delete
+            } else {
+                return Err(p.encountered("privilege"));
+            };
+            let columns = if p.is_sym("(") {
+                column_privileges += 1;
+                Some(p.ident_list1()?)
+            } else {
+                None
+            };
+            privileges.push((privilege, columns));
+            if !p.eat_sym(",") {
+                break;
+            }
+        }
+        p.expect_kw("ON")?;
+        let select_only = |p: &Parser| -> R<()> {
+            if privileges
+                .iter()
+                .any(|(pr, c)| *pr != Privilege::Select || c.is_some())
+            {
+                return Err(p.statement_error("Only SELECT can be granted on this object."));
+            }
+            Ok(())
+        };
+        if p.eat_kw("VIEW") {
+            select_only(&p)?;
+            objects.extend(names(&mut p)?.into_iter().map(GrantObject::View));
+        } else if p.eat_kws(&["CHANGE", "STREAM"]) {
+            select_only(&p)?;
+            objects.extend(names(&mut p)?.into_iter().map(GrantObject::ChangeStream));
+        } else {
+            p.expect_kw("TABLE")?;
+            for table in names(&mut p)? {
+                for (privilege, columns) in &privileges {
+                    match columns {
+                        None => objects.push(GrantObject::Table {
+                            table: table.clone(),
+                            privilege: *privilege,
+                            column: None,
+                        }),
+                        Some(cols) => objects.extend(cols.iter().map(|c| GrantObject::Table {
+                            table: table.clone(),
+                            privilege: *privilege,
+                            column: Some(c.clone()),
+                        })),
+                    }
+                }
+            }
+        }
+    }
+    p.expect_kw(if revoke { "FROM" } else { "TO" })?;
+    p.expect_kw("ROLE")?;
+    let roles = names(&mut p)?;
+    p.expect_eof()?;
+    Ok(GrantStmt {
+        revoke,
+        objects,
+        roles,
+        column_privileges,
+    })
 }

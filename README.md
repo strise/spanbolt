@@ -36,8 +36,8 @@ It also adds what the emulator lacks:
 - **Test controls:** a settable clock and deterministic `ABORTED` injection.
 - **Production behaviour by default.** Where the emulator and production Spanner disagree and we
   have recorded production's answer (full-text search, `NULL_FILTERED` indexes, window functions,
-  filtered indexes, reading a field of a returned `ARRAY<STRUCT>` subquery), spanbolt follows
-  production. `--emulator-compat` restores the emulator's behaviour.
+  filtered indexes, reading a field of a returned `ARRAY<STRUCT>` subquery, INFORMATION_SCHEMA's
+  views and columns), spanbolt follows production. `--emulator-compat` restores the emulator's behaviour.
 
 The extra features live in a small `spanbolt.v1.Control` gRPC service
 (`crates/proto/proto/spanbolt/v1/control.proto`).
@@ -55,7 +55,12 @@ suite and the conformance cases exercise.
   `LABELS`. Path variables, `ANY`/`SHORTEST` search, `SIMPLE` paths and graph elements in results
   or `TO_JSON` are not supported.
 - Not supported: `APPROX_*` distance functions with `options`, backups, IAM policies, the
-  emulator's own command-line flags.
+  emulator's own command-line flags, change stream reads (`READ_<stream>`), sequence values
+  (`GET_NEXT_SEQUENCE_VALUE`; sequences themselves are stored), `ListDatabaseRoles`, and these
+  DDL statements: proto bundles, queues, placements, user-defined functions, vector indexes and
+  expression index keys.
+- Locality groups are validated and stored (DDL, `INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS`) but
+  don't change where or how data is stored.
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the
   client libraries already handle, but the timing differs.
 - Tested on macOS (arm64) and in the linux/arm64 image. CI smoke-tests the linux/amd64 image; the

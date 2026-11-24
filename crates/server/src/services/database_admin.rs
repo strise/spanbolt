@@ -5,7 +5,7 @@ use spanbolt_proto::database_admin as da;
 use spanbolt_proto::database_admin::database_admin_server::DatabaseAdmin;
 use spanbolt_proto::google::iam::v1 as iam;
 use spanbolt_proto::longrunning::Operation;
-use spanbolt_storage::DbState;
+use spanbolt_storage::{DbState, Timestamp};
 use tonic::{Request, Response, Status};
 
 use crate::emulator::{DatabaseEntry, Emulator};
@@ -55,7 +55,12 @@ impl DdlFailure {
 /// Applies DDL statements in order: first every statement against the schema, then the
 /// row-dependent checks and data migration against the rows moved to each intermediate schema.
 /// Nothing is applied on failure.
-pub fn apply_ddl(state: &DbState, statements: &[String]) -> Result<DbState, DdlFailure> {
+/// `now` is `CURRENT_TIMESTAMP()` for the DEFAULT values backfilled into existing rows.
+pub fn apply_ddl(
+    state: &DbState,
+    statements: &[String],
+    now: Timestamp,
+) -> Result<DbState, DdlFailure> {
     let has_rows = state.row_count() > 0;
     let mut schema = (*state.schema).clone();
     // With rows, each statement's schema and checks, for the data phase.
@@ -69,13 +74,13 @@ pub fn apply_ddl(state: &DbState, statements: &[String]) -> Result<DbState, DdlF
     }
     if !has_rows {
         return state
-            .with_schema(schema)
+            .with_schema_at(schema, now)
             .map_err(|e| DdlFailure::Schema(to_status(e)));
     }
     let mut migrated = state.clone();
     for (i, (schema, checks)) in steps.into_iter().enumerate() {
         let next = migrated
-            .with_schema(schema)
+            .with_schema_at(schema, now)
             .map_err(|e| DdlFailure::Data(i, to_status(e)))?;
         for check in &checks {
             next.run_data_check(check)
@@ -103,7 +108,7 @@ fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
                 .map_err(to_status);
         }
         Statement::CreateTable { table, .. } => (&table.name, None),
-        Statement::AlterTable { table, action } => match action {
+        Statement::AlterTable { table, action, .. } => match action {
             AlterTable::AddColumn { column, .. } | AlterTable::AlterColumn { column } => {
                 (table, Some(column.name.as_str()))
             }
@@ -172,7 +177,12 @@ fn apply_schema(
     emulator_compat: bool,
 ) -> Result<Vec<DataCheck>, Status> {
     let ddl = |e: spanbolt_ddl::DdlError| to_status(e.into());
-    let stmt = spanbolt_ddl::parse_statement(sql).map_err(ddl)?;
+    let stmt = if emulator_compat {
+        spanbolt_ddl::parse_statement_emulator_compat(sql)
+    } else {
+        spanbolt_ddl::parse_statement(sql)
+    }
+    .map_err(ddl)?;
     let checks = schema.data_checks(&stmt);
     for check in &checks {
         if let DataCheck::TableEmpty { message, .. } = check
@@ -236,8 +246,12 @@ impl DatabaseAdmin for DatabaseAdminService {
         self.emu.instance(&req.parent)?;
         let name = format!("{}/databases/{id}", req.parent);
         let entry = self.emu.add_database(&name, || {
-            let state = apply_ddl(&DbState::default(), &req.extra_statements)
-                .map_err(DdlFailure::into_status)?;
+            let state = apply_ddl(
+                &DbState::default(),
+                &req.extra_statements,
+                self.emu.clock.now(),
+            )
+            .map_err(DdlFailure::into_status)?;
             self.emu.new_database((*state.schema).clone())
         })?;
         let proto = to_proto(&entry);
@@ -328,8 +342,9 @@ impl DatabaseAdmin for DatabaseAdminService {
         // violate a statement fail the operation, keeping the statements before it.
         let mut schema_error: Option<Status> = None;
         let mut data_error: Option<(usize, Status)> = None;
+        let now = self.emu.clock.now();
         let result = entry.db.update_state(|s| {
-            let failure = match apply_ddl(s, &req.statements) {
+            let failure = match apply_ddl(s, &req.statements, now) {
                 Ok(next) => return Ok(next),
                 Err(f) => f,
             };
@@ -346,7 +361,7 @@ impl DatabaseAdmin for DatabaseAdminService {
             if keep == 0 {
                 return Err(err);
             }
-            apply_ddl(s, &req.statements[..keep]).map_err(|_| err)
+            apply_ddl(s, &req.statements[..keep], now).map_err(|_| err)
         });
         if let Some(e) = schema_error {
             return Err(e);
@@ -391,7 +406,13 @@ impl DatabaseAdmin for DatabaseAdminService {
         req: Request<da::GetDatabaseDdlRequest>,
     ) -> Result<Response<da::GetDatabaseDdlResponse>, Status> {
         let entry = self.emu.database(&req.get_ref().database)?;
-        let statements = entry.db.latest().state.schema.to_ddl();
+        let schema = &entry.db.latest().state.schema;
+        // The emulator leaves roles and grants out of GetDatabaseDdl.
+        let statements = if self.emu.emulator_compat {
+            schema.to_ddl_emulator_compat()
+        } else {
+            schema.to_ddl()
+        };
         Ok(Response::new(da::GetDatabaseDdlResponse {
             statements,
             proto_descriptors: Vec::new(),
@@ -486,10 +507,11 @@ impl DatabaseAdmin for DatabaseAdminService {
 
     async fn list_database_roles(
         &self,
-        req: Request<da::ListDatabaseRolesRequest>,
+        _: Request<da::ListDatabaseRolesRequest>,
     ) -> Result<Response<da::ListDatabaseRolesResponse>, Status> {
-        self.emu.database(&req.get_ref().parent)?;
-        Ok(Response::new(da::ListDatabaseRolesResponse::default()))
+        // Roles are stored but not listed; an empty list would be a different answer. The
+        // emulator also leaves the method unimplemented (an empty message).
+        Err(Status::unimplemented(""))
     }
 
     async fn add_split_points(

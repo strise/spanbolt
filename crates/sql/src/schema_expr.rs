@@ -78,6 +78,66 @@ fn assignable(found: &ColumnType, col: &ColumnType) -> bool {
         )
 }
 
+/// GoogleSQL's literal coercions beyond `assignable`: a STRING literal to DATE or TIMESTAMP and a
+/// FLOAT64 literal to NUMERIC. Only a literal coerces (`CONCAT('1970-01-01', '')` doesn't),
+/// parentheses around it are fine.
+fn literal_coerces(expr: &str, found: &ColumnType, col: &ColumnType) -> bool {
+    let mut e = expr.trim();
+    while let Some(inner) = e.strip_prefix('(').and_then(|x| x.strip_suffix(')')) {
+        e = inner.trim();
+    }
+    match (found, col) {
+        (ColumnType::String(_), ColumnType::Date | ColumnType::Timestamp) => is_string_literal(e),
+        (ColumnType::Float64, ColumnType::Numeric) => {
+            !e.is_empty()
+                && e.chars()
+                    .all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-'))
+        }
+        _ => false,
+    }
+}
+
+fn c_escape_quotes(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 16);
+    for c in raw.chars() {
+        if matches!(c, '\'' | '"' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// A literal as GoogleSQL prints it in errors: a string in double quotes.
+fn literal_text(expr: &str) -> String {
+    let mut e = expr.trim();
+    while let Some(inner) = e.strip_prefix('(').and_then(|x| x.strip_suffix(')')) {
+        e = inner.trim();
+    }
+    match e.get(1..e.len().saturating_sub(1)) {
+        Some(body) if is_string_literal(e) => format!("\"{body}\""),
+        _ => e.to_string(),
+    }
+}
+
+/// A single quoted string literal: `'...'` or `"..."`, with no unescaped quote of the same kind
+/// inside (so `'a' || 'b'` is not one).
+fn is_string_literal(e: &str) -> bool {
+    let Some(q) = e.chars().next().filter(|c| matches!(c, '\'' | '"')) else {
+        return false;
+    };
+    let body = &e[1..];
+    let mut chars = body.char_indices();
+    while let Some((i, c)) = chars.next() {
+        if c == '\\' {
+            chars.next();
+        } else if c == q {
+            return i + 1 == body.len();
+        }
+    }
+    false
+}
+
 impl ExprEvaluator for SchemaExprs {
     fn validate_property_graph(
         &self,
@@ -105,15 +165,35 @@ impl ExprEvaluator for SchemaExprs {
                 ExprKind::Generated { column } => format!(
                     "Error parsing the definition of generated column `{t}`.`{column}`: {msg}"
                 ),
-                ExprKind::Default { column, .. } => {
+                ExprKind::Default { column, .. } if self.engine.opts.emulator_compat => {
                     format!("Error parsing the default value of column `{t}`.`{column}`: {msg}")
                 }
+                // Production Spanner's wording, with its quotes escaped as Spanner sends them.
+                ExprKind::Default { column, .. } => c_escape_quotes(&format!(
+                    "Error parsing default value expression '{expr}' from column '{column}' in table '{t}': {msg}"
+                )),
             })
         };
         let stmt = match crate::analyze::statement(&self.cat, &sql, &row_param(table)) {
             Ok(s) => s,
+            Err(e) if e.code == spanbolt_storage::Code::Unimplemented => return Err(e),
             Err(e) => return Err(wrap(&e.message)),
         };
+        // PENDING_COMMIT_TIMESTAMP() analyses anywhere; as a DEFAULT it must be the whole value.
+        if let ExprKind::Default { column, .. } = kind
+            && !spanbolt_ddl::is_pending_commit_timestamp(expr)
+            && spanbolt_storage::expr::mentions(expr, "pending_commit_timestamp")
+        {
+            let msg = crate::plan::PENDING_COMMIT_TIMESTAMP_USE;
+            return Err(if self.engine.opts.emulator_compat {
+                wrap(msg)
+            } else {
+                Error::invalid_argument(format!(
+                    "Error parsing default value expression '{expr}' from column '{column}' in table '{}': {msg}",
+                    table.name
+                ))
+            });
+        }
         if let ExprKind::Default { ty, .. } = kind
             && !expr.trim().eq_ignore_ascii_case("NULL")
         {
@@ -130,6 +210,20 @@ impl ExprEvaluator for SchemaExprs {
             if let Some(found) = found
                 && !assignable(&found, ty)
             {
+                if literal_coerces(expr, &found, ty) {
+                    // Evaluating the literal checks it: a bad one fails as GoogleSQL's literal
+                    // coercion does.
+                    let nulls = vec![Value::Null; table.columns.len()];
+                    let now = spanbolt_storage::Timestamp::system_now();
+                    return match self.eval(expr, table, &nulls, ty, now) {
+                        Ok(_) => Ok(()),
+                        Err(_) => Err(wrap(&format!(
+                            "Could not cast literal {} to type {} [at 1:1]",
+                            literal_text(expr),
+                            types::spanner_name(ty)
+                        ))),
+                    };
+                }
                 return Err(wrap(&format!(
                     "Expected type {}; found {} [at 1:1]",
                     types::spanner_name(ty),
@@ -140,7 +234,14 @@ impl ExprEvaluator for SchemaExprs {
         Ok(())
     }
 
-    fn eval(&self, expr: &str, table: &TableMeta, row: &[Value], ty: &ColumnType) -> Result<Value> {
+    fn eval(
+        &self,
+        expr: &str,
+        table: &TableMeta,
+        row: &[Value],
+        ty: &ColumnType,
+        now: spanbolt_storage::Timestamp,
+    ) -> Result<Value> {
         let params = row_param(table);
         let sql = format!(
             "SELECT CAST(({expr}) AS {}) FROM UNNEST(@__row)",
@@ -156,11 +257,7 @@ impl ExprEvaluator for SchemaExprs {
             state: &self.state,
             cat: &self.cat,
             params: &params,
-            now: spanbolt_storage::Timestamp::from_nanos(
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_nanos() as i128),
-            ),
+            now,
             rw: None,
             with: RefCell::new(Vec::new()),
             memo: RefCell::new(HashMap::new()),

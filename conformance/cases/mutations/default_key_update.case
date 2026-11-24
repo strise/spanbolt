@@ -1,0 +1,72 @@
+tags: mutations
+schema:
+  CREATE TABLE T (
+    A INT64 NOT NULL,
+    B INT64 NOT NULL DEFAULT (7),
+    V STRING(MAX),
+  ) PRIMARY KEY (A, B)
+insert T cols=A,B,V:
+  [1, 7, "x"]
+
+case update_omits_default_key
+update T cols=A,V:
+  [1, "y"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Implicit use of primary key default value for column `T.B` is not allowed in UPDATE mutations. The column must have a specific value.
+expect@spanner:
+  same
+
+case insert_or_update_omits_default_key
+insert_or_update T cols=A,V:
+  [1, "y"]
+expect:
+  ok
+expect@spanner:
+  same
+read T cols=A,B,V:
+  all
+expect:
+  columns: A INT64, B INT64, V STRING
+  ["1","7","y"]
+expect@spanner:
+  same
+
+case replace_omits_default_key
+replace T cols=A,V:
+  [1, "y"]
+expect:
+  ok
+expect@spanner:
+  same
+read T cols=A,B,V:
+  all
+expect:
+  columns: A INT64, B INT64, V STRING
+  ["1","7","y"]
+expect@spanner:
+  same
+
+case insert_omits_default_key
+insert T cols=A,V:
+  [2, "y"]
+expect:
+  ok
+expect@spanner:
+  same
+read T cols=A,B,V:
+  all
+expect:
+  columns: A INT64, B INT64, V STRING
+  ["1","7","x"]
+  ["2","7","y"]
+expect@spanner:
+  same
+
+case dml_update_default_key
+dml:
+  UPDATE T SET V = 'z' WHERE A = 1
+expect:
+  count: 1
+expect@spanner:
+  same

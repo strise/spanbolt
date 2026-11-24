@@ -1,0 +1,344 @@
+# Roles and fine-grained access control grants: validation and GetDatabaseDdl. The emulator
+# accepts role and grant DDL without checking it and leaves it out of GetDatabaseDdl.
+tags: ddl roles
+schema:
+  CREATE TABLE T1 (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+    W STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE TABLE T2 (
+    K INT64 NOT NULL,
+  ) PRIMARY KEY (K);
+  CREATE INDEX T1ByV ON T1(V);
+  CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1;
+  CREATE ROLE R1;
+  CREATE ROLE R2;
+  CREATE ROLE R3
+
+case grants_in_ddl
+ddl:
+  GRANT SELECT ON TABLE T1, T2 TO ROLE R1, R2
+ddl:
+  GRANT INSERT ON TABLE T1 TO ROLE R1
+ddl:
+  GRANT DELETE ON TABLE T1 TO ROLE R1
+ddl:
+  GRANT DELETE, UPDATE, INSERT ON TABLE T2 TO ROLE R3
+ddl:
+  GRANT SELECT ON VIEW V1 TO ROLE R1
+ddl:
+  GRANT ROLE R1, R2 TO ROLE R3
+ddl:
+  REVOKE INSERT ON TABLE T1 FROM ROLE R1
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R1"
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "GRANT ROLE R1, R2 TO ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "GRANT SELECT, DELETE ON TABLE T1 TO ROLE R1"
+  "GRANT SELECT ON TABLE T1 TO ROLE R2"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "GRANT SELECT ON TABLE T2 TO ROLE R1"
+  "GRANT SELECT ON TABLE T2 TO ROLE R2"
+  "GRANT INSERT, UPDATE, DELETE ON TABLE T2 TO ROLE R3"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+  "GRANT SELECT ON VIEW V1 TO ROLE R1"
+query:
+  SELECT ROLE_NAME FROM INFORMATION_SCHEMA.ROLES WHERE NOT IS_SYSTEM ORDER BY ROLE_NAME
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: INFORMATION_SCHEMA.ROLES [at 1:23]
+expect@spanner:
+  columns: ROLE_NAME STRING
+  ["R1"]
+  ["R2"]
+  ["R3"]
+
+case column_grants
+ddl:
+  GRANT SELECT(V, W), UPDATE(V) ON TABLE T1 TO ROLE R1
+expect:
+  error: INVALID_ARGUMENT
+  message: Errors parsing Spanner DDL statement: GRANT SELECT(V, W), UPDATE(V) ON TABLE T1 TO ROLE R1 has errors: -Emulator does not yet support column level access controls -Emulator does not yet support column level access controls
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R1"
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "GRANT SELECT(V, W), UPDATE(V) ON TABLE T1 TO ROLE R1"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+
+case role_errors
+ddl:
+  CREATE ROLE R1
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Duplicate name in schema: R1.
+ddl:
+  CREATE ROLE public
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid role name. `public` is a reserved system role name, ignoring case.
+ddl:
+  CREATE ROLE PUBLIC
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid role name. `PUBLIC` is a reserved system role name, ignoring case.
+ddl:
+  DROP ROLE Nope
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: Nope.
+ddl:
+  GRANT SELECT ON TABLE T1 TO ROLE Nope
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: Nope.
+ddl:
+  GRANT SELECT ON TABLE Nope TO ROLE R1
+expect@spanner:
+  error: NOT_FOUND
+  message: Table not found: Nope
+ddl:
+  GRANT SELECT ON VIEW Nope TO ROLE R1
+expect@spanner:
+  error: NOT_FOUND
+  message: VIEW not found: Nope
+ddl:
+  GRANT SELECT ON CHANGE STREAM Nope TO ROLE R1
+expect@spanner:
+  error: NOT_FOUND
+  message: Change Stream not found: Nope
+ddl:
+  GRANT EXECUTE ON TABLE FUNCTION READ_Nope TO ROLE R1
+expect@spanner:
+  error: NOT_FOUND
+  message: TABLE_FUNCTION not found: READ_Nope
+ddl:
+  GRANT ROLE Nope TO ROLE R1
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: Nope.
+ddl:
+  GRANT ROLE R1 TO ROLE Nope
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: Nope.
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R1"
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+
+case drop_role_with_privileges
+ddl:
+  REVOKE SELECT ON TABLE T1 FROM ROLE R1
+ddl:
+  GRANT SELECT ON TABLE T1 TO ROLE R1
+ddl:
+  DROP ROLE R1
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot drop role `R1` which has active privileges. All privileges must be revoked from a role before it can be dropped.
+ddl:
+  REVOKE SELECT ON TABLE T1 FROM ROLE R1
+ddl:
+  DROP ROLE R1
+ddl:
+  GRANT ROLE R2 TO ROLE R3
+ddl:
+  DROP ROLE R2
+ddl:
+  DROP ROLE R3
+ddl:
+  DROP ROLE R2
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: R2.
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  same
+
+case drop_table_drops_grants
+ddl:
+  GRANT SELECT ON TABLE T2 TO ROLE R1
+ddl:
+  DROP TABLE T2
+expect@spanner:
+  same
+ddl:
+  DROP ROLE R1
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+
+case rename_rewrites_grants
+ddl:
+  GRANT SELECT ON TABLE T2 TO ROLE R1
+ddl:
+  ALTER TABLE T2 RENAME TO T9
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T9 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R1"
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T9 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "GRANT SELECT ON TABLE T9 TO ROLE R1"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+
+case drop_role_member_of
+ddl:
+  GRANT ROLE R1 TO ROLE R2
+ddl:
+  DROP ROLE R2
+ddl:
+  REVOKE ROLE R1 FROM ROLE R2
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: R2.
+ddl:
+  DROP ROLE R2
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Role not found: R2.
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R1"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+
+case drop_objects_with_grants
+ddl:
+  CREATE CHANGE STREAM Cs FOR T2
+ddl:
+  GRANT SELECT ON VIEW V1 TO ROLE R1
+ddl:
+  GRANT SELECT ON CHANGE STREAM Cs TO ROLE R1
+ddl:
+  GRANT EXECUTE ON TABLE FUNCTION READ_Cs TO ROLE R1
+ddl:
+  DROP VIEW V1
+ddl:
+  DROP CHANGE STREAM Cs
+ddl:
+  DROP ROLE R1
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+expect@spanner:
+  statements:
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+
+case grant_unknown_column
+ddl:
+  GRANT SELECT(Nope) ON TABLE T1 TO ROLE R1
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: GRANT SELECT(Nope) ON TABLE T1 TO ROLE R1 : Emulator does not yet support column level access controls
+expect@spanner:
+  error: NOT_FOUND
+  message: Column not found in table T1: Nope
+ddl:
+  GRANT SELECT(V), INSERT ON TABLE T1 TO ROLE R1
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: GRANT SELECT(V), INSERT ON TABLE T1 TO ROLE R1 : Emulator does not yet support column level access controls
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+expect@spanner:
+  statements:
+  "CREATE ROLE R1"
+  "CREATE ROLE R2"
+  "CREATE ROLE R3"
+  "CREATE TABLE T1 (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX T1ByV ON T1(V)"
+  "GRANT SELECT(V), INSERT ON TABLE T1 TO ROLE R1"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"

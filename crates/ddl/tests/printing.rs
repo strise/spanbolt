@@ -99,7 +99,7 @@ fn prints_like_the_emulator() {
             .apply(&parse_statement(s).unwrap())
             .unwrap_or_else(|e| panic!("{s}: {e}"));
     }
-    let got = schema.to_ddl();
+    let got = schema.to_ddl_emulator_compat();
     for (g, e) in got.iter().zip(EXPECTED) {
         assert_eq!(g, e);
     }
@@ -121,4 +121,85 @@ fn table_without_primary_key_gets_hidden_rowid() {
     // The printed form parses back to the same table.
     let again = parse_statement(expected).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(print_statement(&again), expected);
+}
+
+#[test]
+fn on_update_prints_after_default_and_round_trips() {
+    let expected = "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(Id)";
+    let mut schema = Schema::default();
+    // ON UPDATE may come before DEFAULT; it is printed after it.
+    let stmt = parse_statement(
+        "CREATE TABLE T (Id INT64 NOT NULL, Updated TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP()) DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (Id)",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    schema.apply(&stmt).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(schema.to_ddl(), vec![expected.to_string()]);
+    let again = parse_statement(expected).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(print_statement(&again), expected);
+    for s in [
+        "ALTER TABLE T ALTER COLUMN Updated SET ON UPDATE (PENDING_COMMIT_TIMESTAMP())",
+        "ALTER TABLE T ALTER COLUMN Updated DROP ON UPDATE",
+    ] {
+        let stmt = parse_statement(s).unwrap_or_else(|e| panic!("{s}: {e}"));
+        assert_eq!(print_statement(&stmt), s);
+    }
+}
+
+#[test]
+fn on_update_needs_a_default() {
+    let err = parse_statement(
+        "CREATE TABLE T (Id INT64 NOT NULL, U TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP())) PRIMARY KEY (Id)",
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Encountered 'ON' while parsing: column_def"),
+        "{err}"
+    );
+}
+
+#[test]
+fn grants_print_after_their_objects_and_round_trip() {
+    let ddl = [
+        "CREATE TABLE T (K INT64 NOT NULL, V STRING(MAX), W STRING(MAX)) PRIMARY KEY (K)",
+        "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T.K FROM T",
+        "CREATE ROLE R1",
+        "CREATE ROLE R2",
+        "GRANT DELETE, SELECT ON TABLE T TO ROLE R2, R1",
+        "GRANT UPDATE(W, V) ON TABLE T TO ROLE R1",
+        "GRANT SELECT ON VIEW V1 TO ROLE R1",
+        "GRANT ROLE R2, spanner_info_reader TO ROLE R1",
+    ];
+    let mut schema = Schema::default();
+    for s in ddl {
+        schema.apply(&parse_statement(s).unwrap()).unwrap();
+    }
+    let printed = schema.to_ddl();
+    assert_eq!(
+        printed,
+        [
+            "CREATE ROLE R1",
+            "CREATE ROLE R2",
+            "GRANT ROLE R2, spanner_info_reader TO ROLE R1",
+            "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)",
+            "GRANT SELECT, UPDATE(V, W), DELETE ON TABLE T TO ROLE R1",
+            "GRANT SELECT, DELETE ON TABLE T TO ROLE R2",
+            "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T.K FROM T",
+            "GRANT SELECT ON VIEW V1 TO ROLE R1",
+        ]
+    );
+    // Snapshots reload through the emulator-compat rules.
+    let mut reloaded = Schema::default();
+    for s in &printed {
+        reloaded
+            .apply_emulator_compat(&parse_statement(s).unwrap())
+            .unwrap();
+    }
+    assert_eq!(reloaded.to_ddl(), printed);
+    assert!(
+        !schema
+            .to_ddl_emulator_compat()
+            .iter()
+            .any(|s| s.contains("ROLE"))
+    );
 }

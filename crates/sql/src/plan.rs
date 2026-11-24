@@ -168,6 +168,10 @@ pub struct Planner<'c> {
     graph: Option<graph_plan::GraphCx>,
     /// The previous statement's rows, for the next `GraphRefScan` of a linear graph query.
     graph_ref: Option<Planned>,
+    /// The base-table columns each table scan reads.
+    pub reads: Vec<crate::prepared::ScanRead>,
+    /// The statement reads an INFORMATION_SCHEMA table.
+    pub reads_info_schema: bool,
 }
 
 /// What Cloud Spanner checks about where search functions appear in a statement.
@@ -461,6 +465,27 @@ fn refs_only(e: &AnyResolvedExprProto, ids: &[i64]) -> bool {
         }),
         _ => false,
     }
+}
+
+/// PENDING_COMMIT_TIMESTAMP() anywhere but as a DML value (also a THEN RETURN of its column).
+pub(crate) const PENDING_COMMIT_TIMESTAMP_USE: &str = "The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.";
+
+/// The columns of the DML target table `ts` (positions in `layout`) that `es` refer to. Among
+/// the columns the statement names, so an expression too complex to analyse counts only those.
+pub(crate) fn columns_read(
+    es: &[&AnyResolvedExprProto],
+    ts: &ResolvedTableScanProto,
+    layout: &[i64],
+) -> Vec<usize> {
+    ts.column_index_list
+        .iter()
+        .map(|&i| i as usize)
+        .filter(|&c| {
+            layout
+                .get(c)
+                .is_some_and(|id| es.iter().any(|e| refs_any(e, std::slice::from_ref(id))))
+        })
+        .collect()
 }
 
 fn refs_any(e: &AnyResolvedExprProto, ids: &[i64]) -> bool {
@@ -849,6 +874,8 @@ impl<'c> Planner<'c> {
             subplans: Vec::new(),
             graph: None,
             graph_ref: None,
+            reads: Vec::new(),
+            reads_info_schema: false,
         }
     }
 
@@ -1204,6 +1231,7 @@ impl<'c> Planner<'c> {
                 })
             }
             Relation::Info(it) => {
+                self.reads_info_schema = true;
                 let key = it
                     .columns
                     .iter()
@@ -1245,6 +1273,12 @@ impl<'c> Planner<'c> {
         let col_of = |id: i64| layout.iter().position(|&l| l == id).map(|p| idx[p]);
         let mut preds = key_preds(conj, layout);
         let forced = hint_value(hints, "", "FORCE_INDEX").and_then(literal_of);
+        let read_at = self.reads.len();
+        self.reads.push(crate::prepared::ScanRead {
+            table: tid,
+            index: None,
+            columns: idx.to_vec(),
+        });
         let forced = match forced {
             Some(Value::String(name)) => {
                 let is_search = self.cat.schema.search_indexes.values().any(|si| {
@@ -1312,6 +1346,7 @@ impl<'c> Planner<'c> {
         let (source_ix, choice): (Option<IndexId>, KeyChoice) = match forced {
             Some(Some(ix)) => {
                 self.check_null_filtered(ix, tid, t, hints, conj, &col_of)?;
+                self.reads[read_at].index = Some(ix);
                 (Some(ix), choose_key(&index_key(ix), &mut preds))
             }
             Some(None) => (None, choose_key(&table_key, &mut preds)),
@@ -1582,8 +1617,16 @@ impl<'c> Planner<'c> {
         if let Some(w) = where_expr {
             conjuncts(w, &mut conj);
         }
+        let read_at = self.reads.len();
         let mut op =
             self.base_table(tid, ts, &base.hint_list, &layout, &idx, &Scope::TOP, &conj)?;
+        // The scan reads the whole row, but the statement reads only the columns its WHERE
+        // names (SET values and THEN RETURN are checked by the caller).
+        self.reads[read_at] = crate::prepared::ScanRead {
+            table: tid,
+            index: None,
+            columns: where_expr.map_or_else(Vec::new, |w| columns_read(&[w], ts, &layout)),
+        };
         if let Some(w) = where_expr {
             let pred = self.expr(
                 w,
@@ -2536,9 +2579,7 @@ impl<'c> Planner<'c> {
                 Err(e) => Err(e),
             }),
             "pending_commit_timestamp" => {
-                return Err(Error::invalid_argument(
-                    "The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.",
-                ));
+                return Err(Error::invalid_argument(PENDING_COMMIT_TIMESTAMP_USE));
             }
             _ => {
                 let sig = Sig {

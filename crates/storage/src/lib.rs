@@ -5,6 +5,7 @@ pub mod catalog;
 pub mod error;
 pub mod expr;
 pub mod key;
+pub mod pending;
 pub mod snapshot;
 pub mod state;
 pub mod testing;

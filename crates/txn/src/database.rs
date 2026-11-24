@@ -290,7 +290,7 @@ impl Database {
             None => None,
         };
         let ts = self.clock.next_commit_ts();
-        let mut w = Writer::new(&latest.state, ts);
+        let mut w = Writer::new(&latest.state, ts).with_now(self.clock.now());
         for m in input.mutations {
             w.apply(m)?;
         }
@@ -313,7 +313,7 @@ impl Database {
         let mut log = self.commit.lock();
         let latest = self.latest();
         let schema = f(&latest.state)?;
-        let state = latest.state.with_schema(schema)?;
+        let state = latest.state.with_schema_at(schema, self.clock.now())?;
         let ts = self.clock.next_commit_ts();
         self.publish(&mut log, ts, state, None);
         Ok(ts)

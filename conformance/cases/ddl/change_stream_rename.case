@@ -1,0 +1,64 @@
+# Renaming a table that a change stream tracks.
+tags: ddl change_stream
+schema:
+  CREATE TABLE T1 (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE TABLE T2 (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE CHANGE STREAM Cs FOR T1(V)
+
+case rename_to
+ddl:
+  ALTER TABLE T1 RENAME TO T9
+ddl:
+  ALTER TABLE T9 DROP COLUMN V
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column T9.V . Column T9.V is tracked by 1 Change Stream: Cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column T9.V. Column V is tracked by 1 Change Stream: Cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.
+ddl:
+  DROP TABLE T9
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot drop table T9. Table T9 is tracked by 1 Change Stream: Cs. Tables explicitly tracked by a Change Stream cannot be dropped. Please drop the Change Stream or modify its FOR clause to stop tracking the table explicitly before dropping the table.
+expect@spanner:
+  same
+
+case rename_with_synonym
+ddl:
+  ALTER TABLE T1 RENAME TO T9, ADD SYNONYM T1
+ddl:
+  ALTER TABLE T9 DROP COLUMN V
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column T9.V . Column T9.V is tracked by 1 Change Stream: Cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column T9.V. Column V is tracked by 1 Change Stream: Cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.
+
+case rename_swap
+ddl:
+  RENAME TABLE T1 TO Tmp, T2 TO T1, Tmp TO T2
+expect:
+  error: NOT_FOUND
+  message: Table not found: Tmp
+expect@spanner:
+  ok
+ddl:
+  ALTER TABLE T2 DROP COLUMN V
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column T2.V. Column V is tracked by 1 Change Stream: Cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.
+ddl:
+  ALTER TABLE T1 DROP COLUMN V
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column T1.V . Column T1.V is tracked by 1 Change Stream: Cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.
+expect@spanner:
+  ok

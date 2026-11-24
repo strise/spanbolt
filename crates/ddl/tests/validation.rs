@@ -1,6 +1,8 @@
 //! Negative cases; expected texts were taken from emulator 1.5.59.
 
-use spanbolt_ddl::{DataCheck, DdlError, Schema, parse_statement};
+use spanbolt_ddl::{
+    DataCheck, DdlError, Schema, parse_statement, parse_statement_emulator_compat, print_statement,
+};
 
 const BASE: &[&str] = &[
     "CREATE TABLE P (id INT64 NOT NULL, s STRING(MAX), ts TIMESTAMP, a ARRAY<INT64>, j JSON) PRIMARY KEY (id)",
@@ -242,7 +244,7 @@ fn rejects_like_the_emulator() {
         (
             "ALTER TABLE H DROP COLUMN a",
             Pre,
-            "Cannot drop column H.a . Column H.a is tracked by 1 Change Stream: cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
+            "Cannot drop column H.a. Column a is tracked by 1 Change Stream: cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
         ),
         (
             "ALTER TABLE T DROP COLUMN ts",
@@ -492,4 +494,461 @@ fn drop_stored_null_filter_column() {
     let f1 = s.index("f1").unwrap();
     assert!(f1.storing.is_empty());
     assert_eq!(f1.filter, None);
+}
+
+/// Spanner DDL spanbolt doesn't model is UNIMPLEMENTED; DDL Spanner doesn't have stays a syntax
+/// error.
+#[test]
+fn unsupported_ddl_is_unimplemented() {
+    for (sql, what) in [
+        ("CREATE PROTO BUNDLE (foo.Bar)", "CREATE PROTO BUNDLE"),
+        ("ALTER PROTO BUNDLE INSERT (foo.Bar)", "ALTER PROTO BUNDLE"),
+        ("DROP PROTO BUNDLE", "DROP PROTO BUNDLE"),
+        (
+            "CREATE QUEUE Q (Id INT64, Payload BYTES(MAX) NOT NULL) PRIMARY KEY (Id)",
+            "CREATE QUEUE",
+        ),
+        ("DROP QUEUE Q", "DROP QUEUE"),
+        (
+            "CREATE PLACEMENT p OPTIONS (instance_partition = 'p1')",
+            "CREATE PLACEMENT",
+        ),
+        (
+            "CREATE FUNCTION F(x INT64) RETURNS INT64 AS (x + 1)",
+            "CREATE FUNCTION",
+        ),
+        (
+            "CREATE OR REPLACE FUNCTION F(x INT64) RETURNS INT64 AS (x + 1)",
+            "CREATE FUNCTION",
+        ),
+        ("DROP FUNCTION F", "DROP FUNCTION"),
+        (
+            "CREATE VECTOR INDEX V ON T(E) OPTIONS (distance_type = 'COSINE')",
+            "CREATE VECTOR INDEX",
+        ),
+        (
+            "ALTER VECTOR INDEX V ADD STORED COLUMN X",
+            "ALTER VECTOR INDEX",
+        ),
+        ("DROP VECTOR INDEX V", "DROP VECTOR INDEX"),
+        (
+            "CREATE INDEX I ON P((JSON_VALUE(j, '$.city')))",
+            "An index key expression",
+        ),
+        (
+            "CREATE INDEX I ON P(s, (LOWER(s)))",
+            "An index key expression",
+        ),
+    ] {
+        let e = parse_statement(sql).expect_err(sql);
+        assert_eq!(
+            kind(&e),
+            (
+                "Unimpl",
+                format!("{what} is not supported by spanbolt yet.").as_str()
+            ),
+            "{sql}"
+        );
+    }
+    for (sql, msg) in [
+        (
+            "CREATE WIDGET W",
+            "Error parsing Spanner DDL statement: CREATE WIDGET W : Syntax error on line 1, column 8: Encountered 'WIDGET' while parsing: create_statement",
+        ),
+        (
+            "ALTER WIDGET W",
+            "Error parsing Spanner DDL statement: ALTER WIDGET W : Syntax error on line 1, column 7: Encountered 'WIDGET' while parsing: alter_statement",
+        ),
+        (
+            "DROP WIDGET W",
+            "Error parsing Spanner DDL statement: DROP WIDGET W : Syntax error on line 1, column 6: Encountered 'WIDGET' while parsing: drop_statement",
+        ),
+    ] {
+        assert_eq!(kind(&parse_statement(sql).expect_err(sql)), ("Inv", msg));
+    }
+}
+
+fn applied(stmts: &[&str]) -> Result<Schema, DdlError> {
+    let mut s = base();
+    for stmt in stmts {
+        s.apply(&parse_statement(stmt)?)?;
+    }
+    Ok(s)
+}
+
+#[test]
+fn column_keyword_is_optional() {
+    let s = applied(&[
+        "ALTER TABLE G ADD y INT64",
+        "ALTER TABLE G ALTER y INT64 NOT NULL",
+        "ALTER TABLE G ALTER y SET DEFAULT (7)",
+        "ALTER TABLE G DROP x",
+    ])
+    .unwrap();
+    let g = s.table("G").unwrap();
+    let names: Vec<_> = g.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["id", "y"]);
+    assert_eq!(g.columns[1].default.as_deref(), Some("7"));
+    // ADD still reads constraints, synonyms and row deletion policies first.
+    applied(&[
+        "ALTER TABLE G ADD CHECK (x > 0)",
+        "ALTER TABLE G ADD CONSTRAINT ck CHECK (x < 9)",
+    ])
+    .unwrap();
+    let e = parse_statement("ALTER TABLE G ADD IF NOT EXISTS y INT64").unwrap_err();
+    assert!(
+        e.to_string()
+            .ends_with("column 19: Encountered 'IF' while parsing: identifier"),
+        "{e}"
+    );
+}
+
+#[test]
+fn primary_key_inside_the_table_body() {
+    for (sql, key) in [
+        (
+            "CREATE TABLE X (Id INT64 NOT NULL PRIMARY KEY, V STRING(MAX))",
+            "PRIMARY KEY(Id)",
+        ),
+        (
+            "CREATE TABLE X (Id INT64, V STRING(MAX), PRIMARY KEY (Id, V DESC))",
+            "PRIMARY KEY(Id, V DESC)",
+        ),
+        (
+            "CREATE TABLE X (PRIMARY KEY (Id), Id INT64)",
+            "PRIMARY KEY(Id)",
+        ),
+        ("CREATE TABLE X (Id INT64, PRIMARY KEY ())", "PRIMARY KEY()"),
+        (
+            "CREATE TABLE X (id INT64 NOT NULL, Id2 INT64 NOT NULL, PRIMARY KEY (id, Id2)), INTERLEAVE IN PARENT P ON DELETE CASCADE",
+            "PRIMARY KEY(id, Id2)",
+        ),
+    ] {
+        let stmt = parse_statement(sql).unwrap_or_else(|e| panic!("{sql}: {e}"));
+        let printed = print_statement(&stmt);
+        assert!(printed.contains(key), "{sql} printed {printed}");
+        applied(&[sql]).unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    for (sql, msg) in [
+        (
+            "CREATE TABLE X (Id INT64, PRIMARY KEY (Id)) PRIMARY KEY (Id)",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64 PRIMARY KEY)",
+            "Multiple columns declared as PRIMARY KEY",
+        ),
+        (
+            "CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64, PRIMARY KEY (J))",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64) PRIMARY KEY (J)",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "CREATE TABLE X (Id INT64, PRIMARY KEY (Id), PRIMARY KEY (Id))",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "ALTER TABLE G ADD COLUMN y INT64 PRIMARY KEY",
+            "Unexpected PRIMARY KEY clause",
+        ),
+    ] {
+        let e = parse_statement(sql).expect_err(sql);
+        assert_eq!(
+            kind(&e),
+            (
+                "Inv",
+                format!("Error parsing Spanner DDL statement: {sql} : {msg}").as_str()
+            )
+        );
+    }
+}
+
+#[test]
+fn if_exists_forms() {
+    let s = applied(&[
+        "ALTER TABLE IF EXISTS Nope ADD COLUMN y INT64",
+        "ALTER TABLE IF EXISTS G ADD COLUMN y INT64",
+        "CREATE CHANGE STREAM IF NOT EXISTS cs FOR ALL",
+        "CREATE CHANGE STREAM IF NOT EXISTS cs2 FOR G",
+    ])
+    .unwrap();
+    assert!(s.table("G").unwrap().column("y").is_some());
+    let streams: Vec<_> = s
+        .opaque
+        .iter()
+        .filter(|o| o.kind == "CHANGE STREAM")
+        .map(|o| o.ddl.as_str())
+        .collect();
+    assert_eq!(
+        streams,
+        [
+            "CREATE CHANGE STREAM cs FOR G, H(a)",
+            "CREATE CHANGE STREAM cs2 FOR G"
+        ]
+    );
+    let e = applied(&["ALTER TABLE IF EXISTS G DROP COLUMN Nope"]).unwrap_err();
+    assert_eq!(kind(&e), ("Nf", "Column not found in table G: Nope"));
+    let stmt = parse_statement("ALTER TABLE IF EXISTS G ADD COLUMN y INT64").unwrap();
+    assert_eq!(
+        print_statement(&stmt),
+        "ALTER TABLE IF EXISTS G ADD COLUMN y INT64"
+    );
+}
+
+#[test]
+fn alter_search_index() {
+    let s = applied(&[
+        "ALTER TABLE H ADD COLUMN u TOKENLIST AS (TOKENIZE_FULLTEXT(a)) HIDDEN",
+        "ALTER SEARCH INDEX hs ADD COLUMN u",
+        "ALTER SEARCH INDEX hs ADD STORED COLUMN n",
+    ])
+    .unwrap();
+    let hs = &s.search_indexes["hs"];
+    assert_eq!(hs.columns, ["t", "u"]);
+    assert_eq!(hs.storing, ["n"]);
+    let s2 = {
+        let mut s2 = s.clone();
+        s2.apply(&parse_statement("ALTER SEARCH INDEX hs DROP COLUMN t").unwrap())
+            .unwrap();
+        s2.apply(&parse_statement("ALTER SEARCH INDEX hs DROP STORED COLUMN n").unwrap())
+            .unwrap();
+        s2
+    };
+    assert_eq!(s2.search_indexes["hs"].columns, ["u"]);
+    assert!(s2.search_indexes["hs"].storing.is_empty());
+    for (sql, k, msg) in [
+        (
+            "ALTER SEARCH INDEX hs ADD COLUMN t",
+            "Inv",
+            "Index hs specifies key column t twice.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs ADD COLUMN nope",
+            "Pre",
+            "Index hs specifies key column nope which does not exist in the index's base table.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs ADD COLUMN a",
+            "Pre",
+            "Cannot alter non-TOKENLIST key column a in search index hs. You can use STORED COLUMN in ALTER SEARCH INDEX statement if you want to modify a stored column in this search index.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs ADD STORED COLUMN n",
+            "Inv",
+            "Index hs specifies stored column n twice.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs DROP STORED COLUMN a",
+            "Nf",
+            "Column not found in table hs: a",
+        ),
+        (
+            "ALTER SEARCH INDEX nope ADD COLUMN u",
+            "Nf",
+            "Index not found: nope",
+        ),
+    ] {
+        let mut s3 = s.clone();
+        let e = s3.apply(&parse_statement(sql).unwrap()).expect_err(sql);
+        assert_eq!(kind(&e), (k, msg), "{sql}");
+    }
+    let e = applied(&["ALTER SEARCH INDEX hs DROP COLUMN t"]).unwrap_err();
+    assert_eq!(
+        kind(&e),
+        (
+            "Pre",
+            "Cannot drop the only key t in search index hs. You can use DROP SEARCH INDEX to completely drop this search index."
+        )
+    );
+    let sql = "ALTER SEARCH INDEX hs ADD u";
+    assert_eq!(
+        kind(&parse_statement(sql).unwrap_err()),
+        (
+            "Inv",
+            "Error parsing Spanner DDL statement: ALTER SEARCH INDEX hs ADD u : Syntax error on line 1, column 23: Encountered 'ADD' while parsing: alter_search_index_statement"
+        )
+    );
+    // The emulator's grammar has no ALTER SEARCH INDEX.
+    let sql = "ALTER SEARCH INDEX hs ADD COLUMN u";
+    assert_eq!(
+        kind(&parse_statement_emulator_compat(sql).unwrap_err()),
+        (
+            "Inv",
+            "Error parsing Spanner DDL statement: ALTER SEARCH INDEX hs ADD COLUMN u : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement"
+        )
+    );
+}
+
+#[test]
+fn interleave_in_rejects_on_delete() {
+    let sql = "CREATE TABLE D (id INT64 NOT NULL, c INT64 NOT NULL) PRIMARY KEY (id, c), INTERLEAVE IN P ON DELETE CASCADE";
+    assert_eq!(
+        kind(&parse_statement(sql).unwrap_err()),
+        (
+            "Inv",
+            "table D uses INTERLEAVE IN and ON DELETE, which is not allowed since there is no parent/child relationship between rows of the two tables. Did you mean to use INTERLEAVE IN PARENT?"
+        )
+    );
+    assert_eq!(
+        kind(&parse_statement_emulator_compat(sql).unwrap_err()),
+        ("Inv", "Cannot SET ON DELETE on an INTERLEAVE IN table D.")
+    );
+    let e = applied(&[
+        "CREATE TABLE D (id INT64 NOT NULL, c INT64 NOT NULL) PRIMARY KEY (id, c), INTERLEAVE IN P",
+        "ALTER TABLE D SET ON DELETE CASCADE",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        kind(&e),
+        ("Inv", "Cannot SET ON DELETE on an INTERLEAVE IN table D.")
+    );
+}
+
+#[test]
+fn locality_groups_print_and_reload() {
+    let mut s = Schema::default();
+    for sql in [
+        "CREATE LOCALITY GROUP lg OPTIONS (storage = 'ssd', ssd_to_hdd_spill_timespan = '10d')",
+        "ALTER LOCALITY GROUP `default` SET OPTIONS (storage = 'hdd')",
+        "CREATE TABLE P (id INT64 NOT NULL, ts TIMESTAMP OPTIONS (allow_commit_timestamp = true, locality_group = 'lg')) PRIMARY KEY (id), OPTIONS (locality_group = 'lg')",
+        "CREATE TABLE C (id INT64 NOT NULL, c INT64 NOT NULL) PRIMARY KEY (id, c), INTERLEAVE IN PARENT P ON DELETE CASCADE, OPTIONS (locality_group = 'lg')",
+        "CREATE INDEX ci ON C(c) OPTIONS (locality_group = 'lg')",
+    ] {
+        s.apply(&parse_statement(sql).unwrap())
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    let ddl = s.to_ddl();
+    assert_eq!(
+        ddl,
+        [
+            "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '10d'\n)",
+            "ALTER LOCALITY GROUP `default` SET OPTIONS (\n  storage = 'hdd'\n)",
+            "CREATE TABLE P (\n  id INT64 NOT NULL,\n  ts TIMESTAMP OPTIONS (\n    locality_group = 'lg',\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(id), OPTIONS (\n  locality_group = 'lg'\n)",
+            "CREATE TABLE C (\n  id INT64 NOT NULL,\n  c INT64 NOT NULL,\n) PRIMARY KEY(id, c),\n  INTERLEAVE IN PARENT P ON DELETE CASCADE, OPTIONS (\n  locality_group = 'lg'\n)",
+            "CREATE INDEX ci ON C(c) OPTIONS (\n  locality_group = 'lg'\n)",
+        ]
+    );
+    // Snapshots store `to_ddl` and load it back statement by statement.
+    let mut back = Schema::default();
+    for sql in &ddl {
+        back.apply_emulator_compat(&parse_statement(sql).unwrap())
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    assert_eq!(back.to_ddl(), ddl);
+    assert_eq!(
+        s.to_ddl_emulator_compat(),
+        [
+            "CREATE TABLE P (\n  id INT64 NOT NULL,\n  ts TIMESTAMP OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(id)",
+            "CREATE TABLE C (\n  id INT64 NOT NULL,\n  c INT64 NOT NULL,\n) PRIMARY KEY(id, c),\n  INTERLEAVE IN PARENT P ON DELETE CASCADE",
+            "CREATE INDEX ci ON C(c)",
+            "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'ssd', ssd_to_hdd_spill_timespan = '10d' )",
+            "CREATE LOCALITY GROUP `default` OPTIONS ( storage = 'hdd' )",
+        ]
+    );
+    // print_statement output parses back to the same statement.
+    for sql in [
+        "CREATE LOCALITY GROUP IF NOT EXISTS lg OPTIONS (storage = 'hdd')",
+        "ALTER LOCALITY GROUP lg SET OPTIONS (ssd_to_hdd_spill_timespan = NULL)",
+        "DROP LOCALITY GROUP IF EXISTS lg",
+        "ALTER TABLE P SET OPTIONS (locality_group = NULL)",
+        "ALTER TABLE P ALTER COLUMN ts SET OPTIONS (allow_commit_timestamp = false, locality_group = 'lg')",
+    ] {
+        let stmt = parse_statement(sql).unwrap();
+        assert_eq!(
+            parse_statement(&print_statement(&stmt)).unwrap(),
+            stmt,
+            "{sql}"
+        );
+    }
+}
+
+#[test]
+fn locality_group_errors_follow_the_mode() {
+    let prod = |stmts: &[&str]| {
+        let mut s = Schema::default();
+        for sql in stmts {
+            s.apply(&parse_statement(sql)?)?;
+        }
+        Ok::<_, DdlError>(s)
+    };
+    let compat = |stmts: &[&str]| {
+        let mut s = Schema::default();
+        for sql in stmts {
+            s.apply_emulator_compat(&parse_statement_emulator_compat(sql)?)?;
+        }
+        Ok::<_, DdlError>(s)
+    };
+    type Outcome<'a> = (&'a str, &'a str);
+    let cases: &[(&[&str], Outcome, Outcome)] = &[
+        (
+            &[
+                "CREATE LOCALITY GROUP lg",
+                "CREATE LOCALITY GROUP IF NOT EXISTS lg",
+            ],
+            (
+                "Inv",
+                "Could not create locality group because it already exists: lg",
+            ),
+            ("ok", ""),
+        ),
+        (
+            &["DROP LOCALITY GROUP IF EXISTS lg"],
+            ("Inv", "Cannot drop locality group lg - it does not exist."),
+            ("ok", ""),
+        ),
+        (
+            &["ALTER LOCALITY GROUP lg SET OPTIONS (storage = 'hdd')"],
+            ("Nf", ""),
+            ("Nf", "Locality group not found: lg"),
+        ),
+        (
+            &[
+                "CREATE LOCALITY GROUP lg",
+                "CREATE TABLE T (id INT64 OPTIONS (locality_group = 'lg')) PRIMARY KEY (id)",
+                "DROP LOCALITY GROUP lg",
+            ],
+            (
+                "Inv",
+                "Cannot drop locality group lg - it is still referenced.",
+            ),
+            (
+                "Pre",
+                "Locality group lg cannot be dropped as it is referenced.",
+            ),
+        ),
+        (
+            &[
+                "CREATE LOCALITY GROUP lg OPTIONS (storage = 'hdd', ssd_to_hdd_spill_timespan = '1d')",
+            ],
+            (
+                "Pre",
+                "Locality Group lg has invalid storage option: hdd. If the ssd_to_hdd_spill_timespan is set, then the storage option is required to be \"ssd\".",
+            ),
+            ("ok", ""),
+        ),
+        (
+            &["CREATE TABLE T (id INT64) PRIMARY KEY (id), OPTIONS (locality_group = 'nope')"],
+            ("Nf", ""),
+            ("Nf", "Locality group not found: nope"),
+        ),
+    ];
+    let outcome = |r: Result<Schema, DdlError>| match r {
+        Ok(_) => ("ok".to_string(), String::new()),
+        Err(e) => {
+            let (k, m) = kind(&e);
+            (k.to_string(), m.to_string())
+        }
+    };
+    for (stmts, p, c) in cases {
+        let want = |(k, m): (&str, &str)| (k.to_string(), m.to_string());
+        assert_eq!(outcome(prod(stmts)), want(*p), "prod {stmts:?}");
+        assert_eq!(outcome(compat(stmts)), want(*c), "compat {stmts:?}");
+    }
+    // Unquoted `default` is a keyword in production's grammar, a name in the emulator's.
+    let sql = "ALTER LOCALITY GROUP default SET OPTIONS (storage = 'hdd')";
+    assert!(parse_statement(sql).is_err());
+    assert!(parse_statement_emulator_compat(sql).is_ok());
 }

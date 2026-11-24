@@ -52,6 +52,12 @@ impl Generated {
     }
 }
 
+/// Whether a DEFAULT or ON UPDATE expression is `PENDING_COMMIT_TIMESTAMP()` (any case or spacing).
+pub fn is_pending_commit_timestamp(expr: &str) -> bool {
+    let e: String = expr.split_whitespace().collect();
+    e.eq_ignore_ascii_case("PENDING_COMMIT_TIMESTAMP()")
+}
+
 /// The hidden key column the emulator adds to tables declared without a primary key.
 pub const ROWID_COLUMN: &str = "rowid";
 
@@ -62,12 +68,16 @@ pub struct Column {
     pub not_null: bool,
     /// `DEFAULT (expr)` SQL text.
     pub default: Option<String>,
+    /// `ON UPDATE (expr)` SQL text; only `PENDING_COMMIT_TIMESTAMP()` is accepted.
+    pub on_update: Option<String>,
     pub generated: Option<Generated>,
     pub allow_commit_timestamp: bool,
     /// Hidden columns (e.g. TOKENLIST ... HIDDEN) are excluded from SELECT *.
     pub hidden: bool,
     /// `ARRAY<FLOAT32|FLOAT64>(vector_length=>n)`.
     pub vector_length: Option<u64>,
+    /// `OPTIONS (locality_group = '...')`.
+    pub locality_group: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +137,8 @@ pub struct Table {
     pub checks: Vec<CheckConstraint>,
     pub row_deletion_policy: Option<RowDeletionPolicy>,
     pub synonym: Option<String>,
+    /// `OPTIONS (locality_group = '...')`.
+    pub locality_group: Option<String>,
 }
 
 impl Table {
@@ -148,6 +160,8 @@ pub struct Index {
     pub interleave_in: Option<String>,
     /// `WHERE ...` filter SQL text.
     pub filter: Option<String>,
+    /// `OPTIONS (locality_group = '...')`.
+    pub locality_group: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,6 +187,17 @@ pub struct OpaqueObject {
     pub name: String,
     pub ddl: String,
 }
+
+/// A locality group. Stored and printed; storage ignores it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalityGroup {
+    pub name: String,
+    /// `storage` and `ssd_to_hdd_spill_timespan`, as SQL literal text.
+    pub options: Vec<(String, String)>,
+}
+
+/// The locality group every database has.
+pub const DEFAULT_LOCALITY_GROUP: &str = "default";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sequence {
@@ -208,6 +233,8 @@ pub enum Statement {
     AlterTable {
         table: String,
         action: AlterTable,
+        /// `ALTER TABLE IF EXISTS`: a missing table makes the statement a no-op.
+        if_exists: bool,
     },
     CreateIndex {
         index: Index,
@@ -223,6 +250,10 @@ pub enum Statement {
     },
     CreateSearchIndex {
         index: SearchIndex,
+    },
+    AlterSearchIndex {
+        name: String,
+        action: AlterSearchIndex,
     },
     DropSearchIndex {
         name: String,
@@ -257,6 +288,18 @@ pub enum Statement {
     RenameTables {
         renames: Vec<(String, String)>,
     },
+    CreateLocalityGroup {
+        group: LocalityGroup,
+        if_not_exists: bool,
+    },
+    AlterLocalityGroup {
+        name: String,
+        options: Vec<(String, String)>,
+    },
+    DropLocalityGroup {
+        name: String,
+        if_exists: bool,
+    },
     /// CHANGE STREAM, ROLE, GRANT, REVOKE, PROPERTY GRAPH, MODEL, ...
     Opaque {
         object: OpaqueObject,
@@ -280,9 +323,20 @@ pub enum AlterTable {
         name: String,
         default: Option<String>,
     },
+    /// `ALTER COLUMN c SET ON UPDATE (expr)` / `DROP ON UPDATE`.
+    SetColumnOnUpdate {
+        name: String,
+        on_update: Option<String>,
+    },
+    /// Options not given are `None`; `locality_group = NULL` is `Some(None)`.
     SetColumnOptions {
         name: String,
         allow_commit_timestamp: Option<bool>,
+        locality_group: Option<Option<String>>,
+    },
+    /// `SET OPTIONS (locality_group = ...)`; `None` for NULL.
+    SetOptions {
+        locality_group: Option<String>,
     },
     AddForeignKey(ForeignKey),
     AddCheck(CheckConstraint),
@@ -306,6 +360,14 @@ pub enum AlterTable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterSearchIndex {
+    AddColumn(String),
+    DropColumn(String),
+    AddStoredColumn(String),
+    DropStoredColumn(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AlterIndex {
     AddStoredColumn(String),
     DropStoredColumn(String),
@@ -323,6 +385,8 @@ pub struct Schema {
     pub views: BTreeMap<String, View>,
     /// In declaration order.
     pub opaque: Vec<OpaqueObject>,
+    /// In creation order; `default` is listed once its options are altered.
+    pub locality_groups: Vec<LocalityGroup>,
     pub options: Vec<(String, String)>,
     /// Bumped on every successful apply; lets SQL caches key on it.
     pub version: u64,
@@ -330,6 +394,63 @@ pub struct Schema {
     pub database_name: Option<String>,
     /// Creation order of schemas, sequences, tables and views (lowercase keys); drives `to_ddl`.
     pub creation_order: Vec<(ObjectKind, String)>,
+    /// Fine-grained access control privileges, one per role, object and privilege (and column),
+    /// in grant order. Roles are `ROLE` objects in `opaque`.
+    pub grants: Vec<Grant>,
+}
+
+/// Roles every database has. They are not stored and GetDatabaseDdl leaves them out.
+pub const SYSTEM_ROLES: [&str; 4] = [
+    "public",
+    "spanner_info_reader",
+    "spanner_secure_context_reader",
+    "spanner_sys_reader",
+];
+
+/// A table privilege, in the order GetDatabaseDdl lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Privilege {
+    Select,
+    Insert,
+    Update,
+    Delete,
+}
+
+impl Privilege {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Privilege::Select => "SELECT",
+            Privilege::Insert => "INSERT",
+            Privilege::Update => "UPDATE",
+            Privilege::Delete => "DELETE",
+        }
+    }
+}
+
+/// What a privilege is granted on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrantObject {
+    /// A table privilege, on the whole table or on one column.
+    Table {
+        table: String,
+        privilege: Privilege,
+        column: Option<String>,
+    },
+    /// `SELECT ON VIEW`.
+    View(String),
+    /// `SELECT ON CHANGE STREAM`.
+    ChangeStream(String),
+    /// `EXECUTE ON TABLE FUNCTION` (a change stream's `READ_<stream>`).
+    TableFunction(String),
+    /// Membership of a role (`GRANT ROLE r TO ROLE grantee`).
+    Role(String),
+}
+
+/// One privilege held by a role.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grant {
+    pub grantee: String,
+    pub object: GrantObject,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

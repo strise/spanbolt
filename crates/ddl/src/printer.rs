@@ -1,6 +1,6 @@
 //! Canonical DDL printing in the official emulator's GetDatabaseDdl format.
 
-use crate::parser::{join_idents, quote_path};
+use crate::parser::{join_idents, quote_ident, quote_path, quote_string};
 use crate::schema::*;
 
 pub(crate) fn type_sql(ty: &ColumnType) -> String {
@@ -62,6 +62,9 @@ pub(crate) fn column_sql(c: &Column) -> String {
     if let Some(d) = &c.default {
         s.push_str(&format!(" DEFAULT ({d})"));
     }
+    if let Some(e) = &c.on_update {
+        s.push_str(&format!(" ON UPDATE ({e})"));
+    }
     match &c.generated {
         Some(Generated::Expr { expr, stored }) => {
             s.push_str(&format!(" AS ({expr})"));
@@ -80,8 +83,64 @@ pub(crate) fn column_sql(c: &Column) -> String {
     if c.hidden {
         s.push_str(" HIDDEN");
     }
+    let mut opts = Vec::new();
+    if let Some(g) = &c.locality_group {
+        opts.push(format!("    locality_group = {}", quote_string(g)));
+    }
     if c.allow_commit_timestamp {
-        s.push_str(" OPTIONS (\n    allow_commit_timestamp = true\n  )");
+        opts.push("    allow_commit_timestamp = true".to_string());
+    }
+    if !opts.is_empty() {
+        s.push_str(&format!(" OPTIONS (\n{}\n  )", opts.join(",\n")));
+    }
+    s
+}
+
+/// A table's or index's `OPTIONS (locality_group = ...)` clause, as production prints it.
+fn locality_clause(g: &Option<String>) -> String {
+    match g {
+        Some(g) => format!(" OPTIONS (\n  locality_group = {}\n)", quote_string(g)),
+        None => String::new(),
+    }
+}
+
+/// `CREATE LOCALITY GROUP` as production prints it; the altered `default` group is an ALTER.
+pub(crate) fn locality_group_sql(g: &LocalityGroup) -> String {
+    let opts: Vec<String> = g
+        .options
+        .iter()
+        .filter(|(_, v)| v != "NULL")
+        .map(|(k, v)| format!("  {k} = {v}"))
+        .collect();
+    let name = crate::parser::quote_ident(&g.name);
+    let is_default = g.name.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP);
+    let mut s = if is_default {
+        format!("ALTER LOCALITY GROUP {name} SET")
+    } else {
+        format!("CREATE LOCALITY GROUP {name}")
+    };
+    if !opts.is_empty() {
+        s.push_str(&format!(" OPTIONS (\n{}\n)", opts.join(",\n")));
+    } else if is_default {
+        s.push_str(" OPTIONS ()");
+    }
+    s
+}
+
+/// `CREATE LOCALITY GROUP` as the emulator prints it: options on one line, NULLs left out.
+fn locality_group_sql_emulator(g: &LocalityGroup) -> String {
+    let mut s = format!(
+        "CREATE LOCALITY GROUP {}",
+        crate::parser::quote_ident(&g.name)
+    );
+    if !g.options.is_empty() {
+        let opts: Vec<String> = g
+            .options
+            .iter()
+            .filter(|(_, v)| v != "NULL")
+            .map(|(k, v)| format!("{k} = {v}"))
+            .collect();
+        s.push_str(&format!(" OPTIONS ( {} )", opts.join(", ")));
     }
     s
 }
@@ -168,6 +227,10 @@ pub(crate) fn table_sql(t: &Table) -> String {
         s.push_str(", ");
         s.push_str(&rdp_sql(r));
     }
+    if t.locality_group.is_some() {
+        s.push(',');
+        s.push_str(&locality_clause(&t.locality_group));
+    }
     s
 }
 
@@ -194,6 +257,7 @@ pub(crate) fn index_sql(i: &Index) -> String {
     if let Some(p) = &i.interleave_in {
         s.push_str(&format!(", INTERLEAVE IN {}", quote_path(p)));
     }
+    s.push_str(&locality_clause(&i.locality_group));
     s
 }
 
@@ -270,9 +334,45 @@ pub(crate) fn view_sql(v: &View) -> String {
 }
 
 impl Schema {
-    /// Canonical statements as GetDatabaseDdl returns them.
+    /// Canonical statements as production's GetDatabaseDdl returns them: roles and role grants
+    /// after the database options, and each object's grants after the object. Snapshots store
+    /// these, so they keep everything the schema holds.
     pub fn to_ddl(&self) -> Vec<String> {
         let mut out = Vec::new();
+        self.database_options_ddl(&mut out);
+        out.extend(
+            self.opaque
+                .iter()
+                .filter(|o| o.kind == "ROLE")
+                .map(|o| o.ddl.clone()),
+        );
+        out.extend(self.role_grants());
+        out.extend(self.locality_groups.iter().map(locality_group_sql));
+        self.objects_ddl(&mut out, true);
+        out
+    }
+
+    /// GetDatabaseDdl as the emulator returns it (`--emulator-compat`): locality groups come last
+    /// and tables, columns and indexes don't print their `locality_group`.
+    pub fn to_ddl_emulator_compat(&self) -> Vec<String> {
+        let mut s = self.clone();
+        for t in s.tables.values_mut() {
+            t.locality_group = None;
+            for c in &mut t.columns {
+                c.locality_group = None;
+            }
+        }
+        for i in s.indexes.values_mut() {
+            i.locality_group = None;
+        }
+        let mut out = Vec::new();
+        s.database_options_ddl(&mut out);
+        s.objects_ddl(&mut out, false);
+        out.extend(s.locality_groups.iter().map(locality_group_sql_emulator));
+        out
+    }
+
+    fn database_options_ddl(&self, out: &mut Vec<String>) {
         if !self.options.is_empty() {
             let name = self.database_name.as_deref().unwrap_or("db");
             out.push(format!(
@@ -281,6 +381,11 @@ impl Schema {
                 options_inline(&self.options)
             ));
         }
+    }
+
+    /// Schemas, sequences, tables, change streams, models, views and graphs; with `access`, each
+    /// followed by its grants.
+    fn objects_ddl(&self, out: &mut Vec<String>, access: bool) {
         let ordered = |kind: ObjectKind| {
             self.creation_order
                 .iter()
@@ -319,22 +424,144 @@ impl Schema {
                 .collect();
             idx.sort_by(|a, b| a.0.cmp(b.0));
             out.extend(idx.into_iter().map(|(_, s)| s));
+            if access {
+                out.extend(self.table_grants(t));
+            }
         }
-        let opaque = |kind: &'static str| {
+        for o in self.opaque.iter().filter(|o| o.kind == "CHANGE STREAM") {
+            out.push(o.ddl.clone());
+            if access {
+                let tvf = format!("READ_{}", o.name);
+                out.extend(self.object_grants(
+                    |g| matches!(g, GrantObject::ChangeStream(c) if *c == o.name),
+                    &format!("SELECT ON CHANGE STREAM {}", quote_path(&o.name)),
+                ));
+                out.extend(self.object_grants(
+                    |g| matches!(g, GrantObject::TableFunction(f) if *f == tvf),
+                    &format!("EXECUTE ON TABLE FUNCTION {}", quote_path(&tvf)),
+                ));
+            }
+        }
+        out.extend(
             self.opaque
                 .iter()
-                .filter(move |o| o.kind == kind)
-                .map(|o| o.ddl.clone())
-        };
-        out.extend(opaque("CHANGE STREAM"));
-        out.extend(opaque("MODEL"));
+                .filter(|o| o.kind == "MODEL")
+                .map(|o| o.ddl.clone()),
+        );
         for key in ordered(ObjectKind::View) {
             if let Some(v) = self.views.get(key) {
                 out.push(view_sql(v));
+                if access {
+                    out.extend(self.object_grants(
+                        |g| matches!(g, GrantObject::View(n) if *n == v.name),
+                        &format!("SELECT ON VIEW {}", quote_path(&v.name)),
+                    ));
+                }
             }
         }
-        out.extend(opaque("PROPERTY GRAPH"));
+        out.extend(
+            self.opaque
+                .iter()
+                .filter(|o| o.kind == "PROPERTY GRAPH")
+                .map(|o| o.ddl.clone()),
+        );
+    }
+
+    /// Grantees of the grants matching `on`, in name order.
+    fn grantees(&self, on: impl Fn(&GrantObject) -> bool) -> Vec<&str> {
+        let mut out: Vec<&str> = self
+            .grants
+            .iter()
+            .filter(|g| on(&g.object))
+            .map(|g| g.grantee.as_str())
+            .collect();
+        out.sort();
+        out.dedup();
         out
+    }
+
+    /// `GRANT <what> TO ROLE r`, one per grantee of the grants matching `on`.
+    fn object_grants(&self, on: impl Fn(&GrantObject) -> bool, what: &str) -> Vec<String> {
+        self.grantees(on)
+            .into_iter()
+            .map(|r| format!("GRANT {what} TO ROLE {}", quote_ident(r)))
+            .collect()
+    }
+
+    /// `GRANT ROLE a, b TO ROLE r`, one per grantee.
+    fn role_grants(&self) -> Vec<String> {
+        let is_role = |g: &GrantObject| matches!(g, GrantObject::Role(_));
+        self.grantees(is_role)
+            .into_iter()
+            .map(|grantee| {
+                let mut roles: Vec<&str> = self
+                    .grants
+                    .iter()
+                    .filter(|g| g.grantee == grantee)
+                    .filter_map(|g| match &g.object {
+                        GrantObject::Role(r) => Some(r.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                roles.sort();
+                let roles: Vec<String> = roles.into_iter().map(quote_ident).collect();
+                format!(
+                    "GRANT ROLE {} TO ROLE {}",
+                    roles.join(", "),
+                    quote_ident(grantee)
+                )
+            })
+            .collect()
+    }
+
+    /// A table's privileges, one statement per grantee: `GRANT SELECT, UPDATE(V) ON TABLE T ...`.
+    fn table_grants(&self, t: &Table) -> Vec<String> {
+        let on_table =
+            |g: &GrantObject| matches!(g, GrantObject::Table { table, .. } if *table == t.name);
+        self.grantees(on_table)
+            .into_iter()
+            .map(|grantee| {
+                let mut privileges = Vec::new();
+                for p in [
+                    Privilege::Select,
+                    Privilege::Insert,
+                    Privilege::Update,
+                    Privilege::Delete,
+                ] {
+                    let held: Vec<Option<&str>> = self
+                        .grants
+                        .iter()
+                        .filter(|g| g.grantee == grantee)
+                        .filter_map(|g| match &g.object {
+                            GrantObject::Table {
+                                table,
+                                privilege,
+                                column,
+                            } if *table == t.name && *privilege == p => Some(column.as_deref()),
+                            _ => None,
+                        })
+                        .collect();
+                    if held.contains(&None) {
+                        privileges.push(p.as_str().to_string());
+                    }
+                    let columns: Vec<String> = t
+                        .columns
+                        .iter()
+                        .filter(|c| held.contains(&Some(c.name.as_str())))
+                        .map(|c| quote_ident(&c.name))
+                        .collect();
+                    if !columns.is_empty() {
+                        privileges.push(format!("{}({})", p.as_str(), columns.join(", ")));
+                    }
+                }
+                format!(
+                    "GRANT {} ON TABLE {} TO ROLE {}",
+                    privileges.join(", "),
+                    quote_path(&t.name),
+                    quote_ident(grantee)
+                )
+            })
+            .collect()
     }
 }
 
@@ -348,6 +575,10 @@ fn if_not_exists(b: bool) -> &'static str {
 
 fn options_paren(opts: &[(String, String)]) -> String {
     format!("OPTIONS ({})", options_inline(opts))
+}
+
+fn locality_value(g: &Option<String>) -> String {
+    g.as_deref().map_or("NULL".to_string(), quote_string)
 }
 
 fn alter_table_sql(table: &str, action: &AlterTable) -> String {
@@ -364,20 +595,28 @@ fn alter_table_sql(table: &str, action: &AlterTable) -> String {
             Some(d) => format!("ALTER COLUMN {} SET DEFAULT ({d})", q(name)),
             None => format!("ALTER COLUMN {} DROP DEFAULT", q(name)),
         },
+        AlterTable::SetColumnOnUpdate { name, on_update } => match on_update {
+            Some(e) => format!("ALTER COLUMN {} SET ON UPDATE ({e})", q(name)),
+            None => format!("ALTER COLUMN {} DROP ON UPDATE", q(name)),
+        },
         AlterTable::SetColumnOptions {
             name,
             allow_commit_timestamp,
+            locality_group,
         } => {
-            let v = match allow_commit_timestamp {
-                Some(true) => "true",
-                Some(false) => "false",
-                None => "NULL",
-            };
-            format!(
-                "ALTER COLUMN {} SET OPTIONS (allow_commit_timestamp = {v})",
-                q(name)
-            )
+            let mut opts = Vec::new();
+            if let Some(v) = allow_commit_timestamp {
+                opts.push(format!("allow_commit_timestamp = {v}"));
+            }
+            if let Some(g) = locality_group {
+                opts.push(format!("locality_group = {}", locality_value(g)));
+            }
+            format!("ALTER COLUMN {} SET OPTIONS ({})", q(name), opts.join(", "))
         }
+        AlterTable::SetOptions { locality_group } => format!(
+            "SET OPTIONS (locality_group = {})",
+            locality_value(locality_group)
+        ),
         AlterTable::AddForeignKey(fk) => format!("ADD {}", fk_sql(fk)),
         AlterTable::AddCheck(c) => format!("ADD {}", check_sql(c)),
         AlterTable::DropConstraint { name } => format!("DROP CONSTRAINT {}", q(name)),
@@ -428,7 +667,18 @@ pub fn print_statement(stmt: &Statement) -> String {
         } => {
             format!("DROP TABLE {}{}", if_exists(*ie), quote_path(name))
         }
-        Statement::AlterTable { table, action } => alter_table_sql(table, action),
+        Statement::AlterTable {
+            table,
+            action,
+            if_exists: ie,
+        } => {
+            let s = alter_table_sql(table, action);
+            if *ie {
+                s.replacen("ALTER TABLE ", "ALTER TABLE IF EXISTS ", 1)
+            } else {
+                s
+            }
+        }
         Statement::RenameTables { renames } => {
             let parts: Vec<String> = renames
                 .iter()
@@ -466,6 +716,47 @@ pub fn print_statement(stmt: &Statement) -> String {
             ),
         },
         Statement::CreateSearchIndex { index } => search_index_sql(index),
+        Statement::CreateLocalityGroup {
+            group,
+            if_not_exists: ine,
+        } => {
+            let mut s = format!(
+                "CREATE LOCALITY GROUP {}{}",
+                if_not_exists(*ine),
+                crate::parser::quote_ident(&group.name)
+            );
+            if !group.options.is_empty() {
+                s.push(' ');
+                s.push_str(&options_paren(&group.options));
+            }
+            s
+        }
+        Statement::AlterLocalityGroup { name, options } => format!(
+            "ALTER LOCALITY GROUP {} SET {}",
+            crate::parser::quote_ident(name),
+            options_paren(options)
+        ),
+        Statement::DropLocalityGroup {
+            name,
+            if_exists: ie,
+        } => format!(
+            "DROP LOCALITY GROUP {}{}",
+            if_exists(*ie),
+            crate::parser::quote_ident(name)
+        ),
+        Statement::AlterSearchIndex { name, action } => {
+            let (verb, c) = match action {
+                AlterSearchIndex::AddColumn(c) => ("ADD COLUMN", c),
+                AlterSearchIndex::DropColumn(c) => ("DROP COLUMN", c),
+                AlterSearchIndex::AddStoredColumn(c) => ("ADD STORED COLUMN", c),
+                AlterSearchIndex::DropStoredColumn(c) => ("DROP STORED COLUMN", c),
+            };
+            format!(
+                "ALTER SEARCH INDEX {} {verb} {}",
+                quote_path(name),
+                crate::parser::quote_ident(c)
+            )
+        }
         Statement::DropSearchIndex {
             name,
             if_exists: ie,

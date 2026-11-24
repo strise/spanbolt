@@ -140,9 +140,13 @@ fn phases(db: &Database, ids: &mut Uuids, explicit: bool) -> Result<Phases, BoxE
             for (v, &c) in rows[0].iter().zip(columns) {
                 row[c] = v.clone();
             }
-            spanbolt_storage::expr::compute_row(tm, &mut row, &|c| !columns.contains(&c), &|_| {
-                true
-            })?;
+            spanbolt_storage::expr::compute_row(
+                tm,
+                &mut row,
+                spanbolt_storage::Timestamp::system_now(),
+                &|c| !columns.contains(&c),
+                &|_| true,
+            )?;
         }
     }
     p.defaults = t.elapsed();

@@ -362,7 +362,10 @@ fn read_view(
     };
     match reader {
         Reader::ReadOnly(t) => t.read(resolve),
-        Reader::ReadWrite(t) => t.read(resolve),
+        Reader::ReadWrite(t) => t.read(resolve).and_then(|view| {
+            check_pending_read(t, &view, &req.columns, emulator_compat)?;
+            Ok(view)
+        }),
         Reader::PartitionedDml => {
             return Err(Status::failed_precondition(
                 "Partitioned DML transactions cannot be used for reads.",
@@ -370,6 +373,35 @@ fn read_view(
         }
     }
     .map_err(to_status)
+}
+
+/// Rejects reading columns (or an index keyed on them) that DML in this transaction wrote with
+/// `PENDING_COMMIT_TIMESTAMP()`.
+fn check_pending_read(
+    t: &ReadWriteTxn,
+    view: &ReadView,
+    columns: &[String],
+    emulator_compat: bool,
+) -> spanbolt_storage::Result<()> {
+    let pending = t.pending_commit_ts();
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let cat = &view.state.catalog;
+    let (table, index) = match view.target {
+        Target::Table(t) => (t, None),
+        Target::Index(ix) => (cat.index(ix).table, Some(ix)),
+    };
+    let tm = cat.table(table);
+    let cols: Vec<usize> = columns.iter().filter_map(|c| tm.column(c)).collect();
+    spanbolt_storage::pending::check_pending_read(
+        cat,
+        &pending,
+        table,
+        index,
+        &cols,
+        !emulator_compat,
+    )
 }
 
 /// The precommit token a read in a multiplexed session's read-write transaction returns.

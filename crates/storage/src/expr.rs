@@ -1,5 +1,5 @@
-//! The seam through which the SQL engine evaluates schema expressions: DEFAULT values, stored
-//! generated columns and CHECK constraints.
+//! The seam through which the SQL engine evaluates schema expressions: DEFAULT values, generated
+//! columns and CHECK constraints.
 
 use std::sync::{Arc, RwLock};
 
@@ -8,14 +8,23 @@ use spanbolt_ddl::ColumnType;
 use crate::catalog::TableMeta;
 use crate::error::{Code, Error, Result};
 use crate::state::WriteKind;
-use crate::value::Value;
+use crate::value::{Timestamp, Value};
 
 /// Evaluates a schema expression against one row.
 pub trait ExprEvaluator: Send + Sync {
     /// Evaluates `expr` (GoogleSQL text as written in the DDL) with the columns of `table` bound
     /// to `row` (one value per column, in schema order), and coerces the result to `ty`
-    /// (`BOOL` for CHECK constraints).
-    fn eval(&self, expr: &str, table: &TableMeta, row: &[Value], ty: &ColumnType) -> Result<Value>;
+    /// (`BOOL` for CHECK constraints). `now` is what `CURRENT_TIMESTAMP()` returns: the commit
+    /// timestamp of a write, or the database clock for a schema change, so a clock fixed through
+    /// `spanbolt.v1.Control` applies to DEFAULT values too.
+    fn eval(
+        &self,
+        expr: &str,
+        table: &TableMeta,
+        row: &[Value],
+        ty: &ColumnType,
+        now: Timestamp,
+    ) -> Result<Value>;
 
     /// Checks a schema expression when DDL declares it (names resolve, the type fits). The error
     /// message is the one the DDL statement fails with.
@@ -62,14 +71,17 @@ pub(crate) fn no_evaluator(what: &str) -> Error {
 }
 
 pub(crate) const DEFAULTS: &str = "DEFAULT values";
-pub(crate) const GENERATED: &str = "Stored generated columns";
+pub(crate) const GENERATED: &str = "Generated columns";
 pub(crate) const CHECKS: &str = "CHECK constraints on existing rows";
 
-/// Fills the defaults of `missing` columns and recomputes the stored generated columns selected
-/// by `regenerate`, then assigns identity values to missing identity columns.
+/// Fills the defaults of `missing` columns and recomputes the generated columns selected by
+/// `regenerate`, in dependency order, then assigns identity values to missing identity columns. A
+/// `DEFAULT (PENDING_COMMIT_TIMESTAMP())` is left alone: the writer fills it with the commit
+/// timestamp.
 pub fn compute_row(
     tm: &TableMeta,
     row: &mut [Value],
+    now: Timestamp,
     missing: &dyn Fn(usize) -> bool,
     regenerate: &dyn Fn(usize) -> bool,
 ) -> Result<()> {
@@ -82,16 +94,18 @@ pub fn compute_row(
     };
     for (c, cm) in tm.columns.iter().enumerate() {
         if let Some(d) = &cm.default
+            && !cm.default_commit_ts
             && missing(c)
         {
-            row[c] = get(DEFAULTS)?.eval(d, tm, row, &cm.ty)?;
+            row[c] = get(DEFAULTS)?.eval(d, tm, row, &cm.ty, now)?;
         }
     }
-    for (c, cm) in tm.columns.iter().enumerate() {
-        if let (Some(e), true) = (&cm.expr, cm.stored)
+    for &c in &tm.generated_order {
+        let cm = &tm.columns[c];
+        if let Some(e) = &cm.expr
             && regenerate(c)
         {
-            row[c] = get(GENERATED)?.eval(e, tm, row, &cm.ty)?;
+            row[c] = get(GENERATED)?.eval(e, tm, row, &cm.ty, now)?;
         }
     }
     for (c, cm) in tm.columns.iter().enumerate() {
@@ -131,15 +145,28 @@ pub fn mentions(expr: &str, name: &str) -> bool {
         .any(|w| w.eq_ignore_ascii_case(name))
 }
 
-/// Rejects a write that leaves a generated primary-key column without its inputs, as the emulator
-/// does: every column the key's expression reads must be written, or (except in an Update, which
-/// may write the key itself instead) have a DEFAULT. A key that reads another generated column can
-/// therefore not be inserted at all.
+/// Rejects an Update that leaves out a key column with a DEFAULT, and a write that leaves a
+/// generated primary-key column without its inputs, as the emulator does: every column the key's
+/// expression reads must be written, or (except in an Update, which may write the key itself
+/// instead) have a DEFAULT. A key that reads another generated column can therefore not be
+/// inserted at all.
 pub fn check_generated_key_inputs(
     tm: &TableMeta,
     kind: WriteKind,
     columns: &[usize],
 ) -> Result<()> {
+    if kind == WriteKind::Update
+        && let Some(&k) = tm
+            .pk
+            .iter()
+            .find(|&&k| tm.columns[k].default.is_some() && !columns.contains(&k))
+    {
+        // An Update names an existing row, so a key DEFAULT can't stand in for the key.
+        return Err(Error::failed_precondition(format!(
+            "Implicit use of primary key default value for column `{}.{}` is not allowed in UPDATE mutations. The column must have a specific value.",
+            tm.name, tm.columns[k].name
+        )));
+    }
     for &k in &tm.pk {
         let km = &tm.columns[k];
         let Some(e) = km.expr.as_deref() else {
@@ -176,6 +203,7 @@ pub fn check_generated_key_inputs(
 pub(crate) fn check_row(
     tm: &TableMeta,
     row: &[Value],
+    now: Timestamp,
     key_debug: &dyn Fn() -> String,
 ) -> Result<()> {
     if tm.checks.is_empty() {
@@ -185,7 +213,7 @@ pub(crate) fn check_row(
         return Ok(());
     };
     for ck in &tm.checks {
-        if ev.eval(&ck.expr, tm, row, &ColumnType::Bool)? == Value::Bool(false) {
+        if ev.eval(&ck.expr, tm, row, &ColumnType::Bool, now)? == Value::Bool(false) {
             return Err(Error::constraint(
                 Code::OutOfRange,
                 format!(

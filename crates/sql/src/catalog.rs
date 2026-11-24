@@ -47,6 +47,8 @@ pub struct SqlCatalog {
     pub graphs: HashMap<String, Arc<crate::graph::GraphDef>>,
     /// Graph adjacency built on first use, per element table and table contents.
     pub graph_index: crate::graph_exec::IndexCache,
+    /// Emulator-shaped INFORMATION_SCHEMA (`--emulator-compat`) rather than production's.
+    pub emulator_compat: bool,
     /// INFORMATION_SCHEMA rows, built on first use. They depend on the schema alone.
     info_rows: Mutex<HashMap<String, Arc<InfoRows>>>,
     pub hits: std::sync::atomic::AtomicU64,
@@ -105,29 +107,43 @@ impl SqlCatalog {
     }
 }
 
-/// The INFORMATION_SCHEMA tables, parsed once per process.
-fn info_tables() -> &'static [Arc<InfoTable>] {
-    static TABLES: std::sync::LazyLock<Vec<Arc<InfoTable>>> =
-        std::sync::LazyLock::new(|| parse_info_tables().into_iter().map(Arc::new).collect());
-    &TABLES
+/// The INFORMATION_SCHEMA tables, parsed once per process: the emulator's with
+/// `--emulator-compat`, production's otherwise.
+pub(crate) fn info_tables(emulator_compat: bool) -> &'static [Arc<InfoTable>] {
+    static EMULATOR: std::sync::LazyLock<Vec<Arc<InfoTable>>> =
+        std::sync::LazyLock::new(|| parse_info_tables(include_str!("info_schema_columns.tsv")));
+    static SPANNER: std::sync::LazyLock<Vec<Arc<InfoTable>>> = std::sync::LazyLock::new(|| {
+        parse_info_tables(include_str!("info_schema_columns_spanner.tsv"))
+    });
+    if emulator_compat { &EMULATOR } else { &SPANNER }
 }
 
-fn parse_info_tables() -> Vec<InfoTable> {
+/// `STRING(MAX)`, `STRING(100)`, `ARRAY<STRING(MAX)>`, `BOOL`, `INT64`, `JSON`.
+fn info_type(ty: &str) -> Type {
+    if let Some(e) = ty.strip_prefix("ARRAY<").and_then(|t| t.strip_suffix('>')) {
+        return Type::Array(Box::new(info_type(e)));
+    }
+    match ty {
+        "BOOL" => Type::Bool,
+        "INT64" => Type::Int64,
+        "JSON" => Type::Json,
+        t => Type::String(
+            t.strip_prefix("STRING(")
+                .and_then(|n| n.strip_suffix(')'))
+                .and_then(|n| n.parse().ok()),
+        ),
+    }
+}
+
+fn parse_info_tables(tsv: &str) -> Vec<Arc<InfoTable>> {
     let mut out: Vec<InfoTable> = Vec::new();
-    for line in include_str!("info_schema_columns.tsv").lines() {
+    for line in tsv.lines() {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
         let parts: Vec<&str> = line.split('\t').collect();
         let [table, column, ty, nullable] = parts[..] else {
             continue;
-        };
-        let ty = match ty {
-            "BOOL" => Type::Bool,
-            "INT64" => Type::Int64,
-            "JSON" => Type::Json,
-            t if t.starts_with("ARRAY") => Type::Array(Box::new(Type::String(None))),
-            _ => Type::String(None),
         };
         if out.last().is_none_or(|t| t.name != table) {
             out.push(InfoTable {
@@ -136,10 +152,11 @@ fn parse_info_tables() -> Vec<InfoTable> {
             });
         }
         if let Some(t) = out.last_mut() {
-            t.columns.push((column.to_string(), ty, nullable == "YES"));
+            t.columns
+                .push((column.to_string(), info_type(ty), nullable == "YES"));
         }
     }
-    out
+    out.into_iter().map(Arc::new).collect()
 }
 
 /// GoogleSQL tables shared by every catalog whose schema has the same table definition, keyed by
@@ -329,6 +346,7 @@ pub fn build(
     storage: Arc<StorageCatalog>,
     cache: &TableCache,
     features: &'static [&'static str],
+    emulator_compat: bool,
 ) -> Result<SqlCatalog> {
     let mut b = Builder {
         cache,
@@ -354,7 +372,7 @@ pub fn build(
             b.add(syn, &cols, &tm.pk, Relation::Table(id))?;
         }
     }
-    for it in info_tables() {
+    for it in info_tables(emulator_compat) {
         let cols: Vec<Col> = it
             .columns
             .iter()
@@ -419,6 +437,7 @@ pub fn build(
         graph_index: Default::default(),
         relations: b.relations,
         plans: Mutex::new(HashMap::new()),
+        emulator_compat,
         info_rows: Mutex::new(HashMap::new()),
         hits: Default::default(),
         misses: Default::default(),
@@ -469,6 +488,7 @@ impl CatalogCache {
         schema: &Arc<Schema>,
         storage: &Arc<StorageCatalog>,
         features: &'static [&'static str],
+        emulator_compat: bool,
     ) -> Result<Arc<SqlCatalog>> {
         {
             let mut entries = self.entries.lock();
@@ -485,6 +505,7 @@ impl CatalogCache {
             storage.clone(),
             &self.tables,
             features,
+            emulator_compat,
         )?);
         let mut entries = self.entries.lock();
         if let Some((_, c)) = entries

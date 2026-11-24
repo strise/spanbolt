@@ -2,10 +2,13 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use spanbolt_storage::{
-    Catalog, DbState, Error, KeySet, Mutation, Result, Span, Target, Timestamp, Writer,
+    Catalog, DbState, Error, KeySet, Mutation, Result, Span, TableId, Target, Timestamp, Writer,
 };
 
 use crate::database::{CommitInput, CommitOutcome, Database, ReadSet, Version};
+
+/// Checks the `(table, column)`s pending a commit timestamp after a DML statement.
+pub type PendingCheck<'a> = dyn Fn(&[(TableId, usize)]) -> Result<()> + 'a;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
@@ -25,6 +28,8 @@ struct Inner {
     local: Option<Arc<DbState>>,
     reads: ReadSet,
     dml: Vec<Mutation>,
+    /// `(table, column)`s DML wrote with the commit timestamp: unreadable until commit.
+    pending: Vec<(TableId, usize)>,
     commit: Option<CommitOutcome>,
     /// The constraint error that invalidated the transaction (`Status::Invalid`).
     invalid: Option<Error>,
@@ -55,6 +60,7 @@ impl ReadWriteTxn {
                 local: None,
                 reads: ReadSet::default(),
                 dml: Vec::new(),
+                pending: Vec::new(),
                 commit: None,
                 invalid: None,
             }),
@@ -141,15 +147,32 @@ impl ReadWriteTxn {
 
     /// Applies DML effects to the transaction's private view; they are re-applied at commit.
     pub fn apply_dml(&self, ops: Vec<Mutation>) -> Result<()> {
+        self.apply_dml_checked(ops, &|_| Ok(()))
+    }
+
+    /// Like [`Self::apply_dml`], but first hands `check` the `(table, column)`s that would be
+    /// pending a commit timestamp afterwards; an error leaves the transaction as it was.
+    pub fn apply_dml_checked(&self, ops: Vec<Mutation>, check: &PendingCheck) -> Result<()> {
         let mut inner = self.inner.lock();
         Self::active(&inner)?;
         let (state, ts) = self.view(&mut inner);
         // The commit timestamp isn't chosen yet; it will exceed everything the clock handed out.
-        let mut w = Writer::new(&state, ts).with_max_ts(self.db.clock().write_horizon());
+        let clock = self.db.clock();
+        let mut w = Writer::new(&state, ts)
+            .with_max_ts(clock.write_horizon())
+            .with_now(clock.now());
         for m in &ops {
             w.apply(m)?;
         }
+        let mut pending = inner.pending.clone();
+        for &p in w.pending_commit_ts() {
+            if !pending.contains(&p) {
+                pending.push(p);
+            }
+        }
         let (next, written) = w.finish()?;
+        check(&pending)?;
+        inner.pending = pending;
         inner.local = Some(Arc::new(next));
         // DML reads the rows it changes.
         for (t, k) in written {
@@ -157,6 +180,12 @@ impl ReadWriteTxn {
         }
         inner.dml.extend(ops);
         Ok(())
+    }
+
+    /// The `(table, column)`s this transaction's DML wrote with `PENDING_COMMIT_TIMESTAMP()`.
+    /// Spanner rejects reading them before commit.
+    pub fn pending_commit_ts(&self) -> Vec<(TableId, usize)> {
+        self.inner.lock().pending.clone()
     }
 
     /// Commits DML effects plus `mutations`, which are resolved against `catalog`.

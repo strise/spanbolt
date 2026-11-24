@@ -3,7 +3,7 @@
 use crate::DdlError;
 use crate::lexer::{Tok, tokenize};
 use crate::names;
-use crate::parser::{ChangeStream, CsTarget};
+use crate::parser::{ChangeStream, CsTarget, GrantStmt, parse_grant};
 use crate::schema::*;
 
 type R<T> = Result<T, DdlError>;
@@ -66,7 +66,7 @@ fn not_keyable(ty: &ColumnType) -> bool {
 const MAX_STRING_LEN: u64 = 2_621_440;
 const MAX_BYTES_LEN: u64 = 10_485_760;
 
-fn validate_column(table: &str, c: &Column) -> R<()> {
+fn validate_column(table: &str, c: &Column, compat: bool) -> R<()> {
     fn check_len(table: &str, c: &Column, ty: &ColumnType) -> R<()> {
         let (n, max) = match ty {
             ColumnType::String(Some(n)) => (*n, MAX_STRING_LEN),
@@ -118,17 +118,136 @@ fn validate_column(table: &str, c: &Column) -> R<()> {
             c.name
         )));
     }
+    if let Some(u) = &c.on_update
+        && !is_pending_commit_timestamp(u)
+    {
+        return Err(on_update_not_pct(table, &c.name, u, compat));
+    }
+    if c.default
+        .as_deref()
+        .is_some_and(is_pending_commit_timestamp)
+        && !c.allow_commit_timestamp
+    {
+        return Err(pre(format!(
+            "Cannot use default value expression PENDING_COMMIT_TIMESTAMP() on column `{}` without the allow_commit_timestamp column option.",
+            c.name
+        )));
+    }
+    if c.on_update.is_some()
+        && !c
+            .default
+            .as_deref()
+            .is_some_and(is_pending_commit_timestamp)
+    {
+        return Err(if compat {
+            inv(format!(
+                "The ON UPDATE expression of column `{}` does not match the DEFAULT value expression.",
+                c.name
+            ))
+        } else {
+            default_not_pct(&c.name)
+        });
+    }
     if c.default.is_some() && c.generated.is_some() {
         return Err(inv(format!(
             "Cannot use DEFAULT with generated column `{}`.",
             c.name
         )));
     }
+    check_virtual_not_null(table, c)?;
     if c.ty == ColumnType::TokenList && !c.hidden {
         return Err(inv(format!(
             "TOKENLIST column {table}.{} must be HIDDEN.",
             c.name
         )));
+    }
+    Ok(())
+}
+
+fn on_update_not_pct(table: &str, column: &str, expr: &str, compat: bool) -> DdlError {
+    inv(if compat {
+        "PENDING_COMMIT_TIMESTAMP() is the only supported ON UPDATE expression.".into()
+    } else {
+        format!(
+            "Error parsing ON UPDATE expression '{expr}' from column '{column}' in table '{table}': PENDING_COMMIT_TIMESTAMP() and PENDING_COMMIT_TIMESTAMP_INT64() are the only supported ON UPDATE expressions."
+        )
+    })
+}
+
+fn default_not_pct(column: &str) -> DdlError {
+    pre(format!(
+        "The only default value expression permitted for commit timestamp column `{column}` is PENDING_COMMIT_TIMESTAMP()."
+    ))
+}
+
+fn on_update_needs_default(column: &str) -> DdlError {
+    inv(format!(
+        "Column `{column}` with an ON UPDATE expression must have an identical DEFAULT value expression."
+    ))
+}
+
+/// Only STORED generated columns can be NOT NULL (emulator 1.5.51 and production).
+fn check_virtual_not_null(table: &str, c: &Column) -> R<()> {
+    if c.not_null && matches!(c.generated, Some(Generated::Expr { stored: false, .. })) {
+        return Err(inv(format!(
+            "Generated column `{table}.{}` that are not marked as STORED cannot be specified as NOT NULL.",
+            c.name
+        )));
+    }
+    Ok(())
+}
+
+/// Rejects generated columns that read each other in a cycle.
+fn check_generated_cycles(t: &Table) -> R<()> {
+    let reads = |c: &Column| -> Vec<usize> {
+        let Some((e, _)) = c.generated.as_ref().and_then(Generated::expr) else {
+            return Vec::new();
+        };
+        let ids = crate::identifiers(e).unwrap_or_default();
+        t.columns
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.generated.as_ref().and_then(Generated::expr).is_some())
+            .filter(|(_, o)| ids.iter().any(|w| w.eq_ignore_ascii_case(&o.name)))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let edges: Vec<Vec<usize>> = t.columns.iter().map(reads).collect();
+    // 0 = unvisited, 1 = on the current path, 2 = done.
+    fn visit(
+        c: usize,
+        edges: &[Vec<usize>],
+        mark: &mut [u8],
+        path: &mut Vec<usize>,
+    ) -> Option<Vec<usize>> {
+        match mark[c] {
+            2 => return None,
+            1 => {
+                let at = path.iter().position(|&p| p == c).unwrap_or(0);
+                return Some(path[at..].to_vec());
+            }
+            _ => {}
+        }
+        mark[c] = 1;
+        path.push(c);
+        for &d in &edges[c] {
+            if let Some(cycle) = visit(d, edges, mark, path) {
+                return Some(cycle);
+            }
+        }
+        path.pop();
+        mark[c] = 2;
+        None
+    }
+    let mut mark = vec![0u8; t.columns.len()];
+    for c in 0..t.columns.len() {
+        if let Some(cycle) = visit(c, &edges, &mut mark, &mut Vec::new()) {
+            let names: Vec<&str> = cycle.iter().map(|&i| t.columns[i].name.as_str()).collect();
+            return Err(pre(format!(
+                "Cycle detected while analysing generated column, which include objects ({})",
+                names.join(",")
+            )));
+        }
     }
     Ok(())
 }
@@ -231,6 +350,170 @@ impl Schema {
                     "CHANGE STREAM" | "MODEL" | "PROPERTY GRAPH"
                 ) && o.name.eq_ignore_ascii_case(name)
             })
+            || self.locality_group(name).is_some()
+    }
+
+    fn locality_group(&self, name: &str) -> Option<usize> {
+        self.locality_groups
+            .iter()
+            .position(|g| g.name.eq_ignore_ascii_case(name))
+    }
+
+    /// The locality groups a statement's tables, columns and indexes name must exist.
+    fn check_locality_refs(&self, stmt: &Statement, compat: bool) -> R<()> {
+        let cols = |cs: &[Column]| -> Vec<String> {
+            cs.iter().filter_map(|c| c.locality_group.clone()).collect()
+        };
+        let refs: Vec<String> = match stmt {
+            Statement::CreateTable { table, .. } => {
+                let mut v = cols(&table.columns);
+                v.extend(table.locality_group.clone());
+                v
+            }
+            Statement::CreateIndex { index, .. } => index.locality_group.iter().cloned().collect(),
+            Statement::AlterTable { action, .. } => match action {
+                AlterTable::AddColumn { column, .. } | AlterTable::AlterColumn { column } => {
+                    cols(std::slice::from_ref(column))
+                }
+                AlterTable::SetColumnOptions {
+                    locality_group: Some(Some(g)),
+                    ..
+                }
+                | AlterTable::SetOptions {
+                    locality_group: Some(g),
+                } => vec![g.clone()],
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        for g in refs {
+            if !g.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP) && self.locality_group(&g).is_none()
+            {
+                // Production answers NOT_FOUND without a message.
+                let msg = if compat {
+                    format!("Locality group not found: {g}")
+                } else {
+                    String::new()
+                };
+                return Err(DdlError::NotFound(msg));
+            }
+        }
+        Ok(())
+    }
+
+    /// Production only: spilling to HDD needs SSD storage first.
+    fn check_locality_storage(g: &LocalityGroup) -> R<()> {
+        let opt = |k: &str| {
+            g.options
+                .iter()
+                .find(|(n, v)| n.eq_ignore_ascii_case(k) && v != "NULL")
+                .map(|(_, v)| v.as_str())
+        };
+        if opt("storage") == Some("'hdd'") && opt("ssd_to_hdd_spill_timespan").is_some() {
+            return Err(pre(format!(
+                "Locality Group {} has invalid storage option: hdd. If the ssd_to_hdd_spill_timespan is set, then the storage option is required to be \"ssd\".",
+                g.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn locality_group_referenced(&self, name: &str) -> bool {
+        let is = |g: &Option<String>| g.as_deref().is_some_and(|g| g.eq_ignore_ascii_case(name));
+        self.tables
+            .values()
+            .any(|t| is(&t.locality_group) || t.columns.iter().any(|c| is(&c.locality_group)))
+            || self.indexes.values().any(|i| is(&i.locality_group))
+    }
+
+    fn create_locality_group(
+        &mut self,
+        group: &LocalityGroup,
+        if_not_exists: bool,
+        compat: bool,
+    ) -> R<()> {
+        let name = &group.name;
+        if self.locality_group(name).is_some() {
+            // Production refuses even with IF NOT EXISTS.
+            return match (compat, if_not_exists) {
+                (true, true) => Ok(()),
+                (true, false) => Err(dup(name)),
+                (false, _) => Err(inv(format!(
+                    "Could not create locality group because it already exists: {name}"
+                ))),
+            };
+        }
+        self.check_new_name(name)?;
+        let mut group = group.clone();
+        if !compat {
+            group.options.retain(|(_, v)| v != "NULL");
+            Self::check_locality_storage(&group)?;
+        }
+        self.locality_groups.push(group);
+        Ok(())
+    }
+
+    fn alter_locality_group(
+        &mut self,
+        name: &str,
+        options: &[(String, String)],
+        compat: bool,
+    ) -> R<()> {
+        let i = match self.locality_group(name) {
+            Some(i) => i,
+            // `default` exists without being created.
+            None if name.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP) => {
+                self.locality_groups.push(LocalityGroup {
+                    name: DEFAULT_LOCALITY_GROUP.to_string(),
+                    options: Vec::new(),
+                });
+                self.locality_groups.len() - 1
+            }
+            None if compat => {
+                return Err(DdlError::NotFound(format!(
+                    "Locality group not found: {name}"
+                )));
+            }
+            None => return Err(DdlError::NotFound(String::new())),
+        };
+        let mut group = self.locality_groups[i].clone();
+        if compat {
+            // The emulator replaces the options rather than merging them.
+            group.options = options.to_vec();
+        } else {
+            merge_options(&mut group.options, options);
+            Self::check_locality_storage(&group)?;
+        }
+        self.locality_groups[i] = group;
+        Ok(())
+    }
+
+    fn drop_locality_group(&mut self, name: &str, if_exists: bool, compat: bool) -> R<()> {
+        let Some(i) = self.locality_group(name) else {
+            // Production refuses even with IF EXISTS.
+            return match (compat, if_exists) {
+                (true, true) => Ok(()),
+                (true, false) => Err(DdlError::NotFound(format!(
+                    "Locality group not found: {name}"
+                ))),
+                (false, _) => Err(inv(format!(
+                    "Cannot drop locality group {name} - it does not exist."
+                ))),
+            };
+        };
+        if self.locality_group_referenced(name) {
+            return Err(if compat {
+                pre(format!(
+                    "Locality group {name} cannot be dropped as it is referenced."
+                ))
+            } else {
+                inv(format!(
+                    "Cannot drop locality group {name} - it is still referenced."
+                ))
+            });
+        }
+        self.locality_groups.remove(i);
+        Ok(())
     }
 
     fn check_new_name(&self, name: &str) -> R<()> {
@@ -418,12 +701,25 @@ impl Schema {
         Ok(())
     }
 
-    fn create_table(&mut self, table: &Table, if_not_exists: bool) -> R<()> {
+    fn create_table(&mut self, table: &Table, if_not_exists: bool, compat: bool) -> R<()> {
         if if_not_exists && self.table_key(&table.name).is_some() {
             return Ok(());
         }
         self.check_new_name(&table.name)?;
         let mut t = table.clone();
+        if !compat {
+            // Production only: the emulator keys rows by a virtual generated column.
+            for k in &t.primary_key {
+                if let Some(c) = t.column(&k.column)
+                    && matches!(c.generated, Some(Generated::Expr { stored: false, .. }))
+                {
+                    return Err(inv(format!(
+                        "Generated column `{}.{}` must be STORED to be part of the primary key.",
+                        t.name, c.name
+                    )));
+                }
+            }
+        }
         for (i, c) in t.columns.iter().enumerate() {
             if t.columns[..i]
                 .iter()
@@ -431,8 +727,9 @@ impl Schema {
             {
                 return Err(pre(format!("Duplicate column name {}.{}.", t.name, c.name)));
             }
-            validate_column(&t.name, c)?;
+            validate_column(&t.name, c, compat)?;
         }
+        check_generated_cycles(&t)?;
         for (i, k) in t.primary_key.iter().enumerate() {
             if t.primary_key[..i]
                 .iter()
@@ -456,6 +753,12 @@ impl Schema {
                         t.name,
                         c.name,
                         base_type(&c.ty)
+                    )));
+                }
+                Some(c) if c.on_update.is_some() => {
+                    return Err(inv(format!(
+                        "Column {}.{} with ON UPDATE cannot be a part of or the whole primary key.",
+                        t.name, c.name
                     )));
                 }
                 _ => {}
@@ -582,12 +885,15 @@ impl Schema {
                 views.join(", ")
             )));
         }
+        let name = t.name.clone();
         self.tables.remove(&k);
         self.drop_order(ObjectKind::Table, &k);
+        self.grants
+            .retain(|g| !matches!(&g.object, GrantObject::Table { table, .. } if *table == name));
         Ok(())
     }
 
-    fn alter_table(&mut self, table: &str, action: &AlterTable) -> R<()> {
+    fn alter_table(&mut self, table: &str, action: &AlterTable, compat: bool) -> R<()> {
         let k = self.need_table(table)?;
         let t = &self.tables[&k];
         let tname = t.name.clone();
@@ -607,7 +913,12 @@ impl Schema {
                         tname, column.name
                     )));
                 }
-                validate_column(&tname, column)?;
+                validate_column(&tname, column, compat)?;
+                if column.generated.is_some() {
+                    let mut next = t.clone();
+                    next.columns.push(column.clone());
+                    check_generated_cycles(&next)?;
+                }
                 self.table_mut(&k)?.columns.push(column.clone());
             }
             AlterTable::DropColumn { name } => {
@@ -633,8 +944,14 @@ impl Schema {
                 }
                 let streams = self.streams_tracking(&tname, Some(name));
                 if !streams.is_empty() {
+                    // The emulator names the column with its table and puts a space before the dot.
+                    let (gap, column) = if compat {
+                        (" ", format!("{tname}.{cname}"))
+                    } else {
+                        ("", cname.clone())
+                    };
                     return Err(pre(format!(
-                        "Cannot drop column {tname}.{cname} . Column {tname}.{cname} is tracked by {}. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
+                        "Cannot drop column {tname}.{cname}{gap}. Column {column} is tracked by {}. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
                         count_streams(&streams)
                     )));
                 }
@@ -688,6 +1005,10 @@ impl Schema {
                 self.table_mut(&k)?
                     .columns
                     .retain(|c| !c.name.eq_ignore_ascii_case(name));
+                self.grants.retain(|g| {
+                    !matches!(&g.object, GrantObject::Table { table, column: Some(c), .. }
+                        if *table == tname && *c == cname)
+                });
             }
             AlterTable::AlterColumn { column } => {
                 let Some(old) = t.column(&column.name) else {
@@ -749,14 +1070,26 @@ impl Schema {
                         old.name, ix.name
                     )));
                 }
-                validate_column(&tname, column)?;
                 let mut new = column.clone();
                 new.name = old.name.clone();
                 if !new.allow_commit_timestamp && new.ty == ColumnType::Timestamp {
                     new.allow_commit_timestamp = old.allow_commit_timestamp;
                 }
+                validate_column(&tname, &new, compat)?;
                 if new.generated.is_none() && old.generated.is_some() {
                     new.generated = old.generated.clone();
+                }
+                check_virtual_not_null(&tname, &new)?;
+                if new.generated.is_some() {
+                    let mut next = t.clone();
+                    if let Some(c) = next
+                        .columns
+                        .iter_mut()
+                        .find(|c| c.name.eq_ignore_ascii_case(&new.name))
+                    {
+                        *c = new.clone();
+                    }
+                    check_generated_cycles(&next)?;
                 }
                 let t = self.table_mut(&k)?;
                 if let Some(c) = t
@@ -768,8 +1101,17 @@ impl Schema {
                 }
             }
             AlterTable::SetColumnDefault { name, default } => {
-                if t.column(name).is_none() {
+                let Some(c) = t.column(name) else {
                     return Err(col_not_found(name));
+                };
+                if c.on_update.is_some() {
+                    match default {
+                        None => return Err(on_update_needs_default(&c.name)),
+                        Some(d) if !is_pending_commit_timestamp(d) => {
+                            return Err(default_not_pct(&c.name));
+                        }
+                        Some(_) => {}
+                    }
                 }
                 let t = self.table_mut(&k)?;
                 if let Some(c) = t
@@ -780,9 +1122,53 @@ impl Schema {
                     c.default = default.clone();
                 }
             }
+            AlterTable::SetColumnOnUpdate { name, on_update } => {
+                let Some(c) = t.column(name) else {
+                    return Err(col_not_found(name));
+                };
+                if let Some(u) = on_update {
+                    if !is_pending_commit_timestamp(u) {
+                        return Err(on_update_not_pct(&tname, &c.name, u, compat));
+                    }
+                    if !compat && c.ty != ColumnType::Timestamp {
+                        // Cloud Spanner type-checks the expression first; its message escapes
+                        // the quotes.
+                        return Err(inv(format!(
+                            "Error parsing ON UPDATE expression \\'{u}\\' from column \\'{}\\' in table \\'{tname}\\': Expected type {}; found TIMESTAMP [at 1:1]",
+                            c.name,
+                            base_type(&c.ty)
+                        )));
+                    }
+                    if !c
+                        .default
+                        .as_deref()
+                        .is_some_and(is_pending_commit_timestamp)
+                    {
+                        return Err(on_update_needs_default(&c.name));
+                    }
+                    if t.primary_key
+                        .iter()
+                        .any(|k| k.column.eq_ignore_ascii_case(&c.name))
+                    {
+                        return Err(inv(format!(
+                            "Column {tname}.{} with ON UPDATE cannot be a part of or the whole primary key.",
+                            c.name
+                        )));
+                    }
+                }
+                let t = self.table_mut(&k)?;
+                if let Some(c) = t
+                    .columns
+                    .iter_mut()
+                    .find(|c| c.name.eq_ignore_ascii_case(name))
+                {
+                    c.on_update = on_update.clone();
+                }
+            }
             AlterTable::SetColumnOptions {
                 name,
                 allow_commit_timestamp,
+                locality_group,
             } => {
                 let Some(c) = t.column(name) else {
                     return Err(col_not_found(name));
@@ -813,16 +1199,22 @@ impl Schema {
                         c.name
                     )));
                 }
-                if let Some(v) = allow_commit_timestamp {
-                    let t = self.table_mut(&k)?;
-                    if let Some(c) = t
-                        .columns
-                        .iter_mut()
-                        .find(|c| c.name.eq_ignore_ascii_case(name))
-                    {
+                let t = self.table_mut(&k)?;
+                if let Some(c) = t
+                    .columns
+                    .iter_mut()
+                    .find(|c| c.name.eq_ignore_ascii_case(name))
+                {
+                    if let Some(v) = allow_commit_timestamp {
                         c.allow_commit_timestamp = *v;
                     }
+                    if let Some(g) = locality_group {
+                        c.locality_group = g.clone();
+                    }
                 }
+            }
+            AlterTable::SetOptions { locality_group } => {
+                self.table_mut(&k)?.locality_group = locality_group.clone();
             }
             AlterTable::AddForeignKey(fk) => {
                 let mut fk = fk.clone();
@@ -861,9 +1253,14 @@ impl Schema {
                 t.checks.retain(|c| !c.name.eq_ignore_ascii_case(name));
             }
             AlterTable::SetOnDelete(o) => {
-                if t.interleave.is_none() {
+                let Some(il) = &t.interleave else {
                     return Err(inv(format!(
                         "Cannot SET ON DELETE on table {tname} that does not have an INTERLEAVE clause."
+                    )));
+                };
+                if !il.in_parent {
+                    return Err(inv(format!(
+                        "Cannot SET ON DELETE on an INTERLEAVE IN table {tname}."
                     )));
                 }
                 if let Some(il) = self.table_mut(&k)?.interleave.as_mut() {
@@ -986,6 +1383,13 @@ impl Schema {
             }
         }
         let same = |s: &str| s.eq_ignore_ascii_case(&old_name);
+        for g in &mut self.grants {
+            if let GrantObject::Table { table, .. } = &mut g.object
+                && same(table)
+            {
+                *table = to.to_string();
+            }
+        }
         for t in self.tables.values_mut() {
             if let Some(il) = t.interleave.as_mut()
                 && same(&il.parent)
@@ -1009,6 +1413,19 @@ impl Schema {
         for i in self.search_indexes.values_mut() {
             if same(&i.table) {
                 i.table = to.to_string();
+            }
+        }
+        for o in self.opaque.iter_mut().filter(|o| o.kind == "CHANGE STREAM") {
+            let Ok(mut cs) = ChangeStream::parse(&o.ddl) else {
+                continue;
+            };
+            if let CsTarget::Tables(ts) = &mut cs.target
+                && ts.iter().any(|(t, _)| same(t))
+            {
+                for (t, _) in ts.iter_mut().filter(|(t, _)| same(t)) {
+                    *t = to.to_string();
+                }
+                o.ddl = cs.to_ddl();
             }
         }
         Ok(new_key)
@@ -1175,6 +1592,71 @@ impl Schema {
         Ok(())
     }
 
+    /// Production's ALTER SEARCH INDEX (the emulator doesn't parse it).
+    fn alter_search_index(&mut self, name: &str, action: &AlterSearchIndex) -> R<()> {
+        let k = key(name);
+        let Some(idx) = self.search_indexes.get(&k) else {
+            return Err(DdlError::NotFound(format!("Index not found: {name}")));
+        };
+        let t = self
+            .resolve_table(&idx.table)
+            .ok_or_else(|| table_not_found(&idx.table))?;
+        let n = &idx.name;
+        let has = |list: &[String], c: &str| list.iter().any(|x| x.eq_ignore_ascii_case(c));
+        let not_found = |c: &str| DdlError::NotFound(format!("Column not found in table {n}: {c}"));
+        let mut next = idx.clone();
+        match action {
+            AlterSearchIndex::AddColumn(c) => {
+                if has(&idx.columns, c) {
+                    return Err(inv(format!("Index {n} specifies key column {c} twice.")));
+                }
+                let Some(col) = t.column(c) else {
+                    return Err(pre(format!(
+                        "Index {n} specifies key column {c} which does not exist in the index's base table."
+                    )));
+                };
+                if col.ty != ColumnType::TokenList {
+                    return Err(pre(format!(
+                        "Cannot alter non-TOKENLIST key column {} in search index {n}. You can use STORED COLUMN in ALTER SEARCH INDEX statement if you want to modify a stored column in this search index.",
+                        col.name
+                    )));
+                }
+                next.columns.push(col.name.clone());
+            }
+            AlterSearchIndex::DropColumn(c) => {
+                if !has(&idx.columns, c) {
+                    return Err(not_found(c));
+                }
+                if idx.columns.len() == 1 {
+                    return Err(pre(format!(
+                        "Cannot drop the only key {} in search index {n}. You can use DROP SEARCH INDEX to completely drop this search index.",
+                        idx.columns[0]
+                    )));
+                }
+                next.columns.retain(|x| !x.eq_ignore_ascii_case(c));
+            }
+            AlterSearchIndex::AddStoredColumn(c) => {
+                if has(&idx.storing, c) {
+                    return Err(inv(format!("Index {n} specifies stored column {c} twice.")));
+                }
+                let Some(col) = t.column(c) else {
+                    return Err(pre(format!(
+                        "Index {n} specifies stored column {c} which does not exist in the index's base table."
+                    )));
+                };
+                next.storing.push(col.name.clone());
+            }
+            AlterSearchIndex::DropStoredColumn(c) => {
+                if !has(&idx.storing, c) {
+                    return Err(not_found(c));
+                }
+                next.storing.retain(|x| !x.eq_ignore_ascii_case(c));
+            }
+        }
+        self.search_indexes.insert(k, next);
+        Ok(())
+    }
+
     fn alter_index(&mut self, name: &str, action: &AlterIndex, emulator_compat: bool) -> R<()> {
         let k = key(name);
         let Some(idx) = self.indexes.get(&k) else {
@@ -1243,9 +1725,14 @@ impl Schema {
         Ok(())
     }
 
-    fn opaque_stmt(&mut self, object: &OpaqueObject, drop: bool) -> R<()> {
+    fn opaque_stmt(&mut self, object: &OpaqueObject, drop: bool, compat: bool) -> R<()> {
         let kind = object.kind.as_str();
         let name = object.name.as_str();
+        match kind {
+            "ROLE" => return self.role_stmt(object, drop, compat),
+            "GRANT" | "REVOKE" => return self.grant_stmt(&object.ddl, compat),
+            _ => {}
+        }
         if drop {
             let Some(i) = self.opaque_find(kind, name) else {
                 if object.ddl == "IF EXISTS" || kind == "ROLE" {
@@ -1259,15 +1746,31 @@ impl Schema {
                 };
                 return Err(DdlError::NotFound(format!("{what} not found: {name}")));
             };
-            self.opaque.remove(i);
+            let removed = self.opaque.remove(i);
+            if kind == "CHANGE STREAM" {
+                let tvf = format!("READ_{}", removed.name);
+                self.grants.retain(|g| match &g.object {
+                    GrantObject::ChangeStream(c) => *c != removed.name,
+                    GrantObject::TableFunction(f) => *f != tvf,
+                    _ => true,
+                });
+            }
             return Ok(());
         }
         match kind {
             "CHANGE STREAM" => {
+                let (_, if_not_exists, ddl) = normalize_create_head(&object.ddl, kind);
+                if if_not_exists && self.opaque_find(kind, name).is_some() {
+                    return Ok(());
+                }
                 self.check_new_name(name)?;
-                let cs = ChangeStream::parse(&object.ddl)?;
-                self.validate_change_stream(&cs)?;
-                self.opaque.push(object.clone());
+                let cs = ChangeStream::parse(&ddl)?;
+                self.validate_change_stream(&cs, compat)?;
+                self.opaque.push(OpaqueObject {
+                    kind: kind.to_string(),
+                    name: name.to_string(),
+                    ddl,
+                });
             }
             "ALTER CHANGE STREAM" => {
                 let Some(i) = self.opaque_find("CHANGE STREAM", name) else {
@@ -1277,7 +1780,7 @@ impl Schema {
                 };
                 let mut cs = ChangeStream::parse(&self.opaque[i].ddl)?;
                 cs.alter(&object.ddl)?;
-                self.validate_change_stream(&cs)?;
+                self.validate_change_stream(&cs, compat)?;
                 self.opaque[i].ddl = cs.to_ddl();
             }
             "PROPERTY GRAPH" | "MODEL" => {
@@ -1304,6 +1807,147 @@ impl Schema {
         Ok(())
     }
 
+    /// `CREATE ROLE` and `DROP ROLE`. The emulator accepts both without checking them.
+    fn role_stmt(&mut self, object: &OpaqueObject, drop: bool, compat: bool) -> R<()> {
+        let name = object.name.as_str();
+        let found = self.opaque_find("ROLE", name);
+        if drop {
+            let Some(i) = found else {
+                if compat || object.ddl == "IF EXISTS" {
+                    return Ok(());
+                }
+                return Err(pre(format!("Role not found: {name}.")));
+            };
+            let role = self.opaque[i].name.clone();
+            // Roles granted to the role don't count.
+            let privileged = self
+                .grants
+                .iter()
+                .any(|g| g.grantee == role && !matches!(g.object, GrantObject::Role(_)));
+            if !compat && privileged {
+                return Err(inv(format!(
+                    "Cannot drop role `{name}` which has active privileges. All privileges must be revoked from a role before it can be dropped."
+                )));
+            }
+            self.opaque.remove(i);
+            self.grants
+                .retain(|g| g.grantee != role && g.object != GrantObject::Role(role.clone()));
+            return Ok(());
+        }
+        let error = if name.eq_ignore_ascii_case("public") {
+            inv(format!(
+                "Invalid role name. `{name}` is a reserved system role name, ignoring case."
+            ))
+        } else if found.is_some() {
+            pre(format!("Duplicate name in schema: {name}."))
+        } else {
+            self.opaque.push(object.clone());
+            return Ok(());
+        };
+        if compat { Ok(()) } else { Err(error) }
+    }
+
+    /// `GRANT` and `REVOKE`. The emulator accepts any it can parse and checks nothing, so under
+    /// `compat` one that names a missing role or object is accepted and not stored.
+    fn grant_stmt(&mut self, ddl: &str, compat: bool) -> R<()> {
+        let stmt = parse_grant(ddl)?;
+        let (roles, objects) = match self.resolve_grant(&stmt) {
+            Ok(r) => r,
+            Err(_) if compat => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        for grantee in roles {
+            for object in &objects {
+                let held = |g: &Grant| g.grantee == grantee && g.object == *object;
+                if stmt.revoke {
+                    self.grants.retain(|g| !held(g));
+                } else if !self.grants.iter().any(held) {
+                    self.grants.push(Grant {
+                        grantee: grantee.clone(),
+                        object: object.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The grantees and objects of a grant, under their names in the schema.
+    fn resolve_grant(&self, stmt: &GrantStmt) -> R<(Vec<String>, Vec<GrantObject>)> {
+        let role = |name: &str, system: bool| -> R<String> {
+            if let Some(i) = self.opaque_find("ROLE", name) {
+                return Ok(self.opaque[i].name.clone());
+            }
+            if system && let Some(r) = SYSTEM_ROLES.iter().find(|r| r.eq_ignore_ascii_case(name)) {
+                return Ok(r.to_string());
+            }
+            Err(pre(format!("Role not found: {name}.")))
+        };
+        let roles = stmt
+            .roles
+            .iter()
+            .map(|r| role(r, false))
+            .collect::<R<Vec<_>>>()?;
+        let stream = |name: &str| {
+            self.opaque_find("CHANGE STREAM", name)
+                .map(|i| self.opaque[i].name.clone())
+        };
+        let mut objects = Vec::new();
+        for object in &stmt.objects {
+            objects.push(match object {
+                GrantObject::Table {
+                    table,
+                    privilege,
+                    column,
+                } => {
+                    let t = &self.tables[&self.need_table(table)?];
+                    let column = match column {
+                        None => None,
+                        Some(c) => Some(
+                            t.columns
+                                .iter()
+                                .find(|x| x.name.eq_ignore_ascii_case(c))
+                                .map(|x| x.name.clone())
+                                .ok_or_else(|| {
+                                    DdlError::NotFound(format!(
+                                        "Column not found in table {}: {c}",
+                                        t.name
+                                    ))
+                                })?,
+                        ),
+                    };
+                    GrantObject::Table {
+                        table: t.name.clone(),
+                        privilege: *privilege,
+                        column,
+                    }
+                }
+                GrantObject::View(v) => GrantObject::View(
+                    self.views
+                        .get(&key(v))
+                        .map(|x| x.name.clone())
+                        .ok_or_else(|| DdlError::NotFound(format!("VIEW not found: {v}")))?,
+                ),
+                GrantObject::ChangeStream(c) => {
+                    GrantObject::ChangeStream(stream(c).ok_or_else(|| {
+                        DdlError::NotFound(format!("Change Stream not found: {c}"))
+                    })?)
+                }
+                GrantObject::TableFunction(f) => GrantObject::TableFunction(
+                    f.get(..5)
+                        .filter(|p| p.eq_ignore_ascii_case("READ_"))
+                        .and_then(|_| stream(&f[5..]))
+                        .map(|c| format!("READ_{c}"))
+                        .ok_or_else(|| {
+                            DdlError::NotFound(format!("TABLE_FUNCTION not found: {f}"))
+                        })?,
+                ),
+                GrantObject::Role(r) => GrantObject::Role(role(r, true)?),
+            });
+        }
+        Ok((roles, objects))
+    }
+
     /// Change streams explicitly tracking `table` (or `column` of it).
     fn streams_tracking(&self, table: &str, column: Option<&str>) -> Vec<String> {
         self.opaque
@@ -1324,7 +1968,8 @@ impl Schema {
             .collect()
     }
 
-    fn validate_change_stream(&self, cs: &ChangeStream) -> R<()> {
+    fn validate_change_stream(&self, cs: &ChangeStream, compat: bool) -> R<()> {
+        check_change_stream_options(cs, compat)?;
         if let CsTarget::Tables(ts) = &cs.target {
             for (t, cols) in ts {
                 let Some(table) = self.resolve_table(t) else {
@@ -1343,10 +1988,98 @@ impl Schema {
                 }
             }
         }
+        self.check_change_stream_limit(cs, compat)
+    }
+
+    /// The tables, non-key columns (as `table.column`) and ALL that `cs` tracks, in the order
+    /// Spanner checks them against the limit.
+    fn tracked_objects(&self, cs: &ChangeStream) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let non_key = |t: &Table| -> Vec<String> {
+            t.columns
+                .iter()
+                .filter(|c| {
+                    !t.primary_key
+                        .iter()
+                        .any(|k| k.column.eq_ignore_ascii_case(&c.name))
+                })
+                .map(|c| c.name.clone())
+                .collect()
+        };
+        let whole = |t: &Table, out: &mut Vec<(String, String)>| {
+            out.push((t.name.clone(), String::new()));
+            for c in non_key(t) {
+                out.push((t.name.clone(), c));
+            }
+        };
+        match &cs.target {
+            CsTarget::None => {}
+            CsTarget::All => {
+                out.push((String::new(), String::new()));
+                for (_, n) in &self.creation_order {
+                    if let Some(t) = self.tables.get(n) {
+                        whole(t, &mut out);
+                    }
+                }
+            }
+            CsTarget::Tables(ts) => {
+                for (t, cols) in ts {
+                    let Some(table) = self.resolve_table(t) else {
+                        continue;
+                    };
+                    match cols {
+                        None => whole(table, &mut out),
+                        Some(cols) => {
+                            for c in cols {
+                                if let Some(col) = table.column(c) {
+                                    out.push((table.name.clone(), col.name.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// At most three change streams may track the same table, non-key column, or ALL.
+    fn check_change_stream_limit(&self, cs: &ChangeStream, compat: bool) -> R<()> {
+        let others: Vec<Vec<(String, String)>> = self
+            .opaque
+            .iter()
+            .filter(|o| o.kind == "CHANGE STREAM" && !o.name.eq_ignore_ascii_case(&cs.name))
+            .filter_map(|o| ChangeStream::parse(&o.ddl).ok())
+            .map(|o| self.tracked_objects(&o))
+            .collect();
+        let same = |a: &(String, String), b: &(String, String)| {
+            a.0.eq_ignore_ascii_case(&b.0) && a.1.eq_ignore_ascii_case(&b.1)
+        };
+        for obj in self.tracked_objects(cs) {
+            let count = others
+                .iter()
+                .filter(|o| o.iter().any(|x| same(x, &obj)))
+                .count();
+            if count < 3 {
+                continue;
+            }
+            let what = match (obj.0.as_str(), obj.1.as_str()) {
+                ("", _) => "ALL".to_string(),
+                (t, "") => t.to_string(),
+                (_, c) if compat => c.to_string(),
+                (t, c) => format!("{t}.{c}"),
+            };
+            let sep = if compat { " :" } else { "" };
+            return Err(pre(format!(
+                "Failed to create or alter Change Stream {}{sep} because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: {what}.",
+                cs.name
+            )));
+        }
         Ok(())
     }
 
-    fn apply_inner(&mut self, stmt: &Statement) -> R<()> {
+    fn apply_inner(&mut self, stmt: &Statement, compat: bool) -> R<()> {
+        self.check_locality_refs(stmt, compat)?;
         match stmt {
             Statement::CreateSchema {
                 name,
@@ -1427,10 +2160,26 @@ impl Schema {
             Statement::CreateTable {
                 table,
                 if_not_exists,
-            } => self.create_table(table, *if_not_exists)?,
+            } => self.create_table(table, *if_not_exists, compat)?,
             Statement::DropTable { name, if_exists } => self.drop_table(name, *if_exists)?,
-            Statement::AlterTable { table, action } => self.alter_table(table, action)?,
+            Statement::AlterTable {
+                table,
+                action,
+                if_exists,
+            } => {
+                if *if_exists && self.resolve_table(table).is_none() {
+                    return Ok(());
+                }
+                self.alter_table(table, action, compat)?
+            }
             Statement::RenameTables { renames } => {
+                // Spanner renames one pair after the other, so a chain can go through a new name;
+                // the emulator looks every source up in the schema before the statement.
+                if compat {
+                    for (from, _) in renames {
+                        self.need_table(from)?;
+                    }
+                }
                 let mut next = self.clone();
                 for (from, to) in renames {
                     let k = next.need_table(from)?;
@@ -1451,6 +2200,9 @@ impl Schema {
             }
             Statement::AlterIndex { name, action } => self.alter_index(name, action, false)?,
             Statement::CreateSearchIndex { index } => self.create_search_index(index)?,
+            Statement::AlterSearchIndex { name, action } => {
+                self.alter_search_index(name, action)?
+            }
             Statement::DropSearchIndex { name, if_exists } => {
                 if self.search_indexes.remove(&key(name)).is_none() && !if_exists {
                     return Err(DdlError::NotFound(format!("Index not found: {name}")));
@@ -1512,19 +2264,31 @@ impl Schema {
             }
             Statement::DropView { name, if_exists } => {
                 let k = key(name);
-                if self.views.remove(&k).is_none() {
+                let Some(view) = self.views.remove(&k) else {
                     if *if_exists {
                         return Ok(());
                     }
                     return Err(DdlError::NotFound(format!("View not found: {name}")));
-                }
+                };
                 self.drop_order(ObjectKind::View, &k);
+                self.grants
+                    .retain(|g| g.object != GrantObject::View(view.name.clone()));
             }
             Statement::AlterDatabase { options, name } => {
                 self.database_name = Some(name.clone());
                 merge_options(&mut self.options, options);
             }
-            Statement::Opaque { object, drop } => self.opaque_stmt(object, *drop)?,
+            Statement::CreateLocalityGroup {
+                group,
+                if_not_exists,
+            } => self.create_locality_group(group, *if_not_exists, compat)?,
+            Statement::AlterLocalityGroup { name, options } => {
+                self.alter_locality_group(name, options, compat)?
+            }
+            Statement::DropLocalityGroup { name, if_exists } => {
+                self.drop_locality_group(name, *if_exists, compat)?
+            }
+            Statement::Opaque { object, drop } => self.opaque_stmt(object, *drop, compat)?,
         }
         Ok(())
     }
@@ -1532,7 +2296,7 @@ impl Schema {
     /// Apply a parsed statement, validating it against the current schema. On error the schema
     /// is unchanged.
     pub fn apply(&mut self, stmt: &Statement) -> Result<(), DdlError> {
-        self.apply_inner(stmt)?;
+        self.apply_inner(stmt, false)?;
         self.version += 1;
         Ok(())
     }
@@ -1546,7 +2310,11 @@ impl Schema {
                 self.version += 1;
                 Ok(())
             }
-            _ => self.apply(stmt),
+            _ => {
+                self.apply_inner(stmt, true)?;
+                self.version += 1;
+                Ok(())
+            }
         }
     }
 
@@ -1554,7 +2322,7 @@ impl Schema {
     pub fn data_checks(&self, stmt: &Statement) -> Vec<DataCheck> {
         let mut out = Vec::new();
         match stmt {
-            Statement::AlterTable { table, action } => {
+            Statement::AlterTable { table, action, .. } => {
                 let Some(t) = self.resolve_table(table) else {
                     return out;
                 };
@@ -1726,4 +2494,88 @@ fn check_name_in_default_schema(name: &str) -> R<()> {
         )));
     }
     Ok(())
+}
+
+/// Seconds in a change stream `retention_period` (`36h`, `1440m`, `2d`, `86400s`).
+fn duration_secs(v: &str) -> Option<u64> {
+    let unit = match v.chars().last()? {
+        's' => 1,
+        'm' => 60,
+        'h' => 3600,
+        'd' => 86400,
+        _ => return None,
+    };
+    let n = &v[..v.len() - 1];
+    if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    n.parse::<u64>().ok()?.checked_mul(unit)
+}
+
+/// `retention_period` and `value_capture_type` values. The emulator allows up to 7 days of
+/// retention, production 30.
+fn check_change_stream_options(cs: &ChangeStream, compat: bool) -> R<()> {
+    let opt = |k: &str| {
+        cs.options
+            .iter()
+            .find(|(o, _)| o == k)
+            .and_then(|(_, v)| unquote(v))
+    };
+    let name = &cs.name;
+    let retention = opt("retention_period").and_then(|v| {
+        let max_days = if compat { 7 } else { 30 };
+        match duration_secs(&v) {
+            None if compat => Some(format!("Invalid time duration format: {v}.")),
+            None => Some(format!(
+                "ChangeStream {name} has invalid retention_period option: {v}. Invalid time duration format"
+            )),
+            Some(s) if !(86400..=max_days * 86400).contains(&s) => Some(if compat {
+                format!(
+                    "Invalid retention_period: {v}. Change Streams retention period must be a value in the range [24h, 7d]."
+                )
+            } else {
+                format!(
+                    "ChangeStream {name} has invalid retention_period option: {v}. Change Streams retention period must be a value in the range [24h, 30d]"
+                )
+            }),
+            Some(_) => None,
+        }
+    });
+    let capture = opt("value_capture_type")
+        .filter(|v| {
+            !matches!(
+                v.as_str(),
+                "OLD_AND_NEW_VALUES" | "NEW_ROW" | "NEW_VALUES" | "NEW_ROW_AND_OLD_VALUES"
+            )
+        })
+        .map(|v| {
+            if compat {
+                format!(
+                    "Invalid value_capture_type: {v}. Change Streams only support value capture types in OLD_AND_NEW_VALUES, NEW_ROW, and NEW_VALUES."
+                )
+            } else {
+                format!(
+                    "ChangeStream {name} has invalid value_capture_type option: {v}. Invalid value_capture_type"
+                )
+            }
+        });
+    // The emulator stops at the first bad option; Spanner lists them all, value_capture_type first.
+    let errors: Vec<String> = if compat {
+        retention.or(capture).into_iter().collect()
+    } else {
+        capture.into_iter().chain(retention).collect()
+    };
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(pre(errors.join(", ")))
+    }
+}
+
+/// A string option literal's value; `None` for NULL and other literals.
+fn unquote(v: &str) -> Option<String> {
+    match tokenize(v).ok()?.first().map(|t| &t.tok) {
+        Some(Tok::Str(s)) => Some(s.clone()),
+        _ => None,
+    }
 }

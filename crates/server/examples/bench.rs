@@ -15,6 +15,10 @@ use spanbolt_proto::spanner::spanner_client::SpannerClient;
 use spanbolt_server::Emulator;
 use tonic::transport::Channel;
 
+/// The allocator the `spanbolt` binary uses (src/main.rs), so the numbers match it.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
 const DB: &str = "projects/bench/instances/bench/databases/bench";

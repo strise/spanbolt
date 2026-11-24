@@ -1,6 +1,8 @@
 //! Negative cases; expected texts were taken from emulator 1.5.59.
 
-use spanbolt_ddl::{DataCheck, DdlError, Schema, parse_statement};
+use spanbolt_ddl::{
+    DataCheck, DdlError, Schema, parse_statement, parse_statement_emulator_compat, print_statement,
+};
 
 const BASE: &[&str] = &[
     "CREATE TABLE P (id INT64 NOT NULL, s STRING(MAX), ts TIMESTAMP, a ARRAY<INT64>, j JSON) PRIMARY KEY (id)",
@@ -564,4 +566,243 @@ fn unsupported_ddl_is_unimplemented() {
     ] {
         assert_eq!(kind(&parse_statement(sql).expect_err(sql)), ("Inv", msg));
     }
+}
+
+fn applied(stmts: &[&str]) -> Result<Schema, DdlError> {
+    let mut s = base();
+    for stmt in stmts {
+        s.apply(&parse_statement(stmt)?)?;
+    }
+    Ok(s)
+}
+
+#[test]
+fn column_keyword_is_optional() {
+    let s = applied(&[
+        "ALTER TABLE G ADD y INT64",
+        "ALTER TABLE G ALTER y INT64 NOT NULL",
+        "ALTER TABLE G ALTER y SET DEFAULT (7)",
+        "ALTER TABLE G DROP x",
+    ])
+    .unwrap();
+    let g = s.table("G").unwrap();
+    let names: Vec<_> = g.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["id", "y"]);
+    assert_eq!(g.columns[1].default.as_deref(), Some("7"));
+    // ADD still reads constraints, synonyms and row deletion policies first.
+    applied(&[
+        "ALTER TABLE G ADD CHECK (x > 0)",
+        "ALTER TABLE G ADD CONSTRAINT ck CHECK (x < 9)",
+    ])
+    .unwrap();
+    let e = parse_statement("ALTER TABLE G ADD IF NOT EXISTS y INT64").unwrap_err();
+    assert!(
+        e.to_string()
+            .ends_with("column 19: Encountered 'IF' while parsing: identifier"),
+        "{e}"
+    );
+}
+
+#[test]
+fn primary_key_inside_the_table_body() {
+    for (sql, key) in [
+        (
+            "CREATE TABLE X (Id INT64 NOT NULL PRIMARY KEY, V STRING(MAX))",
+            "PRIMARY KEY(Id)",
+        ),
+        (
+            "CREATE TABLE X (Id INT64, V STRING(MAX), PRIMARY KEY (Id, V DESC))",
+            "PRIMARY KEY(Id, V DESC)",
+        ),
+        (
+            "CREATE TABLE X (PRIMARY KEY (Id), Id INT64)",
+            "PRIMARY KEY(Id)",
+        ),
+        ("CREATE TABLE X (Id INT64, PRIMARY KEY ())", "PRIMARY KEY()"),
+        (
+            "CREATE TABLE X (id INT64 NOT NULL, Id2 INT64 NOT NULL, PRIMARY KEY (id, Id2)), INTERLEAVE IN PARENT P ON DELETE CASCADE",
+            "PRIMARY KEY(id, Id2)",
+        ),
+    ] {
+        let stmt = parse_statement(sql).unwrap_or_else(|e| panic!("{sql}: {e}"));
+        let printed = print_statement(&stmt);
+        assert!(printed.contains(key), "{sql} printed {printed}");
+        applied(&[sql]).unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    for (sql, msg) in [
+        (
+            "CREATE TABLE X (Id INT64, PRIMARY KEY (Id)) PRIMARY KEY (Id)",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64 PRIMARY KEY)",
+            "Multiple columns declared as PRIMARY KEY",
+        ),
+        (
+            "CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64, PRIMARY KEY (J))",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64) PRIMARY KEY (J)",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "CREATE TABLE X (Id INT64, PRIMARY KEY (Id), PRIMARY KEY (Id))",
+            "Can only specify PRIMARY KEY once.",
+        ),
+        (
+            "ALTER TABLE G ADD COLUMN y INT64 PRIMARY KEY",
+            "Unexpected PRIMARY KEY clause",
+        ),
+    ] {
+        let e = parse_statement(sql).expect_err(sql);
+        assert_eq!(
+            kind(&e),
+            (
+                "Inv",
+                format!("Error parsing Spanner DDL statement: {sql} : {msg}").as_str()
+            )
+        );
+    }
+}
+
+#[test]
+fn if_exists_forms() {
+    let s = applied(&[
+        "ALTER TABLE IF EXISTS Nope ADD COLUMN y INT64",
+        "ALTER TABLE IF EXISTS G ADD COLUMN y INT64",
+        "CREATE CHANGE STREAM IF NOT EXISTS cs FOR ALL",
+        "CREATE CHANGE STREAM IF NOT EXISTS cs2 FOR G",
+    ])
+    .unwrap();
+    assert!(s.table("G").unwrap().column("y").is_some());
+    let streams: Vec<_> = s
+        .opaque
+        .iter()
+        .filter(|o| o.kind == "CHANGE STREAM")
+        .map(|o| o.ddl.as_str())
+        .collect();
+    assert_eq!(
+        streams,
+        [
+            "CREATE CHANGE STREAM cs FOR G, H(a)",
+            "CREATE CHANGE STREAM cs2 FOR G"
+        ]
+    );
+    let e = applied(&["ALTER TABLE IF EXISTS G DROP COLUMN Nope"]).unwrap_err();
+    assert_eq!(kind(&e), ("Nf", "Column not found in table G: Nope"));
+    let stmt = parse_statement("ALTER TABLE IF EXISTS G ADD COLUMN y INT64").unwrap();
+    assert_eq!(
+        print_statement(&stmt),
+        "ALTER TABLE IF EXISTS G ADD COLUMN y INT64"
+    );
+}
+
+#[test]
+fn alter_search_index() {
+    let s = applied(&[
+        "ALTER TABLE H ADD COLUMN u TOKENLIST AS (TOKENIZE_FULLTEXT(a)) HIDDEN",
+        "ALTER SEARCH INDEX hs ADD COLUMN u",
+        "ALTER SEARCH INDEX hs ADD STORED COLUMN n",
+    ])
+    .unwrap();
+    let hs = &s.search_indexes["hs"];
+    assert_eq!(hs.columns, ["t", "u"]);
+    assert_eq!(hs.storing, ["n"]);
+    let s2 = {
+        let mut s2 = s.clone();
+        s2.apply(&parse_statement("ALTER SEARCH INDEX hs DROP COLUMN t").unwrap())
+            .unwrap();
+        s2.apply(&parse_statement("ALTER SEARCH INDEX hs DROP STORED COLUMN n").unwrap())
+            .unwrap();
+        s2
+    };
+    assert_eq!(s2.search_indexes["hs"].columns, ["u"]);
+    assert!(s2.search_indexes["hs"].storing.is_empty());
+    for (sql, k, msg) in [
+        (
+            "ALTER SEARCH INDEX hs ADD COLUMN t",
+            "Inv",
+            "Index hs specifies key column t twice.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs ADD COLUMN nope",
+            "Pre",
+            "Index hs specifies key column nope which does not exist in the index's base table.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs ADD COLUMN a",
+            "Pre",
+            "Cannot alter non-TOKENLIST key column a in search index hs. You can use STORED COLUMN in ALTER SEARCH INDEX statement if you want to modify a stored column in this search index.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs ADD STORED COLUMN n",
+            "Inv",
+            "Index hs specifies stored column n twice.",
+        ),
+        (
+            "ALTER SEARCH INDEX hs DROP STORED COLUMN a",
+            "Nf",
+            "Column not found in table hs: a",
+        ),
+        (
+            "ALTER SEARCH INDEX nope ADD COLUMN u",
+            "Nf",
+            "Index not found: nope",
+        ),
+    ] {
+        let mut s3 = s.clone();
+        let e = s3.apply(&parse_statement(sql).unwrap()).expect_err(sql);
+        assert_eq!(kind(&e), (k, msg), "{sql}");
+    }
+    let e = applied(&["ALTER SEARCH INDEX hs DROP COLUMN t"]).unwrap_err();
+    assert_eq!(
+        kind(&e),
+        (
+            "Pre",
+            "Cannot drop the only key t in search index hs. You can use DROP SEARCH INDEX to completely drop this search index."
+        )
+    );
+    let sql = "ALTER SEARCH INDEX hs ADD u";
+    assert_eq!(
+        kind(&parse_statement(sql).unwrap_err()),
+        (
+            "Inv",
+            "Error parsing Spanner DDL statement: ALTER SEARCH INDEX hs ADD u : Syntax error on line 1, column 23: Encountered 'ADD' while parsing: alter_search_index_statement"
+        )
+    );
+    // The emulator's grammar has no ALTER SEARCH INDEX.
+    let sql = "ALTER SEARCH INDEX hs ADD COLUMN u";
+    assert_eq!(
+        kind(&parse_statement_emulator_compat(sql).unwrap_err()),
+        (
+            "Inv",
+            "Error parsing Spanner DDL statement: ALTER SEARCH INDEX hs ADD COLUMN u : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement"
+        )
+    );
+}
+
+#[test]
+fn interleave_in_rejects_on_delete() {
+    let sql = "CREATE TABLE D (id INT64 NOT NULL, c INT64 NOT NULL) PRIMARY KEY (id, c), INTERLEAVE IN P ON DELETE CASCADE";
+    assert_eq!(
+        kind(&parse_statement(sql).unwrap_err()),
+        (
+            "Inv",
+            "table D uses INTERLEAVE IN and ON DELETE, which is not allowed since there is no parent/child relationship between rows of the two tables. Did you mean to use INTERLEAVE IN PARENT?"
+        )
+    );
+    assert_eq!(
+        kind(&parse_statement_emulator_compat(sql).unwrap_err()),
+        ("Inv", "Cannot SET ON DELETE on an INTERLEAVE IN table D.")
+    );
+    let e = applied(&[
+        "CREATE TABLE D (id INT64 NOT NULL, c INT64 NOT NULL) PRIMARY KEY (id, c), INTERLEAVE IN P",
+        "ALTER TABLE D SET ON DELETE CASCADE",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        kind(&e),
+        ("Inv", "Cannot SET ON DELETE on an INTERLEAVE IN table D.")
+    );
 }

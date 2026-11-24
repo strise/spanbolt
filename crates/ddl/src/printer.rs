@@ -435,7 +435,18 @@ pub fn print_statement(stmt: &Statement) -> String {
         } => {
             format!("DROP TABLE {}{}", if_exists(*ie), quote_path(name))
         }
-        Statement::AlterTable { table, action } => alter_table_sql(table, action),
+        Statement::AlterTable {
+            table,
+            action,
+            if_exists: ie,
+        } => {
+            let s = alter_table_sql(table, action);
+            if *ie {
+                s.replacen("ALTER TABLE ", "ALTER TABLE IF EXISTS ", 1)
+            } else {
+                s
+            }
+        }
         Statement::RenameTables { renames } => {
             let parts: Vec<String> = renames
                 .iter()
@@ -473,6 +484,19 @@ pub fn print_statement(stmt: &Statement) -> String {
             ),
         },
         Statement::CreateSearchIndex { index } => search_index_sql(index),
+        Statement::AlterSearchIndex { name, action } => {
+            let (verb, c) = match action {
+                AlterSearchIndex::AddColumn(c) => ("ADD COLUMN", c),
+                AlterSearchIndex::DropColumn(c) => ("DROP COLUMN", c),
+                AlterSearchIndex::AddStoredColumn(c) => ("ADD STORED COLUMN", c),
+                AlterSearchIndex::DropStoredColumn(c) => ("DROP STORED COLUMN", c),
+            };
+            format!(
+                "ALTER SEARCH INDEX {} {verb} {}",
+                quote_path(name),
+                crate::parser::quote_ident(c)
+            )
+        }
         Statement::DropSearchIndex {
             name,
             if_exists: ie,

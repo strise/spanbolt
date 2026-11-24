@@ -216,6 +216,8 @@ pub enum Statement {
     AlterTable {
         table: String,
         action: AlterTable,
+        /// `ALTER TABLE IF EXISTS`: a missing table makes the statement a no-op.
+        if_exists: bool,
     },
     CreateIndex {
         index: Index,
@@ -231,6 +233,10 @@ pub enum Statement {
     },
     CreateSearchIndex {
         index: SearchIndex,
+    },
+    AlterSearchIndex {
+        name: String,
+        action: AlterSearchIndex,
     },
     DropSearchIndex {
         name: String,
@@ -316,6 +322,14 @@ pub enum AlterTable {
         to: String,
         synonym: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlterSearchIndex {
+    AddColumn(String),
+    DropColumn(String),
+    AddStoredColumn(String),
+    DropStoredColumn(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -438,6 +438,48 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// A `locality_group` option value: the group's name, or `None` for NULL.
+    fn locality_group_value(&self, v: &str) -> Option<String> {
+        (v != "NULL").then(|| unquote_option(v))
+    }
+
+    /// `OPTIONS (...)` of a table or an index, where only `locality_group` is known.
+    fn locality_options(&mut self, what: &str) -> R<Option<Option<String>>> {
+        let mut out = None;
+        for (k, v) in self.options()? {
+            if !k.eq_ignore_ascii_case("locality_group") {
+                return Err(self.statement_error(&format!("Option: {k} is unknown{what}.")));
+            }
+            out = Some(self.locality_group_value(&v));
+        }
+        Ok(out)
+    }
+
+    /// A locality group's name; the emulator also takes the keyword `default` unquoted.
+    fn locality_group_name(&mut self) -> R<String> {
+        if self.emulator && self.is_kw(DEFAULT_LOCALITY_GROUP) {
+            self.bump();
+            return Ok(DEFAULT_LOCALITY_GROUP.to_string());
+        }
+        self.ident()
+    }
+
+    fn locality_group_options(&mut self) -> R<Vec<(String, String)>> {
+        let options = self.options()?;
+        for (k, v) in &options {
+            if k.eq_ignore_ascii_case("storage") {
+                if !matches!(v.as_str(), "'ssd'" | "'hdd'" | "NULL") {
+                    return Err(self.statement_error(
+                        "Unexpected value for option: storage. Supported option values are \"ssd\" and \"hdd\".",
+                    ));
+                }
+            } else if !k.eq_ignore_ascii_case("ssd_to_hdd_spill_timespan") {
+                return Err(self.statement_error(&format!("Option: {k} is unknown.")));
+            }
+        }
+        Ok(options)
+    }
+
     fn if_not_exists(&mut self) -> bool {
         self.eat_kws(&["IF", "NOT", "EXISTS"])
     }
@@ -468,6 +510,19 @@ impl<'a> Parser<'a> {
         }
         if self.eat_kws(&["SEARCH", "INDEX"]) {
             return self.create_search_index();
+        }
+        if self.eat_kws(&["LOCALITY", "GROUP"]) {
+            let if_not_exists = self.if_not_exists();
+            let name = self.ident()?;
+            let options = if self.is_kw("OPTIONS") {
+                self.locality_group_options()?
+            } else {
+                Vec::new()
+            };
+            return Ok(Statement::CreateLocalityGroup {
+                group: LocalityGroup { name, options },
+                if_not_exists,
+            });
         }
         if self.eat_kw("SEQUENCE") {
             let if_not_exists = self.if_not_exists();
@@ -564,6 +619,7 @@ impl<'a> Parser<'a> {
             checks: Vec::new(),
             row_deletion_policy: None,
             synonym: None,
+            locality_group: None,
         };
         // A PRIMARY KEY given inside the parentheses, on a column or as an element.
         let mut inline_pk: Option<Vec<KeyPart>> = None;
@@ -634,6 +690,7 @@ impl<'a> Parser<'a> {
                 allow_commit_timestamp: false,
                 hidden: true,
                 vector_length: None,
+                locality_group: None,
             });
             table.primary_key = vec![KeyPart {
                 column: ROWID_COLUMN.into(),
@@ -672,6 +729,8 @@ impl<'a> Parser<'a> {
                 });
             } else if self.is_kw("ROW") {
                 table.row_deletion_policy = Some(self.row_deletion_policy()?);
+            } else if self.is_kw("OPTIONS") {
+                table.locality_group = self.locality_options(" in Table Options")?.flatten();
             } else {
                 return Err(self.expecting("INTERLEAVE"));
             }
@@ -783,6 +842,7 @@ impl<'a> Parser<'a> {
             allow_commit_timestamp: false,
             hidden: false,
             vector_length,
+            locality_group: None,
         };
         // ON UPDATE can't follow HIDDEN or OPTIONS.
         let mut options_seen = false;
@@ -824,6 +884,8 @@ impl<'a> Parser<'a> {
                 for (k, v) in self.options()? {
                     if k.eq_ignore_ascii_case("allow_commit_timestamp") {
                         col.allow_commit_timestamp = v == "true";
+                    } else if k.eq_ignore_ascii_case("locality_group") {
+                        col.locality_group = self.locality_group_value(&v);
                     } else {
                         return Err(DdlError::Syntax(format!(
                             "Error parsing Spanner DDL statement: {} : Option: {k} is unknown.",
@@ -967,6 +1029,7 @@ impl<'a> Parser<'a> {
             null_filtered,
             interleave_in: None,
             filter: None,
+            locality_group: None,
         };
         loop {
             if self.eat_kw("STORING") {
@@ -979,6 +1042,8 @@ impl<'a> Parser<'a> {
                 self.bump();
                 self.expect_kw("IN")?;
                 index.interleave_in = Some(self.path()?);
+            } else if self.is_kw("OPTIONS") {
+                index.locality_group = self.locality_options("")?.flatten();
             } else {
                 break;
             }
@@ -1158,6 +1223,12 @@ impl<'a> Parser<'a> {
             }
             return Ok(Statement::AlterDatabase { options, name });
         }
+        if self.eat_kws(&["LOCALITY", "GROUP"]) {
+            let name = self.locality_group_name()?;
+            self.expect_kw("SET")?;
+            let options = self.locality_group_options()?;
+            return Ok(Statement::AlterLocalityGroup { name, options });
+        }
         if self.eat_kw("SEQUENCE") {
             let name = self.path()?;
             self.expect_kw("SET")?;
@@ -1272,18 +1343,23 @@ impl<'a> Parser<'a> {
                 }
                 let opts = self.options()?;
                 let mut act = None;
+                let mut locality_group = None;
                 for (k, v) in opts {
-                    if !k.eq_ignore_ascii_case("allow_commit_timestamp") {
+                    if k.eq_ignore_ascii_case("allow_commit_timestamp") {
+                        act = Some(v == "true");
+                    } else if k.eq_ignore_ascii_case("locality_group") {
+                        locality_group = Some(self.locality_group_value(&v));
+                    } else {
                         return Err(DdlError::Syntax(format!(
                             "Error parsing Spanner DDL statement: {} : Option: {k} is unknown.",
                             self.src
                         )));
                     }
-                    act = Some(v == "true");
                 }
                 return Ok(AlterTable::SetColumnOptions {
                     name,
                     allow_commit_timestamp: act,
+                    locality_group,
                 });
             }
             if self.eat_kws(&["DROP", "DEFAULT"]) {
@@ -1303,6 +1379,10 @@ impl<'a> Parser<'a> {
             return Ok(AlterTable::AlterColumn { column });
         }
         if self.eat_kw("SET") {
+            if self.is_kw("OPTIONS") {
+                let locality_group = self.locality_options(" in Table Options")?.flatten();
+                return Ok(AlterTable::SetOptions { locality_group });
+            }
             self.expect_kw("ON")?;
             self.expect_kw("DELETE")?;
             if self.eat_kw("CASCADE") {
@@ -1362,6 +1442,13 @@ impl<'a> Parser<'a> {
                 if_exists,
             });
         }
+        if self.eat_kws(&["LOCALITY", "GROUP"]) {
+            let if_exists = self.if_exists();
+            return Ok(Statement::DropLocalityGroup {
+                name: self.ident()?,
+                if_exists,
+            });
+        }
         if self.eat_kw("SCHEMA") {
             return Ok(Statement::DropSchema {
                 name: self.ident()?,
@@ -1413,6 +1500,21 @@ impl<'a> Parser<'a> {
 enum Constraint {
     Fk(ForeignKey),
     Check(CheckConstraint),
+}
+
+/// `'text'` → `text` for an option value the parser printed with `quote_string`.
+fn unquote_option(v: &str) -> String {
+    match tokenize(v).ok().as_deref() {
+        Some(
+            [
+                Token {
+                    tok: Tok::Str(s), ..
+                },
+                ..,
+            ],
+        ) => s.clone(),
+        _ => v.to_string(),
+    }
 }
 
 fn opaque(kind: &str, name: &str, ddl: String, drop: bool) -> Statement {

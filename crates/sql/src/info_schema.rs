@@ -11,7 +11,8 @@ use std::sync::Arc;
 
 use spanbolt_ddl::names::{make_fingerprint, make_name};
 use spanbolt_ddl::{
-    ChangeStream, ColumnType, CsTarget, ForeignKey, OnDelete, Schema, SortOrder, Table,
+    ChangeStream, ColumnType, CsTarget, DEFAULT_LOCALITY_GROUP, ForeignKey, LocalityGroup,
+    OnDelete, Schema, SortOrder, Table,
 };
 use spanbolt_storage::{Result, Value};
 
@@ -599,8 +600,14 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
             for t in schema.tables.values() {
                 let (sch, name) = split(&t.name);
                 for c in &t.columns {
-                    // Production lists every column's inherited locality group.
+                    // Production lists every column's locality group: its own, or inherited
+                    // from the table (`default` when neither sets one).
                     if !compat {
+                        let group = c
+                            .locality_group
+                            .as_deref()
+                            .or(t.locality_group.as_deref())
+                            .unwrap_or(DEFAULT_LOCALITY_GROUP);
                         out.push(vec![
                             s(""),
                             s(sch),
@@ -608,8 +615,19 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                             s(&c.name),
                             s("locality_group"),
                             s("STRING"),
-                            s("default"),
-                            b(true),
+                            s(group),
+                            b(c.locality_group.is_none()),
+                        ]);
+                    } else if let Some(group) = &c.locality_group {
+                        // The emulator lists only a column's own locality group.
+                        out.push(vec![
+                            s(""),
+                            s(sch),
+                            s(name),
+                            s(&c.name),
+                            s("locality_group"),
+                            s("STRING"),
+                            s(group),
                         ]);
                     }
                     if !c.allow_commit_timestamp {
@@ -679,6 +697,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                 }
             }
         }
+        "LOCALITY_GROUP_OPTIONS" => locality_group_options(cat, &mut out),
         "CHANGE_STREAMS" => {
             for cs in change_streams(schema) {
                 let (sch, name) = split(&cs.name);
@@ -784,6 +803,56 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
         _ => {}
     }
     Ok(out)
+}
+
+fn locality_group_options(cat: &SqlCatalog, out: &mut Vec<Row>) {
+    let schema = &cat.schema;
+    let set = |g: &LocalityGroup, k: &str| {
+        g.options
+            .iter()
+            .find(|(n, v)| n.eq_ignore_ascii_case(k) && v != "NULL")
+            .map(|(_, v)| option_value(v).1)
+    };
+    if cat.emulator_compat {
+        // The emulator lists the options it set, under internal names, with their type as value.
+        for g in &schema.locality_groups {
+            if set(g, "storage").is_some() {
+                out.push(vec![s(&g.name), s("inflash"), s("BOOL")]);
+            }
+            if set(g, "ssd_to_hdd_spill_timespan").is_some() {
+                out.push(vec![
+                    s(&g.name),
+                    s("age_based_spill_policy"),
+                    s("STRING_LIST"),
+                ]);
+            }
+        }
+        return;
+    }
+    // Production lists both options of every group, `default` included.
+    let default = LocalityGroup {
+        name: DEFAULT_LOCALITY_GROUP.to_string(),
+        options: Vec::new(),
+    };
+    let groups = schema.locality_groups.iter();
+    let groups = std::iter::once(&default)
+        .filter(|_| {
+            !schema
+                .locality_groups
+                .iter()
+                .any(|g| g.name.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP))
+        })
+        .chain(groups);
+    for g in groups {
+        let storage = set(g, "storage").unwrap_or_else(|| "ssd".to_string());
+        out.push(vec![s(&g.name), s("storage"), s(&storage)]);
+        let spill = set(g, "ssd_to_hdd_spill_timespan");
+        out.push(vec![
+            s(&g.name),
+            s("ssd_to_hdd_spill_timespan"),
+            opt(spill.as_deref()),
+        ]);
+    }
 }
 
 /// DDL option literal → (type, value): `'7d'` → STRING 7d, `true` → BOOL TRUE, `5` → INT64.

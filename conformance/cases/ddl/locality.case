@@ -1,0 +1,510 @@
+# Locality groups: stored and printed, with no effect on storage. Production prints them first and
+# keeps the locality_group options of tables, columns and indexes; the emulator prints them last
+# and drops those options.
+tags: ddl
+schema:
+  CREATE TABLE A (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (K)
+
+case create_with_options
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'ssd', ssd_to_hdd_spill_timespan = '10d');
+  CREATE TABLE X (Id INT64, V STRING(MAX) OPTIONS (locality_group = 'lg')) PRIMARY KEY (Id), OPTIONS (locality_group = 'lg')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE X (\n  Id INT64,\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+  "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'ssd', ssd_to_hdd_spill_timespan = '10d' )"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '10d'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE X (\n  Id INT64,\n  V STRING(MAX) OPTIONS (\n    locality_group = 'lg'\n  ),\n) PRIMARY KEY(Id), OPTIONS (\n  locality_group = 'lg'\n)"
+query:
+  SELECT LOCALITY_GROUP_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS ORDER BY 1, 2
+expect:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["lg","age_based_spill_policy","STRING_LIST"]
+  ["lg","inflash","BOOL"]
+expect@spanner:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["default","ssd_to_hdd_spill_timespan",null]
+  ["default","storage","ssd"]
+  ["lg","ssd_to_hdd_spill_timespan","10d"]
+  ["lg","storage","ssd"]
+
+case create_plain
+ddl:
+  CREATE LOCALITY GROUP lg
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+query:
+  SELECT LOCALITY_GROUP_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS ORDER BY 1, 2
+expect:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+expect@spanner:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["default","ssd_to_hdd_spill_timespan",null]
+  ["default","storage","ssd"]
+  ["lg","ssd_to_hdd_spill_timespan",null]
+  ["lg","storage","ssd"]
+
+case create_hdd
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'hdd')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'hdd' )"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'hdd'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+query:
+  SELECT LOCALITY_GROUP_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS ORDER BY 1, 2
+expect:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["lg","inflash","BOOL"]
+expect@spanner:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["default","ssd_to_hdd_spill_timespan",null]
+  ["default","storage","ssd"]
+  ["lg","ssd_to_hdd_spill_timespan",null]
+  ["lg","storage","hdd"]
+
+case create_hdd_with_spill
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'hdd', ssd_to_hdd_spill_timespan = '10d')
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Locality Group lg has invalid storage option: hdd. If the ssd_to_hdd_spill_timespan is set, then the storage option is required to be "ssd".
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'hdd', ssd_to_hdd_spill_timespan = '10d' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+
+case create_duplicate
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE LOCALITY GROUP lg
+expect:
+  error: FAILED_PRECONDITION
+  message: Duplicate name in schema: lg.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Could not create locality group because it already exists: lg
+
+case create_if_not_exists
+ddl:
+  CREATE LOCALITY GROUP lg
+ddl:
+  CREATE LOCALITY GROUP IF NOT EXISTS lg
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Could not create locality group because it already exists: lg
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+
+case create_if_not_exists_new
+ddl:
+  CREATE LOCALITY GROUP IF NOT EXISTS lg OPTIONS (storage = 'hdd')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'hdd' )"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'hdd'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+
+case create_named_like_table
+ddl:
+  CREATE LOCALITY GROUP A
+expect:
+  error: FAILED_PRECONDITION
+  message: Duplicate name in schema: A.
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+
+case unknown_option
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (wat = 'x')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE LOCALITY GROUP lg OPTIONS (wat = 'x') : Option: wat is unknown.
+expect@spanner:
+  same
+
+case bad_storage
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'tape')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE LOCALITY GROUP lg OPTIONS (storage = 'tape') : Unexpected value for option: storage. Supported option values are "ssd" and "hdd".
+expect@spanner:
+  same
+
+case alter_merges_options
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'ssd');
+  ALTER LOCALITY GROUP lg SET OPTIONS (ssd_to_hdd_spill_timespan = '5d')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg OPTIONS ( ssd_to_hdd_spill_timespan = '5d' )"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '5d'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+query:
+  SELECT LOCALITY_GROUP_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS ORDER BY 1, 2
+expect:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["lg","age_based_spill_policy","STRING_LIST"]
+expect@spanner:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["default","ssd_to_hdd_spill_timespan",null]
+  ["default","storage","ssd"]
+  ["lg","ssd_to_hdd_spill_timespan","5d"]
+  ["lg","storage","ssd"]
+
+case alter_to_hdd_with_spill
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'ssd', ssd_to_hdd_spill_timespan = '10d')
+ddl:
+  ALTER LOCALITY GROUP lg SET OPTIONS (storage = 'hdd')
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Locality Group lg has invalid storage option: hdd. If the ssd_to_hdd_spill_timespan is set, then the storage option is required to be "ssd".
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'hdd' )"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '10d'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+
+case alter_null
+ddl:
+  CREATE LOCALITY GROUP lg OPTIONS (storage = 'ssd', ssd_to_hdd_spill_timespan = '10d');
+  ALTER LOCALITY GROUP lg SET OPTIONS (ssd_to_hdd_spill_timespan = NULL)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg OPTIONS (  )"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+
+case alter_missing
+ddl:
+  ALTER LOCALITY GROUP lg SET OPTIONS (storage = 'hdd')
+expect:
+  error: NOT_FOUND
+  message: Locality group not found: lg
+expect@spanner:
+  error: NOT_FOUND
+  message: 
+
+case alter_default
+ddl:
+  ALTER LOCALITY GROUP default SET OPTIONS (storage = 'hdd')
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER LOCALITY GROUP default SET OPTIONS (storage = 'hdd') : Syntax error on line 1, column 22: Encountered 'default' while parsing: identifier
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP `default` OPTIONS ( storage = 'hdd' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+
+case alter_default_quoted
+ddl:
+  ALTER LOCALITY GROUP `default` SET OPTIONS (storage = 'hdd')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP `default` OPTIONS ( storage = 'hdd' )"
+expect@spanner:
+  statements:
+  "ALTER LOCALITY GROUP `default` SET OPTIONS (\n  storage = 'hdd'\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+query:
+  SELECT LOCALITY_GROUP_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS ORDER BY 1, 2
+expect:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["default","inflash","BOOL"]
+expect@spanner:
+  columns: LOCALITY_GROUP_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["default","ssd_to_hdd_spill_timespan",null]
+  ["default","storage","hdd"]
+
+case drop
+ddl:
+  CREATE LOCALITY GROUP lg;
+  DROP LOCALITY GROUP lg
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+
+case drop_missing
+ddl:
+  DROP LOCALITY GROUP lg
+expect:
+  error: NOT_FOUND
+  message: Locality group not found: lg
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot drop locality group lg - it does not exist.
+
+case drop_if_exists_missing
+ddl:
+  DROP LOCALITY GROUP IF EXISTS lg
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot drop locality group lg - it does not exist.
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+
+case drop_referenced_by_table
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE TABLE X (Id INT64) PRIMARY KEY (Id), OPTIONS (locality_group = 'lg');
+  DROP LOCALITY GROUP lg
+expect:
+  error: FAILED_PRECONDITION
+  message: Locality group lg cannot be dropped as it is referenced.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot drop locality group lg - it is still referenced.
+
+case drop_referenced_by_column
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE TABLE X (Id INT64, V INT64 OPTIONS (locality_group = 'lg')) PRIMARY KEY (Id);
+  DROP LOCALITY GROUP lg
+expect:
+  error: FAILED_PRECONDITION
+  message: Locality group lg cannot be dropped as it is referenced.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot drop locality group lg - it is still referenced.
+
+case drop_referenced_by_index
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE INDEX AByV ON A(V) OPTIONS (locality_group = 'lg');
+  DROP LOCALITY GROUP lg
+expect:
+  error: FAILED_PRECONDITION
+  message: Locality group lg cannot be dropped as it is referenced.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot drop locality group lg - it is still referenced.
+
+case drop_after_reference_removed
+ddl:
+  CREATE LOCALITY GROUP lg;
+  ALTER TABLE A SET OPTIONS (locality_group = 'lg');
+  ALTER TABLE A SET OPTIONS (locality_group = NULL);
+  DROP LOCALITY GROUP lg
+expect:
+  error: INTERNAL
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/updater/schema_updater.cc:1349) false Option locality_group can only take string_value.
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+
+case alter_table_and_column
+ddl:
+  CREATE LOCALITY GROUP lg;
+  ALTER TABLE A SET OPTIONS (locality_group = 'lg');
+  ALTER TABLE A ALTER COLUMN V SET OPTIONS (locality_group = 'lg')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX) OPTIONS (\n    locality_group = 'lg'\n  ),\n) PRIMARY KEY(K), OPTIONS (\n  locality_group = 'lg'\n)"
+
+case add_column_with_option
+ddl:
+  CREATE LOCALITY GROUP lg;
+  ALTER TABLE A ADD COLUMN W INT64 OPTIONS (locality_group = 'lg')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n) PRIMARY KEY(K)"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64 OPTIONS (\n    locality_group = 'lg'\n  ),\n) PRIMARY KEY(K)"
+
+case column_with_commit_timestamp
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE TABLE X (Id INT64, Ts TIMESTAMP OPTIONS (allow_commit_timestamp = true, locality_group = 'lg')) PRIMARY KEY (Id)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE X (\n  Id INT64,\n  Ts TIMESTAMP OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(Id)"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE X (\n  Id INT64,\n  Ts TIMESTAMP OPTIONS (\n    locality_group = 'lg',\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(Id)"
+
+case index_option
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE INDEX AByV ON A(V) OPTIONS (locality_group = 'lg')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByV ON A(V)"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByV ON A(V) OPTIONS (\n  locality_group = 'lg'\n)"
+
+case interleaved_table_option
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE TABLE C (K INT64 NOT NULL, C INT64 NOT NULL) PRIMARY KEY (K, C), INTERLEAVE IN PARENT A ON DELETE CASCADE, OPTIONS (locality_group = 'lg')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE C (\n  K INT64 NOT NULL,\n  C INT64 NOT NULL,\n) PRIMARY KEY(K, C),\n  INTERLEAVE IN PARENT A ON DELETE CASCADE"
+  "CREATE LOCALITY GROUP lg"
+expect@spanner:
+  statements:
+  "CREATE LOCALITY GROUP lg"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE C (\n  K INT64 NOT NULL,\n  C INT64 NOT NULL,\n) PRIMARY KEY(K, C),\n  INTERLEAVE IN PARENT A ON DELETE CASCADE, OPTIONS (\n  locality_group = 'lg'\n)"
+
+case unknown_group_on_table
+ddl:
+  CREATE TABLE X (Id INT64) PRIMARY KEY (Id), OPTIONS (locality_group = 'nope')
+expect:
+  error: NOT_FOUND
+  message: Locality group not found: nope
+expect@spanner:
+  error: NOT_FOUND
+  message: 
+
+case unknown_group_on_column
+ddl:
+  CREATE TABLE X (Id INT64 OPTIONS (locality_group = 'nope')) PRIMARY KEY (Id)
+expect:
+  error: NOT_FOUND
+  message: Locality group not found: nope
+expect@spanner:
+  error: NOT_FOUND
+  message: 
+
+case unknown_group_on_index
+ddl:
+  CREATE INDEX AByV ON A(V) OPTIONS (locality_group = 'nope')
+expect:
+  error: NOT_FOUND
+  message: Locality group not found: nope
+expect@spanner:
+  error: NOT_FOUND
+  message: 
+
+case unknown_group_in_alter_table
+ddl:
+  ALTER TABLE A SET OPTIONS (locality_group = 'nope')
+expect:
+  error: NOT_FOUND
+  message: Locality group not found: nope
+expect@spanner:
+  error: NOT_FOUND
+  message: 
+
+case unknown_table_option
+ddl:
+  ALTER TABLE A SET OPTIONS (wat = 'x')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER TABLE A SET OPTIONS (wat = 'x') : Option: wat is unknown in Table Options.
+expect@spanner:
+  same
+
+case column_options_inherit
+ddl:
+  CREATE LOCALITY GROUP lg;
+  CREATE LOCALITY GROUP lg2;
+  CREATE TABLE X (Id INT64, V STRING(MAX) OPTIONS (locality_group = 'lg2'), W STRING(MAX)) PRIMARY KEY (Id), OPTIONS (locality_group = 'lg')
+query:
+  SELECT TABLE_NAME, COLUMN_NAME, OPTION_NAME, OPTION_TYPE, OPTION_VALUE FROM INFORMATION_SCHEMA.COLUMN_OPTIONS WHERE TABLE_SCHEMA = '' ORDER BY 1, 2, 3
+expect:
+  columns: TABLE_NAME STRING, COLUMN_NAME STRING, OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+  ["X","V","locality_group","STRING","lg2"]
+expect@spanner:
+  columns: TABLE_NAME STRING, COLUMN_NAME STRING, OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+  ["A","K","locality_group","STRING","default"]
+  ["A","V","locality_group","STRING","default"]
+  ["X","Id","locality_group","STRING","lg"]
+  ["X","V","locality_group","STRING","lg2"]
+  ["X","W","locality_group","STRING","lg"]

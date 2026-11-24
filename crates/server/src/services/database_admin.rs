@@ -406,7 +406,12 @@ impl DatabaseAdmin for DatabaseAdminService {
         req: Request<da::GetDatabaseDdlRequest>,
     ) -> Result<Response<da::GetDatabaseDdlResponse>, Status> {
         let entry = self.emu.database(&req.get_ref().database)?;
-        let statements = entry.db.latest().state.schema.to_ddl();
+        let schema = &entry.db.latest().state.schema;
+        let statements = if self.emu.emulator_compat {
+            schema.to_ddl_emulator_compat()
+        } else {
+            schema.to_ddl()
+        };
         Ok(Response::new(da::GetDatabaseDdlResponse {
             statements,
             proto_descriptors: Vec::new(),

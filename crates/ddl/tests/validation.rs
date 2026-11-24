@@ -806,3 +806,149 @@ fn interleave_in_rejects_on_delete() {
         ("Inv", "Cannot SET ON DELETE on an INTERLEAVE IN table D.")
     );
 }
+
+#[test]
+fn locality_groups_print_and_reload() {
+    let mut s = Schema::default();
+    for sql in [
+        "CREATE LOCALITY GROUP lg OPTIONS (storage = 'ssd', ssd_to_hdd_spill_timespan = '10d')",
+        "ALTER LOCALITY GROUP `default` SET OPTIONS (storage = 'hdd')",
+        "CREATE TABLE P (id INT64 NOT NULL, ts TIMESTAMP OPTIONS (allow_commit_timestamp = true, locality_group = 'lg')) PRIMARY KEY (id), OPTIONS (locality_group = 'lg')",
+        "CREATE TABLE C (id INT64 NOT NULL, c INT64 NOT NULL) PRIMARY KEY (id, c), INTERLEAVE IN PARENT P ON DELETE CASCADE, OPTIONS (locality_group = 'lg')",
+        "CREATE INDEX ci ON C(c) OPTIONS (locality_group = 'lg')",
+    ] {
+        s.apply(&parse_statement(sql).unwrap())
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    let ddl = s.to_ddl();
+    assert_eq!(
+        ddl,
+        [
+            "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '10d'\n)",
+            "ALTER LOCALITY GROUP `default` SET OPTIONS (\n  storage = 'hdd'\n)",
+            "CREATE TABLE P (\n  id INT64 NOT NULL,\n  ts TIMESTAMP OPTIONS (\n    locality_group = 'lg',\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(id), OPTIONS (\n  locality_group = 'lg'\n)",
+            "CREATE TABLE C (\n  id INT64 NOT NULL,\n  c INT64 NOT NULL,\n) PRIMARY KEY(id, c),\n  INTERLEAVE IN PARENT P ON DELETE CASCADE, OPTIONS (\n  locality_group = 'lg'\n)",
+            "CREATE INDEX ci ON C(c) OPTIONS (\n  locality_group = 'lg'\n)",
+        ]
+    );
+    // Snapshots store `to_ddl` and load it back statement by statement.
+    let mut back = Schema::default();
+    for sql in &ddl {
+        back.apply_emulator_compat(&parse_statement(sql).unwrap())
+            .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    assert_eq!(back.to_ddl(), ddl);
+    assert_eq!(
+        s.to_ddl_emulator_compat(),
+        [
+            "CREATE TABLE P (\n  id INT64 NOT NULL,\n  ts TIMESTAMP OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(id)",
+            "CREATE TABLE C (\n  id INT64 NOT NULL,\n  c INT64 NOT NULL,\n) PRIMARY KEY(id, c),\n  INTERLEAVE IN PARENT P ON DELETE CASCADE",
+            "CREATE INDEX ci ON C(c)",
+            "CREATE LOCALITY GROUP lg OPTIONS ( storage = 'ssd', ssd_to_hdd_spill_timespan = '10d' )",
+            "CREATE LOCALITY GROUP `default` OPTIONS ( storage = 'hdd' )",
+        ]
+    );
+    // print_statement output parses back to the same statement.
+    for sql in [
+        "CREATE LOCALITY GROUP IF NOT EXISTS lg OPTIONS (storage = 'hdd')",
+        "ALTER LOCALITY GROUP lg SET OPTIONS (ssd_to_hdd_spill_timespan = NULL)",
+        "DROP LOCALITY GROUP IF EXISTS lg",
+        "ALTER TABLE P SET OPTIONS (locality_group = NULL)",
+        "ALTER TABLE P ALTER COLUMN ts SET OPTIONS (allow_commit_timestamp = false, locality_group = 'lg')",
+    ] {
+        let stmt = parse_statement(sql).unwrap();
+        assert_eq!(
+            parse_statement(&print_statement(&stmt)).unwrap(),
+            stmt,
+            "{sql}"
+        );
+    }
+}
+
+#[test]
+fn locality_group_errors_follow_the_mode() {
+    let prod = |stmts: &[&str]| {
+        let mut s = Schema::default();
+        for sql in stmts {
+            s.apply(&parse_statement(sql)?)?;
+        }
+        Ok::<_, DdlError>(s)
+    };
+    let compat = |stmts: &[&str]| {
+        let mut s = Schema::default();
+        for sql in stmts {
+            s.apply_emulator_compat(&parse_statement_emulator_compat(sql)?)?;
+        }
+        Ok::<_, DdlError>(s)
+    };
+    type Outcome<'a> = (&'a str, &'a str);
+    let cases: &[(&[&str], Outcome, Outcome)] = &[
+        (
+            &[
+                "CREATE LOCALITY GROUP lg",
+                "CREATE LOCALITY GROUP IF NOT EXISTS lg",
+            ],
+            (
+                "Inv",
+                "Could not create locality group because it already exists: lg",
+            ),
+            ("ok", ""),
+        ),
+        (
+            &["DROP LOCALITY GROUP IF EXISTS lg"],
+            ("Inv", "Cannot drop locality group lg - it does not exist."),
+            ("ok", ""),
+        ),
+        (
+            &["ALTER LOCALITY GROUP lg SET OPTIONS (storage = 'hdd')"],
+            ("Nf", ""),
+            ("Nf", "Locality group not found: lg"),
+        ),
+        (
+            &[
+                "CREATE LOCALITY GROUP lg",
+                "CREATE TABLE T (id INT64 OPTIONS (locality_group = 'lg')) PRIMARY KEY (id)",
+                "DROP LOCALITY GROUP lg",
+            ],
+            (
+                "Inv",
+                "Cannot drop locality group lg - it is still referenced.",
+            ),
+            (
+                "Pre",
+                "Locality group lg cannot be dropped as it is referenced.",
+            ),
+        ),
+        (
+            &[
+                "CREATE LOCALITY GROUP lg OPTIONS (storage = 'hdd', ssd_to_hdd_spill_timespan = '1d')",
+            ],
+            (
+                "Pre",
+                "Locality Group lg has invalid storage option: hdd. If the ssd_to_hdd_spill_timespan is set, then the storage option is required to be \"ssd\".",
+            ),
+            ("ok", ""),
+        ),
+        (
+            &["CREATE TABLE T (id INT64) PRIMARY KEY (id), OPTIONS (locality_group = 'nope')"],
+            ("Nf", ""),
+            ("Nf", "Locality group not found: nope"),
+        ),
+    ];
+    let outcome = |r: Result<Schema, DdlError>| match r {
+        Ok(_) => ("ok".to_string(), String::new()),
+        Err(e) => {
+            let (k, m) = kind(&e);
+            (k.to_string(), m.to_string())
+        }
+    };
+    for (stmts, p, c) in cases {
+        let want = |(k, m): (&str, &str)| (k.to_string(), m.to_string());
+        assert_eq!(outcome(prod(stmts)), want(*p), "prod {stmts:?}");
+        assert_eq!(outcome(compat(stmts)), want(*c), "compat {stmts:?}");
+    }
+    // Unquoted `default` is a keyword in production's grammar, a name in the emulator's.
+    let sql = "ALTER LOCALITY GROUP default SET OPTIONS (storage = 'hdd')";
+    assert!(parse_statement(sql).is_err());
+    assert!(parse_statement_emulator_compat(sql).is_ok());
+}

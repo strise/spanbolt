@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "googlesql-sys"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prost",
  "prost-build",
@@ -1396,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "mimalloc",
@@ -1409,7 +1409,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-conformance"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -1423,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-ddl"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde_json",
  "thiserror",
@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-proto"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "prost",
  "prost-types",
@@ -1443,7 +1443,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "axum",
  "clap",
@@ -1470,7 +1470,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-sql"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1496,7 +1496,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-storage"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.23.1",
  "imbl",
@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "spanbolt-txn"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "arc-swap",
  "parking_lot",

@@ -195,6 +195,36 @@ query:
   SELECT TABLE_NAME, COLUMN_NAME, OPTION_NAME, OPTION_VALUE FROM INFORMATION_SCHEMA.COLUMN_OPTIONS WHERE TABLE_SCHEMA = '' ORDER BY TABLE_NAME, COLUMN_NAME
 expect:
   columns: TABLE_NAME STRING, COLUMN_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+expect@spanner:
+  columns: TABLE_NAME STRING, COLUMN_NAME STRING, OPTION_NAME STRING, OPTION_VALUE STRING
+  ["Entities","Aliases","locality_group","default"]
+  ["Entities","CreatedAt","locality_group","default"]
+  ["Entities","Data","locality_group","default"]
+  ["Entities","EntityId","locality_group","default"]
+  ["Entities","Kind","locality_group","default"]
+  ["Entities","Name","locality_group","default"]
+  ["Entities","Score","locality_group","default"]
+  ["Entities","Status","locality_group","default"]
+  ["Entities","TeamId","locality_group","default"]
+  ["Entities","UpdatedAt","locality_group","default"]
+  ["Entities","Version","locality_group","default"]
+  ["Reviews","CreatedAt","locality_group","default"]
+  ["Reviews","CreatedBy","locality_group","default"]
+  ["Reviews","EntityId","locality_group","default"]
+  ["Reviews","Outcome","locality_group","default"]
+  ["Reviews","ReviewId","locality_group","default"]
+  ["Reviews","TeamId","locality_group","default"]
+  ["Signals","Confidence","locality_group","default"]
+  ["Signals","EntityId","locality_group","default"]
+  ["Signals","SignalType","locality_group","default"]
+  ["Signals","ValidFrom","locality_group","default"]
+  ["Teams","Created","locality_group","default"]
+  ["Teams","CustomerId","locality_group","default"]
+  ["Teams","Name","locality_group","default"]
+  ["Teams","TeamId","locality_group","default"]
+  ["Users","Email","locality_group","default"]
+  ["Users","Name","locality_group","default"]
+  ["Users","UserId","locality_group","default"]
 
 case info_schema_in_rw_txn
 dml:
@@ -202,4 +232,7 @@ dml:
 expect:
   columns: INT64
   ["36"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unsupported concurrency mode in query using INFORMATION_SCHEMA.
 

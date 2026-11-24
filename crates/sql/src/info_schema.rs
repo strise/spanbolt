@@ -1,11 +1,18 @@
-//! INFORMATION_SCHEMA rows derived from the schema, shaped like the emulator's (1.5.59). Column
-//! order follows `info_schema_columns.tsv`.
+//! INFORMATION_SCHEMA rows derived from the schema. Production's views
+//! (`info_schema_columns_spanner.tsv`) by default, the emulator's (1.5.59,
+//! `info_schema_columns.tsv`) with `--emulator-compat`.
+//!
+//! Rows are built in one layout for both modes: the emulator's columns, then the columns only
+//! production has (`layout`). [`rows`] then picks the catalog's columns by name; values a row
+//! leaves out at the end are NULL.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use spanbolt_ddl::names::{make_fingerprint, make_name};
-use spanbolt_ddl::{ColumnType, ForeignKey, OnDelete, Schema, SortOrder, Table};
+use spanbolt_ddl::{
+    ChangeStream, ColumnType, CsTarget, ForeignKey, OnDelete, Schema, SortOrder, Table,
+};
 use spanbolt_storage::{Result, Value};
 
 use crate::catalog::{Relation, SqlCatalog};
@@ -117,8 +124,121 @@ fn null_row(n: usize) -> Row {
     vec![Value::Null; n]
 }
 
+/// The column names rows of `table` are built with: the emulator's, then production's others.
+fn layout(table: &str) -> Vec<&'static str> {
+    let cols = |compat: bool| {
+        crate::catalog::info_tables(compat)
+            .iter()
+            .find(|t| t.name == table)
+            .map(|t| {
+                t.columns
+                    .iter()
+                    .map(|(n, ..)| n.as_str())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    let mut out = cols(true);
+    for c in cols(false) {
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The rows of `INFORMATION_SCHEMA.<table>`, in the catalog's columns for it.
 pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
+    let built = layout_rows(cat, table)?;
+    let Some(Relation::Info(it)) = cat.relation(&format!("information_schema.{table}")) else {
+        return Ok(built);
+    };
+    let layout = layout(table);
+    let pick: Vec<Option<usize>> = it
+        .columns
+        .iter()
+        .map(|(n, ..)| layout.iter().position(|l| l == n))
+        .collect();
+    if pick.iter().enumerate().all(|(k, p)| *p == Some(k)) {
+        return Ok(built
+            .into_iter()
+            .map(|mut r| {
+                r.resize(pick.len(), Value::Null);
+                r
+            })
+            .collect());
+    }
+    Ok(built
+        .into_iter()
+        .map(|r| {
+            pick.iter()
+                .map(|p| p.and_then(|k| r.get(k).cloned()).unwrap_or(Value::Null))
+                .collect()
+        })
+        .collect())
+}
+
+/// The change streams of `schema`, parsed from their canonical DDL.
+fn change_streams(schema: &Schema) -> Vec<ChangeStream> {
+    schema
+        .opaque
+        .iter()
+        .filter(|o| o.kind.eq_ignore_ascii_case("CHANGE STREAM"))
+        .filter_map(|o| ChangeStream::parse(&o.ddl).ok())
+        .collect()
+}
+
+/// The row type of a change stream's read function (`READ_<stream>`), as production spells it.
+const CHANGE_RECORD_TYPE: &str = "TABLE<ChangeRecord ARRAY<STRUCT<data_change_record ARRAY<STRUCT<\
+commit_timestamp TIMESTAMP, record_sequence STRING, server_transaction_id STRING, \
+is_last_record_in_transaction_in_partition BOOL, table_name STRING, column_types ARRAY<STRUCT<\
+name STRING, type JSON, is_primary_key BOOL, ordinal_position INT64>>, mods ARRAY<STRUCT<\
+keys JSON, new_values JSON, old_values JSON>>, mod_type STRING, value_capture_type STRING, \
+number_of_records_in_transaction INT64, number_of_partitions_in_transaction INT64, \
+transaction_tag STRING, is_system_transaction BOOL>>, heartbeat_record ARRAY<STRUCT<\
+timestamp TIMESTAMP>>, child_partitions_record ARRAY<STRUCT<start_timestamp TIMESTAMP, \
+record_sequence STRING, child_partitions ARRAY<STRUCT<token STRING, \
+parent_partition_tokens ARRAY<STRING>>>>>>>>";
+
+/// The parameters of a change stream's read function: name, type, default, Spanner type.
+const READ_PARAMETERS: [(&str, &str, Option<&str>, &str); 5] = [
+    ("start_timestamp", "TIMESTAMP", None, "TIMESTAMP"),
+    ("end_timestamp", "TIMESTAMP", Some("NULL"), "TIMESTAMP"),
+    ("partition_token", "STRING", Some("NULL"), "STRING(MAX)"),
+    ("heartbeat_milliseconds", "INT64", Some("NULL"), "INT64"),
+    (
+        "read_options",
+        "ARRAY<STRING>",
+        Some("NULL"),
+        "ARRAY<STRING(MAX)>",
+    ),
+];
+
+/// Roles every production database has.
+const SYSTEM_ROLES: [&str; 4] = [
+    "public",
+    "spanner_info_reader",
+    "spanner_secure_context_reader",
+    "spanner_sys_reader",
+];
+
+/// A table's synonym as (schema, name): a synonym lives in its table's schema.
+fn synonym(t: &Table) -> Option<(&str, &str)> {
+    let syn = t.synonym.as_deref()?;
+    let (sch, name) = split(syn);
+    Some((
+        if sch.is_empty() {
+            split(&t.name).0
+        } else {
+            sch
+        },
+        name,
+    ))
+}
+
+fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
     let schema = &cat.schema;
+    let compat = cat.emulator_compat;
     let mut out: Vec<Row> = Vec::new();
     match table {
         "TABLES" => {
@@ -147,6 +267,16 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     opt(kind),
                     opt(rdp.as_deref()),
                 ]);
+            }
+            if !compat {
+                for (sch, name) in schema.tables.values().filter_map(synonym) {
+                    let mut r = null_row(9);
+                    r[0] = s("");
+                    r[1] = s(sch);
+                    r[2] = s(name);
+                    r[5] = s("SYNONYM");
+                    out.push(r);
+                }
             }
             for v in schema.views.values() {
                 let (sch, name) = split(&v.name);
@@ -188,15 +318,12 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     };
                     let identity =
                         matches!(c.generated, Some(spanbolt_ddl::Generated::Identity { .. }));
-                    let mut r = column_row(
-                        sch,
-                        name,
-                        &c.name,
-                        pos,
-                        &ddl_type(&c.ty),
-                        !c.not_null,
-                        Some("COMMITTED"),
-                    );
+                    let mut ty = ddl_type(&c.ty);
+                    if let Some(n) = c.vector_length {
+                        ty.push_str(&format!("(vector_length=>{n})"));
+                    }
+                    let mut r =
+                        column_row(sch, name, &c.name, pos, &ty, !c.not_null, Some("COMMITTED"));
                     r[5] = opt(c.default.as_deref());
                     r[12] = opt(c.on_update.as_deref());
                     r[9] = s(generated);
@@ -317,13 +444,14 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     s(split(&si.name).1),
                     s("SEARCH"),
                     s(si.interleave_in.as_deref().map_or("", |p| split(p).1)),
-                    b(false),
+                    b(true),
                     b(false),
                     s("READ_WRITE"),
                     opt(si.filter.as_deref()),
                     b(false),
                     arr(si.partition_by.clone()),
                     arr(si.order_by.iter().map(|k| k.column.clone()).collect()),
+                    arr(Vec::new()),
                 ]);
             }
             for (name, _) in info_tables(cat) {
@@ -400,14 +528,65 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     ));
                 }
             }
+            for si in schema.search_indexes.values() {
+                let Some(t) = schema.table(&si.table) else {
+                    continue;
+                };
+                let (sch, tname) = split(&t.name);
+                let iname = split(&si.name).1;
+                // Token columns, then PARTITION BY and ORDER BY columns, numbered in that order.
+                let asc = SortOrder::Asc;
+                let keyed = si
+                    .columns
+                    .iter()
+                    .map(|c| (c.as_str(), None))
+                    .chain(si.partition_by.iter().map(|c| (c.as_str(), Some(&asc))))
+                    .chain(
+                        si.order_by
+                            .iter()
+                            .map(|k| (k.column.as_str(), Some(&k.order))),
+                    );
+                for (pos, (col, order)) in keyed.enumerate() {
+                    let Some(c) = t.column(col) else { continue };
+                    let mut r = index_col_row(
+                        [sch, tname, iname, "SEARCH", &c.name],
+                        Some((pos + 1, order.unwrap_or(&asc))),
+                        !c.not_null,
+                        &ddl_type(&c.ty),
+                    );
+                    if order.is_none() {
+                        r[7] = Value::Null;
+                    }
+                    out.push(r);
+                }
+                for st in &si.storing {
+                    let Some(c) = t.column(st) else { continue };
+                    out.push(index_col_row(
+                        [sch, tname, iname, "SEARCH", &c.name],
+                        None,
+                        !c.not_null,
+                        &ddl_type(&c.ty),
+                    ));
+                }
+            }
         }
         "SCHEMATA" => {
-            let mut names: Vec<&str> = vec!["", "INFORMATION_SCHEMA", "SPANNER_SYS"];
-            for n in schema.schemas.values() {
-                names.push(n);
-            }
-            for n in names {
-                out.push(vec![s(""), s(n), Value::Int64(0), s("")]);
+            if compat {
+                let mut names: Vec<&str> = vec!["", "INFORMATION_SCHEMA", "SPANNER_SYS"];
+                names.extend(schema.schemas.values().map(String::as_str));
+                for n in names {
+                    out.push(vec![s(""), s(n), Value::Int64(0), s("")]);
+                }
+            } else {
+                out.push(vec![s(""), s(""), Value::Int64(0), s("spanner_admin")]);
+                for n in ["INFORMATION_SCHEMA", "SPANNER_SYS"] {
+                    out.push(vec![s(""), s(n), Value::Null, s("spanner_system")]);
+                }
+                // Production's EFFECTIVE_TIMESTAMP of a named schema is not recorded; 0 as for
+                // the default schema.
+                for n in schema.schemas.values() {
+                    out.push(vec![s(""), s(n), Value::Int64(0), s("spanner_admin")]);
+                }
             }
         }
         "TABLE_CONSTRAINTS"
@@ -419,7 +598,23 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
         "COLUMN_OPTIONS" => {
             for t in schema.tables.values() {
                 let (sch, name) = split(&t.name);
-                for c in t.columns.iter().filter(|c| c.allow_commit_timestamp) {
+                for c in &t.columns {
+                    // Production lists every column's inherited locality group.
+                    if !compat {
+                        out.push(vec![
+                            s(""),
+                            s(sch),
+                            s(name),
+                            s(&c.name),
+                            s("locality_group"),
+                            s("STRING"),
+                            s("default"),
+                            b(true),
+                        ]);
+                    }
+                    if !c.allow_commit_timestamp {
+                        continue;
+                    }
                     out.push(vec![
                         s(""),
                         s(sch),
@@ -485,11 +680,104 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
             }
         }
         "CHANGE_STREAMS" => {
+            for cs in change_streams(schema) {
+                let (sch, name) = split(&cs.name);
+                out.push(vec![s(""), s(sch), s(name), b(cs.target == CsTarget::All)]);
+            }
+        }
+        "CHANGE_STREAM_TABLES" | "CHANGE_STREAM_COLUMNS" => {
+            for cs in change_streams(schema) {
+                let (sch, name) = split(&cs.name);
+                let CsTarget::Tables(tables) = &cs.target else {
+                    continue;
+                };
+                for (t, cols) in tables {
+                    let (tsch, tname) = split(t);
+                    let head = [s(""), s(sch), s(name), s(""), s(tsch), s(tname)];
+                    if table == "CHANGE_STREAM_TABLES" {
+                        let mut r = head.to_vec();
+                        r.push(b(cols.is_none()));
+                        out.push(r);
+                    } else {
+                        for c in cols.iter().flatten() {
+                            let mut r = head.to_vec();
+                            r.push(s(c));
+                            out.push(r);
+                        }
+                    }
+                }
+            }
+        }
+        "CHANGE_STREAM_OPTIONS" => {
+            for cs in change_streams(schema) {
+                let (sch, name) = split(&cs.name);
+                for (k, v) in &cs.options {
+                    if v.eq_ignore_ascii_case("NULL") {
+                        continue;
+                    }
+                    // The emulator lists its two string options only.
+                    if compat && k != "retention_period" && k != "value_capture_type" {
+                        continue;
+                    }
+                    let (ty, val) = option_value(v);
+                    out.push(vec![s(""), s(sch), s(name), s(k), s(ty), s(&val)]);
+                }
+            }
+        }
+        "TABLE_SYNONYMS" => {
+            for t in schema.tables.values() {
+                let Some((ssch, sname)) = synonym(t) else {
+                    continue;
+                };
+                let (tsch, tname) = split(&t.name);
+                out.push(vec![s(""), s(ssch), s(sname), s(""), s(tsch), s(tname)]);
+            }
+        }
+        "ROLES" => {
             for o in &schema.opaque {
-                if o.kind.eq_ignore_ascii_case("CHANGE STREAM") {
-                    let all = o.ddl.to_ascii_uppercase().contains("FOR ALL");
-                    let (sch, name) = split(&o.name);
-                    out.push(vec![s(""), s(sch), s(name), b(all)]);
+                if o.kind.eq_ignore_ascii_case("ROLE") {
+                    out.push(vec![s(&o.name), b(false)]);
+                }
+            }
+            for r in SYSTEM_ROLES {
+                out.push(vec![s(r), b(true)]);
+            }
+        }
+        "ROUTINES" | "ROUTINE_OPTIONS" | "PARAMETERS" => {
+            for cs in change_streams(schema) {
+                let (sch, name) = split(&cs.name);
+                let routine = format!("READ_{name}");
+                let head = [s(""), s(sch), s(&routine)];
+                match table {
+                    "ROUTINES" => {
+                        let mut r = head.to_vec();
+                        r.extend([
+                            s(""),
+                            s(sch),
+                            s(&routine),
+                            s("TABLE FUNCTION"),
+                            s(CHANGE_RECORD_TYPE),
+                            s("EXTERNAL"),
+                            s(""),
+                            s("INVOKER"),
+                            s(CHANGE_RECORD_TYPE),
+                        ]);
+                        out.push(r);
+                    }
+                    "ROUTINE_OPTIONS" => {
+                        let mut r = head.to_vec();
+                        r.extend([s("change_stream_name"), s("STRING"), s(name)]);
+                        out.push(r);
+                    }
+                    _ => {
+                        for (pos, (p, ty, default, spanner_ty)) in
+                            READ_PARAMETERS.iter().enumerate()
+                        {
+                            let mut r = head.to_vec();
+                            r.extend([i(pos + 1), s(p), s(ty), opt(*default), s(spanner_ty)]);
+                            out.push(r);
+                        }
+                    }
                 }
             }
         }

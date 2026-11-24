@@ -59,6 +59,8 @@ expect@spanner:
 case set_options_wrong_case
 ddl:
   ALTER TABLE Account ALTER COLUMN created SET OPTIONS (allow_commit_timestamp = true)
+expect:
+  ok
 expect@spanner:
   error: NOT_FOUND
   message: Column not found in table Account: created
@@ -154,6 +156,8 @@ expect@spanner:
 case alter_index_wrong_case
 ddl:
   ALTER INDEX accountbyname ADD STORED COLUMN Created
+expect:
+  ok
 expect@spanner:
   error: NOT_FOUND
   message: Index not found: accountbyname
@@ -220,6 +224,8 @@ ddl:
   ALTER TABLE Account ADD CONSTRAINT NameSet CHECK (Name IS NOT NULL)
 ddl:
   ALTER TABLE Account DROP CONSTRAINT nameset
+expect:
+  ok
 expect@spanner:
   error: NOT_FOUND
   message: nameset is not a constraint in Account
@@ -227,6 +233,8 @@ expect@spanner:
 case row_deletion_policy_wrong_case
 ddl:
   ALTER TABLE Account ADD ROW DELETION POLICY (OLDER_THAN(created, INTERVAL 1 DAY))
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Cannot create ROW DELETION POLICY because there is no column named created in table Account.
@@ -234,6 +242,8 @@ expect@spanner:
 case change_stream_wrong_case_table
 ddl:
   CREATE CHANGE STREAM S FOR account
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Change Stream S cannot track account because either Change Streams do not track database objects of this type, or this Table does not exist.
@@ -241,6 +251,8 @@ expect@spanner:
 case change_stream_wrong_case_column
 ddl:
   CREATE CHANGE STREAM S FOR Account(name)
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Change Stream S cannot track column name because it does not exist in Table Account.
@@ -259,6 +271,8 @@ expect@spanner:
 case view_body_ignores_case
 ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.accountid FROM ACCOUNT AS a
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Error analyzing the definition of view `V`: Table not found: ACCOUNT [at 1:63]
@@ -275,10 +289,14 @@ expect@spanner:
 case check_expression_ignores_case
 ddl:
   ALTER TABLE Account ADD CONSTRAINT NameSet CHECK (name IS NOT NULL)
+expect:
+  ok
 
 case generated_expression_ignores_case
 ddl:
   ALTER TABLE Account ADD COLUMN Upper STRING(MAX) AS (UPPER(name)) STORED
+expect:
+  ok
 
 case create_search_index_wrong_case
 ddl:
@@ -297,6 +315,8 @@ ddl:
   CREATE SEQUENCE Seq OPTIONS (sequence_kind = 'bit_reversed_positive')
 ddl:
   DROP SEQUENCE seq
+expect:
+  ok
 expect@spanner:
   error: NOT_FOUND
   message: seq

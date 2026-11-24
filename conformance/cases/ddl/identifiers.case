@@ -50,6 +50,8 @@ expect@spanner:
 case column_quoted_space
 ddl:
   CREATE TABLE T (K INT64, `a b` INT64) PRIMARY KEY (K)
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Column name not valid: T.a b.
@@ -76,6 +78,8 @@ expect@spanner:
 case table_name_128_chars
 ddl:
   CREATE TABLE Taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (K INT64) PRIMARY KEY (K)
+expect:
+  ok
 
 case table_name_129_chars
 ddl:
@@ -140,6 +144,8 @@ expect@spanner:
 case view_leading_underscore
 ddl:
   CREATE VIEW _V SQL SECURITY INVOKER AS SELECT A.K FROM A
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: VIEW name not valid: _V.

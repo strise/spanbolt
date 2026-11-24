@@ -16,6 +16,7 @@ pub use catalog::{Catalog, IndexId, IndexMeta, TableId, TableMeta};
 pub use error::{Code, Error, Result};
 pub use key::{Key, KeyRange, KeySet, Span};
 pub use state::{
-    DbState, Mutation, Row, RowMap, Target, WriteKind, Writer, decode_key, decode_point_key, scan,
+    DbState, Mutation, Row, RowMap, Target, WriteKind, Writer, decode_key, decode_point_key,
+    index_prefix, scan,
 };
 pub use value::{Date, Interval, Numeric, Timestamp, Value};

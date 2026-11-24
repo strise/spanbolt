@@ -1,0 +1,442 @@
+# INSERT ... ON CONFLICT DO NOTHING. DO UPDATE is UNIMPLEMENTED in spanbolt, and so are inserts
+# where two rows share a unique index key: which one Cloud Spanner keeps follows no rule we found.
+# Neither Spanner nor the emulator takes a null-filtered unique index as the conflict target (N).
+tags: sql dml
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE TABLE U1 (
+    K INT64 NOT NULL,
+    U STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE UNIQUE INDEX U1ByU ON U1(U);
+  CREATE TABLE N (
+    K INT64 NOT NULL,
+    U STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE UNIQUE NULL_FILTERED INDEX NByU ON N(U);
+  CREATE TABLE C (
+    A STRING(MAX) NOT NULL,
+    B INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (A, B)
+insert T cols=K,V:
+  [1, "one"]
+  [2, "two"]
+insert U1 cols=K,U:
+  [1, "u1"]
+  [2, "u2"]
+insert N cols=K,U:
+  [1, "u1"]
+  [2, "u2"]
+insert C cols=A,B,V:
+  ["a", 1, "a1"]
+
+case do_nothing
+dml:
+  INSERT INTO T (K, V) VALUES (1, 'new'), (3, 'three') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+expect@spanner:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["3","three"]
+
+case do_nothing_lower_case
+dml:
+  insert into T (K, V) values (1, 'new'), (3, 'three') on conflict do nothing
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+expect@spanner:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["3","three"]
+
+case do_nothing_key_target
+dml:
+  INSERT INTO T (K, V) VALUES (2, 'new'), (4, 'four') ON CONFLICT (K) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["4","four"]
+expect@spanner:
+  same
+
+case do_nothing_composite_key_target
+dml:
+  INSERT INTO C (A, B, V) VALUES ('a', 1, 'new'), ('a', 2, 'a2') ON CONFLICT (A, B) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT A, B, V FROM C ORDER BY A, B
+expect:
+  columns: A STRING, B INT64, V STRING
+  ["a","1","a1"]
+  ["a","2","a2"]
+expect@spanner:
+  same
+
+case do_nothing_composite_key_target_reordered
+dml:
+  INSERT INTO C (A, B, V) VALUES ('a', 1, 'new'), ('a', 2, 'a2') ON CONFLICT (B, A) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case do_nothing_partial_key_target
+dml:
+  INSERT INTO C (A, B, V) VALUES ('a', 1, 'new') ON CONFLICT (A) DO NOTHING
+expect:
+  error: FAILED_PRECONDITION
+  message: There is no unique constraint matching the ON CONFLICT specification
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: There is no unique constraint matching the ON CONFLICT specification
+
+case do_nothing_non_key_target
+dml:
+  INSERT INTO T (K, V) VALUES (1, 'new') ON CONFLICT (V) DO NOTHING
+expect:
+  error: FAILED_PRECONDITION
+  message: There is no unique constraint matching the ON CONFLICT specification
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: There is no unique constraint matching the ON CONFLICT specification
+
+case do_nothing_duplicate_rows
+dml:
+  INSERT INTO T (K, V) VALUES (7, 'first'), (7, 'second') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+expect@spanner:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["7","first"]
+
+case do_nothing_key_target_duplicate_rows
+dml:
+  INSERT INTO T (K, V) VALUES (7, 'first'), (7, 'second') ON CONFLICT (K) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["7","first"]
+expect@spanner:
+  same
+
+case do_nothing_select
+dml:
+  INSERT INTO T (K, V) (SELECT K + 1, 'copy' FROM T) ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+expect@spanner:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["3","copy"]
+
+case do_nothing_then_return
+dml:
+  INSERT INTO T (K, V) VALUES (1, 'new'), (3, 'three') ON CONFLICT DO NOTHING THEN RETURN K, V
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+  columns: K INT64, V STRING
+  ["3","three"]
+
+case do_nothing_all_conflict
+dml:
+  INSERT INTO T (K, V) VALUES (1, 'new'), (2, 'new') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 0
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+expect@spanner:
+  same
+
+case do_nothing_sees_buffered_insert
+begin txn=t
+dml txn=t:
+  INSERT INTO T (K, V) VALUES (8, 'eight')
+expect:
+  count: 1
+expect@spanner:
+  same
+dml txn=t:
+  INSERT INTO T (K, V) VALUES (8, 'again'), (9, 'nine') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+commit txn=t
+query:
+  SELECT K, V FROM T ORDER BY K
+expect:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["8","eight"]
+expect@spanner:
+  columns: K INT64, V STRING
+  ["1","one"]
+  ["2","two"]
+  ["8","eight"]
+  ["9","nine"]
+
+case do_nothing_insert_or_ignore
+dml:
+  INSERT OR IGNORE INTO T (K, V) VALUES (1, 'new') ON CONFLICT DO NOTHING
+expect:
+  error: INVALID_ARGUMENT
+  message: ON CONFLICT is not allowed with insert mode: OR IGNORE [at 1:50]
+expect@spanner:
+  same
+
+case do_nothing_batch
+batch:
+  INSERT INTO T (K, V) VALUES (1, 'new') ON CONFLICT DO NOTHING;
+  INSERT INTO T (K, V) VALUES (10, 'ten') ON CONFLICT DO NOTHING
+expect:
+  counts: []
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  counts: [0,1]
+
+case do_update_unimplemented
+dml:
+  INSERT INTO T (K, V) VALUES (1, 'new') ON CONFLICT (K) DO UPDATE SET V = excluded.V
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case unique_target
+dml:
+  INSERT INTO U1 (K, U) VALUES (5, 'u1'), (6, 'u6') ON CONFLICT (U) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT K, U FROM U1 ORDER BY K
+expect:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+  ["6","u6"]
+expect@spanner:
+  same
+
+case unique_constraint
+dml:
+  INSERT INTO U1 (K, U) VALUES (5, 'u1'), (6, 'u6') ON CONFLICT ON UNIQUE CONSTRAINT U1ByU DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT K, U FROM U1 ORDER BY K
+expect:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+  ["6","u6"]
+expect@spanner:
+  same
+
+case unique_no_target
+dml:
+  INSERT INTO U1 (K, U) VALUES (5, 'u1'), (1, 'u7'), (6, 'u6') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+query:
+  SELECT K, U FROM U1 ORDER BY K
+expect:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+expect@spanner:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+  ["6","u6"]
+
+case unique_violation_key_target
+dml:
+  INSERT INTO U1 (K, U) VALUES (5, 'u1') ON CONFLICT (K) DO NOTHING
+expect:
+  error: ALREADY_EXISTS
+  message: UNIQUE violation on index U1ByU, duplicate key: {String("u1")} in this transaction.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Unique index violation on index U1ByU at index key [u1,1]. It conflicts with row [1] in table U1.
+
+case unique_existing_null_key
+dml:
+  INSERT INTO U1 (K) VALUES (3) ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+dml:
+  INSERT INTO U1 (K) VALUES (4) ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 0
+query:
+  SELECT K, U FROM U1 ORDER BY K
+expect:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+expect@spanner:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+  ["3",null]
+
+case unique_shared_key_in_statement
+dml:
+  INSERT INTO U1 (K, U) VALUES (5, 'u5'), (6, 'u5') ON CONFLICT (U) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case unique_shared_null_key_in_statement
+dml:
+  INSERT INTO U1 (K) VALUES (3), (4) ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 1
+
+case unique_shared_key_with_skipped_row
+dml:
+  INSERT INTO U1 (K, U) VALUES (1, 'u9'), (3, 'u9') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  count: 0
+
+case null_filtered_target
+dml:
+  INSERT INTO N (K, U) VALUES (5, 'u1') ON CONFLICT (U) DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: Null filtered index as conflict target is not supported: NByU
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with null filtering index as conflict target is not supported. Index: NByU
+
+case null_filtered_constraint
+dml:
+  INSERT INTO N (K, U) VALUES (5, 'u1') ON CONFLICT ON UNIQUE CONSTRAINT NByU DO NOTHING
+expect:
+  count: 0
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with null filtering index as conflict target is not supported. Index: NByU
+
+case null_filtered_no_target
+dml:
+  INSERT INTO N (K, U) VALUES (1, 'u5') ON CONFLICT DO NOTHING
+expect:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: ON CONFLICT clause with null filtering index as conflict target is not supported. Index: NByU
+
+case null_filtered_key_target
+dml:
+  INSERT INTO N (K, U) VALUES (1, 'u5'), (3, 'u3') ON CONFLICT (K) DO NOTHING
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT K, U FROM N ORDER BY K
+expect:
+  columns: K INT64, U STRING
+  ["1","u1"]
+  ["2","u2"]
+  ["3","u3"]
+expect@spanner:
+  same

@@ -304,6 +304,24 @@ impl DbState {
         }
         let ct = self.catalog.table(f.table);
         let rt = self.catalog.table(f.ref_table);
+        if self.prod_messages {
+            // Spanner names the key without its schema and lists the referenced columns.
+            let name = f.name.rsplit_once('.').map_or(f.name.as_str(), |(_, n)| n);
+            let cols: Vec<&str> = f
+                .ref_columns
+                .iter()
+                .map(|&c| rt.columns[c].name.as_str())
+                .collect();
+            return Err(Error::constraint(
+                Code::FailedPrecondition,
+                format!(
+                    "Foreign key constraint `{name}` is violated on table `{}`. Cannot find referenced values in {}({}).",
+                    ct.name,
+                    rt.name,
+                    cols.join(",")
+                ),
+            ));
+        }
         let shown: Vec<Value> = f.columns.iter().map(|&c| row[c].clone()).collect();
         let types: Vec<&ColumnType> = f.columns.iter().map(|&c| &ct.columns[c].ty).collect();
         Err(Error::constraint(

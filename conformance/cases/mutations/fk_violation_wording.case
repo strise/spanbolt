@@ -1,0 +1,58 @@
+tags: mutations
+# A row whose foreign key finds no referenced row: Cloud Spanner names the key without its schema
+# and lists the referenced columns; the emulator prints the missing key.
+schema:
+  CREATE TABLE P (
+    A INT64 NOT NULL,
+    B STRING(10) NOT NULL,
+  ) PRIMARY KEY (A, B);
+  CREATE SCHEMA sx;
+  CREATE TABLE sx.Q (
+    Id INT64 NOT NULL,
+  ) PRIMARY KEY (Id);
+  CREATE TABLE sx.C (
+    Id INT64 NOT NULL,
+    X STRING(10),
+    Y INT64,
+    Z INT64,
+    CONSTRAINT fk_xy FOREIGN KEY (Y, X) REFERENCES P (A, B),
+    CONSTRAINT fk_q FOREIGN KEY (Z) REFERENCES sx.Q (Id),
+  ) PRIMARY KEY (Id)
+
+case composite_key_insert
+insert sx.C cols=Id,X,Y:
+  [1, "a", 2]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `fk_xy` constraint violation on table `sx.C`. Cannot find referenced key `{Int64(2), String("a")}` in table `P`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `fk_xy` is violated on table `sx.C`. Cannot find referenced values in P(A,B).
+
+case named_schema_key_insert
+insert sx.C cols=Id,Z:
+  [1, 5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `fk_q` constraint violation on table `sx.C`. Cannot find referenced key `{Int64(5)}` in table `sx.Q`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `fk_q` is violated on table `sx.C`. Cannot find referenced values in sx.Q(Id).
+
+case composite_key_dml
+begin txn=t
+dml txn=t:
+  INSERT INTO sx.C (Id, X, Y) VALUES (1, 'a', 2)
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `fk_xy` constraint violation on table `sx.C`. Cannot find referenced key `{Int64(2), String("a")}` in table `P`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `fk_xy` is violated on table `sx.C`. Cannot find referenced values in P(A,B).
+commit txn=t
+expect:
+  error: FAILED_PRECONDITION
+  message: Foreign key `fk_xy` constraint violation on table `sx.C`. Cannot find referenced key `{Int64(2), String("a")}` in table `P`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `fk_xy` is violated on table `sx.C`. Cannot find referenced values in P(A,B).

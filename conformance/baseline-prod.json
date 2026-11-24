@@ -162,10 +162,10 @@
     },
     "information_schema": {
       "error": 0,
-      "fail": 2,
-      "pass": 40,
+      "fail": 11,
+      "pass": 33,
       "skipped": 0,
-      "total": 42,
+      "total": 44,
       "unimplemented": 0
     },
     "int64": {
@@ -203,9 +203,9 @@
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 111,
+      "pass": 114,
       "skipped": 0,
-      "total": 111,
+      "total": 114,
       "unimplemented": 0
     },
     "net": {
@@ -226,11 +226,11 @@
     },
     "oracle": {
       "error": 0,
-      "fail": 2,
-      "pass": 153,
+      "fail": 3,
+      "pass": 160,
       "skipped": 0,
-      "total": 156,
-      "unimplemented": 1
+      "total": 165,
+      "unimplemented": 2
     },
     "oracle2": {
       "error": 0,
@@ -263,6 +263,14 @@
       "skipped": 0,
       "total": 4,
       "unimplemented": 0
+    },
+    "pipe": {
+      "error": 0,
+      "fail": 0,
+      "pass": 6,
+      "skipped": 0,
+      "total": 7,
+      "unimplemented": 1
     },
     "read": {
       "error": 0,
@@ -306,11 +314,11 @@
     },
     "sql": {
       "error": 0,
-      "fail": 23,
+      "fail": 31,
       "pass": 3722,
       "skipped": 3,
-      "total": 3778,
-      "unimplemented": 30
+      "total": 3787,
+      "unimplemented": 31
     },
     "string": {
       "error": 0,
@@ -986,7 +994,7 @@
       ]
     },
     {
-      "detail": "line 92:\n  message:\n    - Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_1` is violated for key (1)\n    + Check constraint `Others`.`CK_Others_B1162681556A2BED_1` is violated for key (1)\nline 100:\n  message:\n    - Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_2` is violated for key (1)\n    + Check constraint `Others`.`CK_Others_B1162681556A2BED_2` is violated for key (1)\nline 108:\n  message:\n    - Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_1` is violated on table `Others`. Cannot find referenced values in Parents(ParentId).\n    + Foreign key `FK_Others_Parents_77D2EFE8327295FC_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(7)}` in table `Parents`.\nline 116:\n  message:\n    - Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_2` is violated on table `Others`. Cannot find referenced values in Parents(Code).\n    + Foreign key `FK_Others_Parents_77D2EFE8327295FC_2` constraint violation on table `Others`. Cannot find referenced key `{String(\"x\")}` in table `Parents`.\nline 124:\n  message:\n    - Foreign key constraint `FK_Others_Others_0B7AAFB6B52B8DB3_1` is violated on table `Others`. Cannot find referenced values in Others(OtherId).\n    + Foreign key `FK_Others_Others_9A67C58514E55A35_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(9)}` in table `Others`.\nline 132:\n  message:\n    - Foreign key constraint `FK_Items_Parents_8C31E00338286717_1` is violated on table `sch.Items`. Cannot find referenced values in Parents(ParentId).\n    + Foreign key `sch.FK_Items_Parents_7EC0040F058CA24C_1` constraint violation on table `sch.Items`. Cannot find referenced key `{Int64(7)}` in table `Parents`.",
+      "detail": "line 92:\n  message:\n    - Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_1` is violated for key (1)\n    + Check constraint `Others`.`CK_Others_B1162681556A2BED_1` is violated for key (1)\nline 100:\n  message:\n    - Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_2` is violated for key (1)\n    + Check constraint `Others`.`CK_Others_B1162681556A2BED_2` is violated for key (1)\nline 108:\n  message:\n    - Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_1` is violated on table `Others`. Cannot find referenced values in Parents(ParentId).\n    + Foreign key constraint `FK_Others_Parents_77D2EFE8327295FC_1` is violated on table `Others`. Cannot find referenced values in Parents(ParentId).\nline 116:\n  message:\n    - Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_2` is violated on table `Others`. Cannot find referenced values in Parents(Code).\n    + Foreign key constraint `FK_Others_Parents_77D2EFE8327295FC_2` is violated on table `Others`. Cannot find referenced values in Parents(Code).\nline 124:\n  message:\n    - Foreign key constraint `FK_Others_Others_0B7AAFB6B52B8DB3_1` is violated on table `Others`. Cannot find referenced values in Others(OtherId).\n    + Foreign key constraint `FK_Others_Others_9A67C58514E55A35_1` is violated on table `Others`. Cannot find referenced values in Others(OtherId).\nline 132:\n  message:\n    - Foreign key constraint `FK_Items_Parents_8C31E00338286717_1` is violated on table `sch.Items`. Cannot find referenced values in Parents(ParentId).\n    + Foreign key constraint `FK_Items_Parents_7EC0040F058CA24C_1` is violated on table `sch.Items`. Cannot find referenced values in Parents(ParentId).",
       "name": "ddl/generated_names/violations_name_the_constraint",
       "status": "fail",
       "tags": [
@@ -3205,6 +3213,30 @@
     {
       "detail": null,
       "name": "mutations/filtered_index/filter_column_not_in_index",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/fk_violation_wording/composite_key_insert",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/fk_violation_wording/named_schema_key_insert",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/fk_violation_wording/composite_key_dml",
       "status": "pass",
       "tags": [
         "mutations"
@@ -6112,9 +6144,9 @@
       ]
     },
     {
-      "detail": "line 155:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Id INT64\n    + (none)\n  rows (ordered): expected 3, got 0\n    - [\"1\"]\n    - [\"2\"]\n    - [\"4\"]\nline 165:\n  message:\n    - Unrecognized name: Grp [at 1:36]\n    + Pipe query syntax not supported [at 1:27]\nline 173:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Grp STRING, n INT64\n    + (none)\n  rows (ordered): expected 3, got 0\n    - [null,\"1\"]\n    - [\"a\",\"2\"]\n    - [\"b\",\"1\"]",
+      "detail": null,
       "name": "sql/emulator_issues/pipe_syntax",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "oracle"
@@ -32879,63 +32911,63 @@
       ]
     },
     {
-      "detail": null,
+      "detail": "line 61:\n  rows (ordered): expected 11, got 11\n    - [\"\",\"FK_ChildAB\",\"\",\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_ChildAB\",\"\",\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    - [\"\",\"FK_ChildCode\",\"\",\"\",\"IDX_Parents_Code_U_C2B2E0060216E842\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_ChildCode\",\"\",\"\",\"IDX_Parents_Code_U_1138935A6D4FCC53\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    - [\"\",\"FK_ChildLabel\",\"\",\"\",\"IDX_Parents_Label_U_8E36F2C691E79318\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_ChildLabel\",\"\",\"\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n      [\"\",\"FK_ChildPk\",\"\",\"\",\"PK_Parents\",\"SIMPLE\",\"NO ACTION\",\"CASCADE\",\"COMMITTED\"]\n    - [\"\",\"FK_ChildSlug\",\"\",\"\",\"IDX_Parents_Slug_U_BBB71B18BE414493\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_ChildSlug\",\"\",\"\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    - [\"\",\"FK_OtherSlug\",\"\",\"\",\"IDX_Parents_Slug_U_BBB71B18BE414493\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_OtherSlug\",\"\",\"\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    - [\"\",\"FK_PairLoose\",\"\",\"\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_PairLoose\",\"\",\"\",\"IDX_Pairs_Y_U_44D94AB0950DE589\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    - [\"\",\"FK_PairPrefix\",\"\",\"\",\"IDX_Pairs_X_U_9D0ECCED35338812\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"\",\"FK_PairPrefix\",\"\",\"\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n      [\"\",\"FK_PairWhole\",\"\",\"\",\"PK_Pairs\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n      [\"mon\",\"fk_comments\",\"\",\"mon\",\"PK_alerts\",\"SIMPLE\",\"NO ACTION\",\"CASCADE\",\"COMMITTED\"]\n    - [\"mon\",\"fk_comments_code\",\"\",\"mon\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]\n    + [\"mon\",\"fk_comments_code\",\"\",\"mon\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\",\"SIMPLE\",\"NO ACTION\",\"NO ACTION\",\"COMMITTED\"]",
       "name": "sql/information_schema_fk/referential_constraints",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
       ]
     },
     {
-      "detail": null,
+      "detail": "line 93:\n  rows (ordered): expected 25, got 25\n      [\"\",\"FK_ChildAB\",\"\",\"Children\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_ChildCode\",\"\",\"Children\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_ChildLabel\",\"\",\"Children\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_ChildPk\",\"\",\"Children\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_ChildSlug\",\"\",\"Children\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_OtherSlug\",\"\",\"Others\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_PairLoose\",\"\",\"PairRefs\",\"FOREIGN KEY\",\"NO\",\"NO\",\"NO\"]\n      [\"\",\"FK_PairPrefix\",\"\",\"PairRefs\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"FK_PairWhole\",\"\",\"PairRefs\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n    - [\"\",\"IDX_Pairs_X_U_9D0ECCED35338812\",\"\",\"Pairs\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\",\"\",\"Pairs\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    - [\"\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\",\"\",\"Pairs\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"\",\"IDX_Pairs_Y_U_44D94AB0950DE589\",\"\",\"Pairs\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    - [\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    - [\"\",\"IDX_Parents_Code_U_C2B2E0060216E842\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"\",\"IDX_Parents_Code_U_1138935A6D4FCC53\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    - [\"\",\"IDX_Parents_Label_U_8E36F2C691E79318\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    - [\"\",\"IDX_Parents_Slug_U_BBB71B18BE414493\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\",\"\",\"Parents\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"PK_Children\",\"\",\"Children\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"PK_Others\",\"\",\"Others\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"PK_PairRefs\",\"\",\"PairRefs\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"PK_Pairs\",\"\",\"Pairs\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"\",\"PK_Parents\",\"\",\"Parents\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n    - [\"mon\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\",\"mon\",\"alerts\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n    + [\"mon\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\",\"mon\",\"alerts\",\"UNIQUE\",\"NO\",\"NO\",\"YES\"]\n      [\"mon\",\"PK_alerts\",\"mon\",\"alerts\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"mon\",\"PK_comments\",\"mon\",\"comments\",\"PRIMARY KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"mon\",\"fk_comments\",\"mon\",\"comments\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]\n      [\"mon\",\"fk_comments_code\",\"mon\",\"comments\",\"FOREIGN KEY\",\"NO\",\"NO\",\"YES\"]",
       "name": "sql/information_schema_fk/table_constraints",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
       ]
     },
     {
-      "detail": null,
+      "detail": "line 156:\n  rows (ordered): expected 24, got 24\n    - [\"\",\"Children\",\"IDX_Children_PA_PB_N_CE80DCA81FA6BC5A\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"\",\"Children\",\"IDX_Children_PA_PB_N_34E3181FE3AAD541\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    - [\"\",\"Children\",\"IDX_Children_ParentCode_N_C40611070F5F9D7D\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"\",\"Children\",\"IDX_Children_ParentCode_N_A7F0F7691B02856A\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    - [\"\",\"Children\",\"IDX_Children_ParentId_N_27341E2D4A367A22\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"\",\"Children\",\"IDX_Children_ParentId_N_1934AA71D605596F\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    - [\"\",\"Children\",\"IDX_Children_ParentLabel_N_DB3C2CF5B8337A96\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"\",\"Children\",\"IDX_Children_ParentLabel_N_FF3B79E490066529\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    - [\"\",\"Children\",\"IDX_Children_ParentSlug_N_FD0DF985D79ED13D\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"\",\"Children\",\"IDX_Children_ParentSlug_N_F877E5ABD6CEB797\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n      [\"\",\"Children\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]\n    - [\"\",\"Others\",\"IDX_Others_Slug_N_23F474A52D3A5C7B\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"\",\"Others\",\"IDX_Others_Slug_N_6963F3296AC368D0\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n      [\"\",\"Others\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]\n      [\"\",\"PairRefs\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]\n    - [\"\",\"Pairs\",\"IDX_Pairs_X_U_9D0ECCED35338812\",\"INDEX\",\"\",true,false,\"READ_WRITE\",true]\n    + [\"\",\"Pairs\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\",\"INDEX\",\"\",true,false,\"READ_WRITE\",true]\n    - [\"\",\"Pairs\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\",\"INDEX\",\"\",true,false,\"READ_WRITE\",true]\n    + [\"\",\"Pairs\",\"IDX_Pairs_Y_U_44D94AB0950DE589\",\"INDEX\",\"\",true,false,\"READ_WRITE\",true]\n      [\"\",\"Pairs\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]\n    - [\"\",\"Parents\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n    + [\"\",\"Parents\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n    - [\"\",\"Parents\",\"IDX_Parents_Code_U_C2B2E0060216E842\",\"INDEX\",\"\",true,false,\"READ_WRITE\",true]\n    + [\"\",\"Parents\",\"IDX_Parents_Code_U_1138935A6D4FCC53\",\"INDEX\",\"\",true,false,\"READ_WRITE\",true]\n    - [\"\",\"Parents\",\"IDX_Parents_Label_U_8E36F2C691E79318\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n    + [\"\",\"Parents\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n    - [\"\",\"Parents\",\"IDX_Parents_Slug_U_BBB71B18BE414493\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n    + [\"\",\"Parents\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n      [\"\",\"Parents\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]\n      [\"\",\"Parents\",\"ParentsByCode\",\"INDEX\",\"\",true,false,\"READ_WRITE\",false]\n      [\"\",\"Parents\",\"ParentsByLabel\",\"INDEX\",\"\",false,false,\"READ_WRITE\",false]\n    - [\"mon\",\"alerts\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n    + [\"mon\",\"alerts\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\",\"INDEX\",\"\",true,true,\"READ_WRITE\",true]\n      [\"mon\",\"alerts\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]\n    - [\"mon\",\"comments\",\"IDX_comments_alert_code_N_C920E0F83FE37DC0\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    + [\"mon\",\"comments\",\"IDX_comments_alert_code_N_9B908E092154D0CD\",\"INDEX\",\"\",false,true,\"READ_WRITE\",true]\n    - [\"mon\",\"comments\",\"IDX_comments_alert_id_70AFFA89F25AB249\",\"INDEX\",\"\",false,false,\"READ_WRITE\",true]\n    + [\"mon\",\"comments\",\"IDX_comments_alert_id_D5970CE6F9EF9329\",\"INDEX\",\"\",false,false,\"READ_WRITE\",true]\n      [\"mon\",\"comments\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",\"\",true,false,null,false]",
       "name": "sql/information_schema_fk/indexes",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
       ]
     },
     {
-      "detail": null,
+      "detail": "line 216:\n  rows (ordered): expected 19, got 19\n    - [\"\",\"Children\",\"IDX_Children_PA_PB_N_CE80DCA81FA6BC5A\",\"PA\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    + [\"\",\"Children\",\"IDX_Children_PA_PB_N_34E3181FE3AAD541\",\"PA\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    - [\"\",\"Children\",\"IDX_Children_PA_PB_N_CE80DCA81FA6BC5A\",\"PB\",\"2\",\"ASC\",\"NO\",\"INT64\"]\n    + [\"\",\"Children\",\"IDX_Children_PA_PB_N_34E3181FE3AAD541\",\"PB\",\"2\",\"ASC\",\"NO\",\"INT64\"]\n    - [\"\",\"Children\",\"IDX_Children_ParentCode_N_C40611070F5F9D7D\",\"ParentCode\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Children\",\"IDX_Children_ParentCode_N_A7F0F7691B02856A\",\"ParentCode\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"\",\"Children\",\"IDX_Children_ParentId_N_27341E2D4A367A22\",\"ParentId\",\"1\",\"ASC\",\"NO\",\"STRING(36)\"]\n    + [\"\",\"Children\",\"IDX_Children_ParentId_N_1934AA71D605596F\",\"ParentId\",\"1\",\"ASC\",\"NO\",\"STRING(36)\"]\n    - [\"\",\"Children\",\"IDX_Children_ParentLabel_N_DB3C2CF5B8337A96\",\"ParentLabel\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Children\",\"IDX_Children_ParentLabel_N_FF3B79E490066529\",\"ParentLabel\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"\",\"Children\",\"IDX_Children_ParentSlug_N_FD0DF985D79ED13D\",\"ParentSlug\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Children\",\"IDX_Children_ParentSlug_N_F877E5ABD6CEB797\",\"ParentSlug\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"\",\"Others\",\"IDX_Others_Slug_N_23F474A52D3A5C7B\",\"Slug\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Others\",\"IDX_Others_Slug_N_6963F3296AC368D0\",\"Slug\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"\",\"Pairs\",\"IDX_Pairs_X_U_9D0ECCED35338812\",\"X\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    + [\"\",\"Pairs\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\",\"X\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    - [\"\",\"Pairs\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\",\"Y\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    + [\"\",\"Pairs\",\"IDX_Pairs_Y_U_44D94AB0950DE589\",\"Y\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    - [\"\",\"Parents\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"A\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    + [\"\",\"Parents\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"A\",\"1\",\"ASC\",\"NO\",\"INT64\"]\n    - [\"\",\"Parents\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"B\",\"2\",\"ASC\",\"NO\",\"INT64\"]\n    + [\"\",\"Parents\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"B\",\"2\",\"ASC\",\"NO\",\"INT64\"]\n    - [\"\",\"Parents\",\"IDX_Parents_Code_U_C2B2E0060216E842\",\"Code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Parents\",\"IDX_Parents_Code_U_1138935A6D4FCC53\",\"Code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"\",\"Parents\",\"IDX_Parents_Label_U_8E36F2C691E79318\",\"Label\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Parents\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\",\"Label\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"\",\"Parents\",\"IDX_Parents_Slug_U_BBB71B18BE414493\",\"Slug\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"\",\"Parents\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\",\"Slug\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n      [\"\",\"Parents\",\"ParentsByCode\",\"Code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n      [\"\",\"Parents\",\"ParentsByLabel\",\"Label\",\"1\",\"ASC\",\"YES\",\"STRING(16)\"]\n    - [\"mon\",\"alerts\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\",\"code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"mon\",\"alerts\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\",\"code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"mon\",\"comments\",\"IDX_comments_alert_code_N_C920E0F83FE37DC0\",\"alert_code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    + [\"mon\",\"comments\",\"IDX_comments_alert_code_N_9B908E092154D0CD\",\"alert_code\",\"1\",\"ASC\",\"NO\",\"STRING(16)\"]\n    - [\"mon\",\"comments\",\"IDX_comments_alert_id_70AFFA89F25AB249\",\"alert_id\",\"1\",\"ASC\",\"NO\",\"STRING(36)\"]\n    + [\"mon\",\"comments\",\"IDX_comments_alert_id_D5970CE6F9EF9329\",\"alert_id\",\"1\",\"ASC\",\"NO\",\"STRING(36)\"]",
       "name": "sql/information_schema_fk/index_columns",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
       ]
     },
     {
-      "detail": null,
+      "detail": "line 266:\n  rows (ordered): expected 30, got 30\n      [\"\",\"FK_ChildAB\",\"\",\"Children\",\"PB\",\"1\",\"2\"]\n      [\"\",\"FK_ChildAB\",\"\",\"Children\",\"PA\",\"2\",\"1\"]\n      [\"\",\"FK_ChildCode\",\"\",\"Children\",\"ParentCode\",\"1\",\"1\"]\n      [\"\",\"FK_ChildLabel\",\"\",\"Children\",\"ParentLabel\",\"1\",\"1\"]\n      [\"\",\"FK_ChildPk\",\"\",\"Children\",\"ParentId\",\"1\",\"1\"]\n      [\"\",\"FK_ChildSlug\",\"\",\"Children\",\"ParentSlug\",\"1\",\"1\"]\n      [\"\",\"FK_OtherSlug\",\"\",\"Others\",\"Slug\",\"1\",\"1\"]\n      [\"\",\"FK_PairLoose\",\"\",\"PairRefs\",\"Z\",\"1\",\"1\"]\n      [\"\",\"FK_PairPrefix\",\"\",\"PairRefs\",\"X\",\"1\",\"1\"]\n      [\"\",\"FK_PairWhole\",\"\",\"PairRefs\",\"Y\",\"1\",\"2\"]\n      [\"\",\"FK_PairWhole\",\"\",\"PairRefs\",\"X\",\"2\",\"1\"]\n    - [\"\",\"IDX_Pairs_X_U_9D0ECCED35338812\",\"\",\"Pairs\",\"X\",\"1\",null]\n    + [\"\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\",\"\",\"Pairs\",\"X\",\"1\",null]\n    - [\"\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\",\"\",\"Pairs\",\"Y\",\"1\",null]\n    + [\"\",\"IDX_Pairs_Y_U_44D94AB0950DE589\",\"\",\"Pairs\",\"Y\",\"1\",null]\n    - [\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"\",\"Parents\",\"A\",\"1\",null]\n    + [\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"\",\"Parents\",\"A\",\"1\",null]\n    - [\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\",\"\",\"Parents\",\"B\",\"2\",null]\n    + [\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\",\"\",\"Parents\",\"B\",\"2\",null]\n    - [\"\",\"IDX_Parents_Code_U_C2B2E0060216E842\",\"\",\"Parents\",\"Code\",\"1\",null]\n    + [\"\",\"IDX_Parents_Code_U_1138935A6D4FCC53\",\"\",\"Parents\",\"Code\",\"1\",null]\n    - [\"\",\"IDX_Parents_Label_U_8E36F2C691E79318\",\"\",\"Parents\",\"Label\",\"1\",null]\n    + [\"\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\",\"\",\"Parents\",\"Label\",\"1\",null]\n    - [\"\",\"IDX_Parents_Slug_U_BBB71B18BE414493\",\"\",\"Parents\",\"Slug\",\"1\",null]\n    + [\"\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\",\"\",\"Parents\",\"Slug\",\"1\",null]\n      [\"\",\"PK_Children\",\"\",\"Children\",\"ChildId\",\"1\",null]\n      [\"\",\"PK_Others\",\"\",\"Others\",\"OtherId\",\"1\",null]\n      [\"\",\"PK_PairRefs\",\"\",\"PairRefs\",\"X\",\"1\",null]\n      [\"\",\"PK_PairRefs\",\"\",\"PairRefs\",\"Y\",\"2\",null]\n      [\"\",\"PK_Pairs\",\"\",\"Pairs\",\"X\",\"1\",null]\n      [\"\",\"PK_Pairs\",\"\",\"Pairs\",\"Y\",\"2\",null]\n      [\"\",\"PK_Parents\",\"\",\"Parents\",\"ParentId\",\"1\",null]\n    - [\"mon\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\",\"mon\",\"alerts\",\"code\",\"1\",null]\n    + [\"mon\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\",\"mon\",\"alerts\",\"code\",\"1\",null]\n      [\"mon\",\"PK_alerts\",\"mon\",\"alerts\",\"id\",\"1\",null]\n      [\"mon\",\"PK_comments\",\"mon\",\"comments\",\"id\",\"1\",null]\n      [\"mon\",\"fk_comments\",\"mon\",\"comments\",\"alert_id\",\"1\",\"1\"]\n      [\"mon\",\"fk_comments_code\",\"mon\",\"comments\",\"alert_code\",\"1\",\"1\"]",
       "name": "sql/information_schema_fk/key_column_usage",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
       ]
     },
     {
-      "detail": null,
+      "detail": "line 339:\n  rows (ordered): expected 25, got 25\n      [\"\",\"Parents\",\"\",\"FK_ChildAB\"]\n      [\"\",\"Parents\",\"\",\"FK_ChildCode\"]\n      [\"\",\"Parents\",\"\",\"FK_ChildLabel\"]\n      [\"\",\"Parents\",\"\",\"FK_ChildPk\"]\n      [\"\",\"Parents\",\"\",\"FK_ChildSlug\"]\n      [\"\",\"Parents\",\"\",\"FK_OtherSlug\"]\n      [\"\",\"Pairs\",\"\",\"FK_PairLoose\"]\n      [\"\",\"Pairs\",\"\",\"FK_PairPrefix\"]\n      [\"\",\"Pairs\",\"\",\"FK_PairWhole\"]\n    - [\"\",\"Pairs\",\"\",\"IDX_Pairs_X_U_9D0ECCED35338812\"]\n    + [\"\",\"Pairs\",\"\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\"]\n    - [\"\",\"Pairs\",\"\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\"]\n    + [\"\",\"Pairs\",\"\",\"IDX_Pairs_Y_U_44D94AB0950DE589\"]\n    - [\"\",\"Parents\",\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\"]\n    + [\"\",\"Parents\",\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\"]\n    - [\"\",\"Parents\",\"\",\"IDX_Parents_Code_U_C2B2E0060216E842\"]\n    + [\"\",\"Parents\",\"\",\"IDX_Parents_Code_U_1138935A6D4FCC53\"]\n    - [\"\",\"Parents\",\"\",\"IDX_Parents_Label_U_8E36F2C691E79318\"]\n    + [\"\",\"Parents\",\"\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\"]\n    - [\"\",\"Parents\",\"\",\"IDX_Parents_Slug_U_BBB71B18BE414493\"]\n    + [\"\",\"Parents\",\"\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\"]\n      [\"\",\"Children\",\"\",\"PK_Children\"]\n      [\"\",\"Others\",\"\",\"PK_Others\"]\n      [\"\",\"PairRefs\",\"\",\"PK_PairRefs\"]\n      [\"\",\"Pairs\",\"\",\"PK_Pairs\"]\n      [\"\",\"Parents\",\"\",\"PK_Parents\"]\n    - [\"mon\",\"alerts\",\"mon\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\"]\n    + [\"mon\",\"alerts\",\"mon\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\"]\n      [\"mon\",\"alerts\",\"mon\",\"PK_alerts\"]\n      [\"mon\",\"comments\",\"mon\",\"PK_comments\"]\n      [\"mon\",\"alerts\",\"mon\",\"fk_comments\"]\n      [\"mon\",\"alerts\",\"mon\",\"fk_comments_code\"]",
       "name": "sql/information_schema_fk/constraint_table_usage",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
       ]
     },
     {
-      "detail": null,
+      "detail": "line 401:\n  rows (ordered): expected 30, got 30\n      [\"\",\"Parents\",\"A\",\"\",\"FK_ChildAB\"]\n      [\"\",\"Parents\",\"B\",\"\",\"FK_ChildAB\"]\n      [\"\",\"Parents\",\"Code\",\"\",\"FK_ChildCode\"]\n      [\"\",\"Parents\",\"Label\",\"\",\"FK_ChildLabel\"]\n      [\"\",\"Parents\",\"ParentId\",\"\",\"FK_ChildPk\"]\n      [\"\",\"Parents\",\"Slug\",\"\",\"FK_ChildSlug\"]\n      [\"\",\"Parents\",\"Slug\",\"\",\"FK_OtherSlug\"]\n      [\"\",\"Pairs\",\"Y\",\"\",\"FK_PairLoose\"]\n      [\"\",\"Pairs\",\"X\",\"\",\"FK_PairPrefix\"]\n      [\"\",\"Pairs\",\"X\",\"\",\"FK_PairWhole\"]\n      [\"\",\"Pairs\",\"Y\",\"\",\"FK_PairWhole\"]\n    - [\"\",\"Pairs\",\"X\",\"\",\"IDX_Pairs_X_U_9D0ECCED35338812\"]\n    + [\"\",\"Pairs\",\"X\",\"\",\"IDX_Pairs_X_U_E8C0EC297F945D9C\"]\n    - [\"\",\"Pairs\",\"Y\",\"\",\"IDX_Pairs_Y_U_DF0DCA69B43E0F39\"]\n    + [\"\",\"Pairs\",\"Y\",\"\",\"IDX_Pairs_Y_U_44D94AB0950DE589\"]\n    - [\"\",\"Parents\",\"A\",\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\"]\n    + [\"\",\"Parents\",\"A\",\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\"]\n    - [\"\",\"Parents\",\"B\",\"\",\"IDX_Parents_A_B_U_78C211387F818D3E\"]\n    + [\"\",\"Parents\",\"B\",\"\",\"IDX_Parents_A_B_U_566932E9CA74EE0A\"]\n    - [\"\",\"Parents\",\"Code\",\"\",\"IDX_Parents_Code_U_C2B2E0060216E842\"]\n    + [\"\",\"Parents\",\"Code\",\"\",\"IDX_Parents_Code_U_1138935A6D4FCC53\"]\n    - [\"\",\"Parents\",\"Label\",\"\",\"IDX_Parents_Label_U_8E36F2C691E79318\"]\n    + [\"\",\"Parents\",\"Label\",\"\",\"IDX_Parents_Label_U_3341F75B5CAAF0D0\"]\n    - [\"\",\"Parents\",\"Slug\",\"\",\"IDX_Parents_Slug_U_BBB71B18BE414493\"]\n    + [\"\",\"Parents\",\"Slug\",\"\",\"IDX_Parents_Slug_U_BE5D17644C792E7E\"]\n      [\"\",\"Children\",\"ChildId\",\"\",\"PK_Children\"]\n      [\"\",\"Others\",\"OtherId\",\"\",\"PK_Others\"]\n      [\"\",\"PairRefs\",\"X\",\"\",\"PK_PairRefs\"]\n      [\"\",\"PairRefs\",\"Y\",\"\",\"PK_PairRefs\"]\n      [\"\",\"Pairs\",\"X\",\"\",\"PK_Pairs\"]\n      [\"\",\"Pairs\",\"Y\",\"\",\"PK_Pairs\"]\n      [\"\",\"Parents\",\"ParentId\",\"\",\"PK_Parents\"]\n    - [\"mon\",\"alerts\",\"code\",\"mon\",\"IDX_alerts_code_U_D3EAF2A8B5D1DDA5\"]\n    + [\"mon\",\"alerts\",\"code\",\"mon\",\"IDX_alerts_code_U_54EEBC5310A8EBE2\"]\n      [\"mon\",\"alerts\",\"id\",\"mon\",\"PK_alerts\"]\n      [\"mon\",\"comments\",\"id\",\"mon\",\"PK_comments\"]\n      [\"mon\",\"alerts\",\"id\",\"mon\",\"fk_comments\"]\n      [\"mon\",\"alerts\",\"code\",\"mon\",\"fk_comments_code\"]",
       "name": "sql/information_schema_fk/constraint_column_usage",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "information_schema"
@@ -32951,8 +32983,28 @@
       ]
     },
     {
-      "detail": "line 24:\n  rows (ordered): expected 2, got 2\n    - [\"\",\"fk_ref_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"\",\"fk_ref_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    - [\"\",\"fk_ref_val_2\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"\",\"fk_ref_val_2\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\nline 34:\n  rows (ordered): expected 6, got 7\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"PRIMARY KEY\"]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"FOREIGN KEY\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"PRIMARY KEY\"]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"FOREIGN KEY\"]\n    - [\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\n    + [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"PRIMARY KEY\"]\n    - [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"PRIMARY KEY\"]\n    + [\"\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\n    + [\"\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\nline 53:\n  rows (ordered): expected 6, got 7\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"ref_val\",\"1\",\"1\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"ref_val\",\"1\",\"1\"]\n    - [\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    - [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"id\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"id\",\"1\",null]\nline 72:\n  rows (ordered): expected 6, got 7\n      [\"\",\"referring_table\",\"\",\"PK_referring_table\"]\n      [\"\",\"referring_table_2\",\"\",\"PK_referring_table_2\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val_2\"]\n    - [\"other_schema\",\"referenced_table\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\n    - [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\nline 91:\n  rows (ordered): expected 3, got 3\n    - [\"other_schema\",\"referenced_table\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"INDEX\",true,true]\n    + [\"other_schema\",\"referenced_table\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"INDEX\",true,true]\n      [\"other_schema\",\"referenced_table\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",true,false]\n      [\"other_schema\",\"referenced_table\",\"referenced_table_unique_val_idx\",\"INDEX\",true,false]",
+      "detail": "line 24:\n  rows (ordered): expected 2, got 2\n    - [\"\",\"fk_ref_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"\",\"fk_ref_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    - [\"\",\"fk_ref_val_2\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"\",\"fk_ref_val_2\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\nline 34:\n  rows (ordered): expected 6, got 6\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"PRIMARY KEY\"]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"FOREIGN KEY\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"PRIMARY KEY\"]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"FOREIGN KEY\"]\n    - [\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\n      [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"PRIMARY KEY\"]\nline 53:\n  rows (ordered): expected 6, got 6\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"ref_val\",\"1\",\"1\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"ref_val\",\"1\",\"1\"]\n    - [\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n      [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"id\",\"1\",null]\nline 72:\n  rows (ordered): expected 6, got 6\n      [\"\",\"referring_table\",\"\",\"PK_referring_table\"]\n      [\"\",\"referring_table_2\",\"\",\"PK_referring_table_2\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val_2\"]\n    - [\"other_schema\",\"referenced_table\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n      [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\nline 91:\n  rows (ordered): expected 3, got 3\n    - [\"other_schema\",\"referenced_table\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"INDEX\",true,true]\n    + [\"other_schema\",\"referenced_table\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"INDEX\",true,true]\n      [\"other_schema\",\"referenced_table\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",true,false]\n      [\"other_schema\",\"referenced_table\",\"referenced_table_unique_val_idx\",\"INDEX\",true,false]",
       "name": "sql/information_schema_fk_named/fk_onto_named_schema_unique_index",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "information_schema",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "line 123:\n  rows (ordered): expected 4, got 4\n      [\"other_schema\",\"referenced_table\",\"unique_val\",\"\",\"fk_ref_val\"]\n      [\"other_schema\",\"referenced_table\",\"unique_val\",\"\",\"fk_ref_val_2\"]\n    - [\"other_schema\",\"referenced_table\",\"unique_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"other_schema\",\"referenced_table\",\"unique_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n      [\"other_schema\",\"referenced_table\",\"id\",\"other_schema\",\"PK_referenced_table\"]",
+      "name": "sql/information_schema_fk_named/fk_onto_named_schema_unique_index_column_usage",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "information_schema",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "line 158:\n  rows (ordered): expected 1, got 1\n    - [\"\",\"IDX_P_Slug_U_0D8C78C370431202\",\"\",\"P\"]\n    + [\"\",\"IDX_P_Slug_U_0F15033C5B4F6C79\",\"\",\"P\"]\nline 167:\n  rows (ordered): expected 1, got 1\n    - [\"\",\"IDX_P_Slug_U_0D8C78C370431202\",\"\",\"P\",\"Slug\"]\n    + [\"\",\"IDX_P_Slug_U_0F15033C5B4F6C79\",\"\",\"P\",\"Slug\"]\nline 176:\n  rows (ordered): expected 5, got 5\n      [\"\",\"CK_IS_NOT_NULL_P_Id\",\"\",\"P\"]\n    - [\"\",\"IDX_P_Slug_U_0D8C78C370431202\",\"\",\"P\"]\n    + [\"\",\"IDX_P_Slug_U_0F15033C5B4F6C79\",\"\",\"P\"]\n      [\"\",\"PK_P\",\"\",\"P\"]\n      [\"\",\"f1\",\"\",\"P\"]\n      [\"s2\",\"f2\",\"\",\"P\"]\nline 193:\n  rows (ordered): expected 4, got 4\n    - [\"\",\"IDX_P_Slug_U_0D8C78C370431202\",\"\",\"P\",\"Slug\"]\n    + [\"\",\"IDX_P_Slug_U_0F15033C5B4F6C79\",\"\",\"P\",\"Slug\"]\n      [\"\",\"PK_P\",\"\",\"P\",\"Id\"]\n      [\"\",\"f1\",\"\",\"P\",\"Slug\"]\n      [\"s2\",\"f2\",\"\",\"P\",\"Slug\"]\nline 208:\n  rows (ordered): expected 2, got 2\n    - [\"\",\"f1\",\"\",\"IDX_P_Slug_U_0D8C78C370431202\"]\n    + [\"\",\"f1\",\"\",\"IDX_P_Slug_U_0F15033C5B4F6C79\"]\n    - [\"s2\",\"f2\",\"\",\"IDX_P_Slug_U_0D8C78C370431202\"]\n    + [\"s2\",\"f2\",\"\",\"IDX_P_Slug_U_0F15033C5B4F6C79\"]",
+      "name": "sql/information_schema_fk_named/two_keys_onto_one_default_schema_unique_column",
       "status": "fail",
       "tags": [
         "sql",
@@ -33525,6 +33577,76 @@
       "tags": [
         "sql",
         "values"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_projection_operators",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_aggregate",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_join_and_set_operations",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_subqueries",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_dml",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_other_operators",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": "line 335: UNIMPLEMENTED: Query operator SampleScan is not supported by spanbolt yet.",
+      "name": "sql/pipe_syntax/pipe_tablesample",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
       ]
     },
     {
@@ -39924,14 +40046,14 @@
       ]
     }
   ],
-  "target": "127.0.0.1:37555",
+  "target": "127.0.0.1:32375",
   "totals": {
     "error": 0,
-    "fail": 26,
-    "pass": 4257,
+    "fail": 34,
+    "pass": 4260,
     "skipped": 9,
-    "total": 4334,
-    "unimplemented": 42
+    "total": 4346,
+    "unimplemented": 43
   },
   "unimplemented": "skip"
 }

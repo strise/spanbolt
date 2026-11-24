@@ -587,7 +587,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
         | "KEY_COLUMN_USAGE"
         | "CONSTRAINT_COLUMN_USAGE"
         | "CHECK_CONSTRAINTS"
-        | "REFERENTIAL_CONSTRAINTS" => constraints(schema, table, &mut out),
+        | "REFERENTIAL_CONSTRAINTS" => constraints(schema, table, compat, &mut out),
         "COLUMN_OPTIONS" => {
             for t in schema.tables.values() {
                 let (sch, name) = split(&t.name);
@@ -1074,7 +1074,9 @@ struct Constraint {
     cols: Vec<String>,
 }
 
-fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
+fn constraints(schema: &Schema, which: &str, compat: bool, out: &mut Vec<Row>) {
+    // Managed unique indexes already listed (production lists each once).
+    let mut listed: Vec<String> = Vec::new();
     for t in schema.tables.values() {
         let (sch, name) = split(&t.name);
         let mut list: Vec<Constraint> = vec![Constraint {
@@ -1122,20 +1124,43 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
             // views show the in-schema part.
             let fk_name = split(&fk.name).1;
             // A key onto the referenced primary key names it; any other key names the unique
-            // index backing it, which is also a UNIQUE constraint of the referenced table. The
-            // emulator lists that constraint once per foreign key using it, and names it with its
-            // schema in TABLE_CONSTRAINTS and CONSTRAINT_TABLE_USAGE only.
+            // index backing it, which is also a UNIQUE constraint of the referenced table.
+            // Production lists that constraint once, in the index's schema, by its in-schema
+            // name. The emulator lists it once per foreign key using it, in the referencing
+            // table's schema (TABLE_CONSTRAINTS: no schema), and names it with its schema in
+            // TABLE_CONSTRAINTS and CONSTRAINT_TABLE_USAGE.
             let unique = fk_indexes(schema, t, fk).0;
             let unique_name = unique
                 .as_ref()
                 .map_or_else(|| format!("PK_{rname}"), |ix| split(&ix.name).1.to_string());
+            // The unique constraint's columns, in its order.
+            let unique_cols: Vec<String> = match &unique {
+                Some(ix) => ix.cols.clone(),
+                None => schema.table(&fk.ref_table).map_or_else(Vec::new, |rt| {
+                    rt.primary_key.iter().map(|k| k.column.clone()).collect()
+                }),
+            };
+            let unique = unique.filter(|ix| {
+                compat || {
+                    let first = !listed.contains(&ix.name);
+                    if first {
+                        listed.push(ix.name.clone());
+                    }
+                    first
+                }
+            });
             if let Some(ix) = &unique {
                 let short = split(&ix.name).1;
+                let (csch, cname) = if compat {
+                    (sch, ix.name.as_str())
+                } else {
+                    (rsch, short)
+                };
                 match which {
                     "TABLE_CONSTRAINTS" => out.push(vec![
                         s(""),
-                        s(""),
-                        s(&ix.name),
+                        s(if compat { "" } else { rsch }),
+                        s(cname),
                         s(""),
                         s(rsch),
                         s(rname),
@@ -1148,7 +1173,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                         for (p, c) in ix.cols.iter().enumerate() {
                             out.push(vec![
                                 s(""),
-                                s(rsch),
+                                s(csch),
                                 s(short),
                                 s(""),
                                 s(rsch),
@@ -1160,7 +1185,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                         }
                     }
                     "CONSTRAINT_TABLE_USAGE" => {
-                        out.push(vec![s(""), s(rsch), s(rname), s(""), s(rsch), s(&ix.name)])
+                        out.push(vec![s(""), s(rsch), s(rname), s(""), s(csch), s(cname)])
                     }
                     "CONSTRAINT_COLUMN_USAGE" => {
                         for c in &ix.cols {
@@ -1170,7 +1195,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                                 s(rname),
                                 s(c),
                                 s(""),
-                                s(rsch),
+                                s(csch),
                                 s(short),
                             ]);
                         }
@@ -1193,6 +1218,16 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                 ]),
                 "KEY_COLUMN_USAGE" => {
                     for (p, c) in fk.columns.iter().enumerate() {
+                        // Production gives the referenced column's position in the unique
+                        // constraint; the emulator repeats the key column's own position.
+                        let in_unique = fk
+                            .ref_columns
+                            .get(p)
+                            .filter(|_| !compat)
+                            .and_then(|r| {
+                                unique_cols.iter().position(|u| u.eq_ignore_ascii_case(r))
+                            })
+                            .unwrap_or(p);
                         out.push(vec![
                             s(""),
                             s(sch),
@@ -1202,7 +1237,7 @@ fn constraints(schema: &Schema, which: &str, out: &mut Vec<Row>) {
                             s(name),
                             s(c),
                             i(p + 1),
-                            i(p + 1),
+                            i(in_unique + 1),
                         ]);
                     }
                 }

@@ -31,18 +31,30 @@ fn fixture_parses_applies_and_prints_identically() {
             .unwrap_or_else(|e| panic!("apply #{i}: {e}\n{s}"));
     }
     assert_eq!(schema.version, 524);
-    // Roles and grants apply but GetDatabaseDdl leaves them out, like the emulator.
+    // Roles and grants apply; the emulator's GetDatabaseDdl leaves them out.
     for s in list("access_ddl") {
         let stmt = parse_statement(&s).unwrap_or_else(|e| panic!("parse {s}: {e}"));
         schema
             .apply(&stmt)
             .unwrap_or_else(|e| panic!("apply {s}: {e}"));
     }
-    let printed = schema.to_ddl();
+    let printed = schema.to_ddl_emulator_compat();
     for (i, (a, b)) in printed.iter().zip(&stmts).enumerate() {
         assert_eq!(a, b, "statement #{i} differs");
     }
     assert_eq!(printed.len(), stmts.len());
+    // Production's form keeps them, and a snapshot of it loads back with every grant.
+    assert!(!schema.grants.is_empty());
+    let full = schema.to_ddl();
+    let mut reloaded = Schema::default();
+    for s in &full {
+        let stmt = parse_statement(s).unwrap_or_else(|e| panic!("parse {s}: {e}"));
+        reloaded
+            .apply_emulator_compat(&stmt)
+            .unwrap_or_else(|e| panic!("reload {s}: {e}"));
+    }
+    assert_eq!(reloaded.grants.len(), schema.grants.len());
+    assert_eq!(reloaded.to_ddl(), full);
 }
 
 /// The fixture keeps covering every statement kind and DDL feature it was generated for.

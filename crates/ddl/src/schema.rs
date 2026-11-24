@@ -394,6 +394,63 @@ pub struct Schema {
     pub database_name: Option<String>,
     /// Creation order of schemas, sequences, tables and views (lowercase keys); drives `to_ddl`.
     pub creation_order: Vec<(ObjectKind, String)>,
+    /// Fine-grained access control privileges, one per role, object and privilege (and column),
+    /// in grant order. Roles are `ROLE` objects in `opaque`.
+    pub grants: Vec<Grant>,
+}
+
+/// Roles every database has. They are not stored and GetDatabaseDdl leaves them out.
+pub const SYSTEM_ROLES: [&str; 4] = [
+    "public",
+    "spanner_info_reader",
+    "spanner_secure_context_reader",
+    "spanner_sys_reader",
+];
+
+/// A table privilege, in the order GetDatabaseDdl lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Privilege {
+    Select,
+    Insert,
+    Update,
+    Delete,
+}
+
+impl Privilege {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Privilege::Select => "SELECT",
+            Privilege::Insert => "INSERT",
+            Privilege::Update => "UPDATE",
+            Privilege::Delete => "DELETE",
+        }
+    }
+}
+
+/// What a privilege is granted on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrantObject {
+    /// A table privilege, on the whole table or on one column.
+    Table {
+        table: String,
+        privilege: Privilege,
+        column: Option<String>,
+    },
+    /// `SELECT ON VIEW`.
+    View(String),
+    /// `SELECT ON CHANGE STREAM`.
+    ChangeStream(String),
+    /// `EXECUTE ON TABLE FUNCTION` (a change stream's `READ_<stream>`).
+    TableFunction(String),
+    /// Membership of a role (`GRANT ROLE r TO ROLE grantee`).
+    Role(String),
+}
+
+/// One privilege held by a role.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grant {
+    pub grantee: String,
+    pub object: GrantObject,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

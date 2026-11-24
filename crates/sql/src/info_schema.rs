@@ -215,14 +215,6 @@ const READ_PARAMETERS: [(&str, &str, Option<&str>, &str); 5] = [
     ),
 ];
 
-/// Roles every production database has.
-const SYSTEM_ROLES: [&str; 4] = [
-    "public",
-    "spanner_info_reader",
-    "spanner_secure_context_reader",
-    "spanner_sys_reader",
-];
-
 /// A table's synonym as (schema, name): a synonym lives in its table's schema.
 fn synonym(t: &Table) -> Option<(&str, &str)> {
     let syn = t.synonym.as_deref()?;
@@ -758,7 +750,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     out.push(vec![s(&o.name), b(false)]);
                 }
             }
-            for r in SYSTEM_ROLES {
+            for r in spanbolt_ddl::SYSTEM_ROLES {
                 out.push(vec![s(r), b(true)]);
             }
         }

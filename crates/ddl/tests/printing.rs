@@ -99,7 +99,7 @@ fn prints_like_the_emulator() {
             .apply(&parse_statement(s).unwrap())
             .unwrap_or_else(|e| panic!("{s}: {e}"));
     }
-    let got = schema.to_ddl();
+    let got = schema.to_ddl_emulator_compat();
     for (g, e) in got.iter().zip(EXPECTED) {
         assert_eq!(g, e);
     }
@@ -155,5 +155,51 @@ fn on_update_needs_a_default() {
         err.to_string()
             .contains("Encountered 'ON' while parsing: column_def"),
         "{err}"
+    );
+}
+
+#[test]
+fn grants_print_after_their_objects_and_round_trip() {
+    let ddl = [
+        "CREATE TABLE T (K INT64 NOT NULL, V STRING(MAX), W STRING(MAX)) PRIMARY KEY (K)",
+        "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T.K FROM T",
+        "CREATE ROLE R1",
+        "CREATE ROLE R2",
+        "GRANT DELETE, SELECT ON TABLE T TO ROLE R2, R1",
+        "GRANT UPDATE(W, V) ON TABLE T TO ROLE R1",
+        "GRANT SELECT ON VIEW V1 TO ROLE R1",
+        "GRANT ROLE R2, spanner_info_reader TO ROLE R1",
+    ];
+    let mut schema = Schema::default();
+    for s in ddl {
+        schema.apply(&parse_statement(s).unwrap()).unwrap();
+    }
+    let printed = schema.to_ddl();
+    assert_eq!(
+        printed,
+        [
+            "CREATE ROLE R1",
+            "CREATE ROLE R2",
+            "GRANT ROLE R2, spanner_info_reader TO ROLE R1",
+            "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W STRING(MAX),\n) PRIMARY KEY(K)",
+            "GRANT SELECT, UPDATE(V, W), DELETE ON TABLE T TO ROLE R1",
+            "GRANT SELECT, DELETE ON TABLE T TO ROLE R2",
+            "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T.K FROM T",
+            "GRANT SELECT ON VIEW V1 TO ROLE R1",
+        ]
+    );
+    // Snapshots reload through the emulator-compat rules.
+    let mut reloaded = Schema::default();
+    for s in &printed {
+        reloaded
+            .apply_emulator_compat(&parse_statement(s).unwrap())
+            .unwrap();
+    }
+    assert_eq!(reloaded.to_ddl(), printed);
+    assert!(
+        !schema
+            .to_ddl_emulator_compat()
+            .iter()
+            .any(|s| s.contains("ROLE"))
     );
 }

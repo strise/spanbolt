@@ -22,6 +22,7 @@ pub enum Verb {
     Rollback,
     Ddl,
     GetDdl,
+    GetDatabase,
     ListSessions,
     CreateSession,
     GetSession,
@@ -418,6 +419,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
         "rollback" => Verb::Rollback,
         "ddl" => Verb::Ddl,
         "get_ddl" => Verb::GetDdl,
+        "get_database" => Verb::GetDatabase,
         "list_sessions" => Verb::ListSessions,
         "create_session" => Verb::CreateSession,
         "get_session" => Verb::GetSession,
@@ -456,6 +458,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
             | Verb::Commit
             | Verb::Rollback
             | Verb::GetDdl
+            | Verb::GetDatabase
             | Verb::ListSessions
             | Verb::CreateSession
             | Verb::GetSession

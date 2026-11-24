@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use prost_types::{ListValue, Timestamp};
+use serde_json::Value as Json;
 use spanbolt_proto::control::{self as ctl, control_client::ControlClient};
 use spanbolt_proto::database_admin::{self as da, database_admin_client::DatabaseAdminClient};
 use spanbolt_proto::instance_admin::{self as ia, instance_admin_client::InstanceAdminClient};
@@ -29,6 +30,9 @@ const INSTANCE: &str = "projects/conformance/instances/conformance";
 const SPANNER_ENDPOINT: &str = "https://spanner.googleapis.com";
 /// Spanner database ids are at most 30 characters; `spanbolt-oracle-YYYYMMDD-` takes 25.
 const ORACLE_PREFIX: &str = "spanbolt-oracle-";
+/// Stands for the case database's id in `ddl:` bodies (e.g. `ALTER DATABASE <dbid> SET OPTIONS`)
+/// and in their error messages.
+const DB_ID: &str = "<dbid>";
 
 type Chan = InterceptedService<Channel, Auth>;
 
@@ -49,12 +53,12 @@ impl tonic::service::Interceptor for Auth {
 }
 
 /// Real Cloud Spanner: an existing instance where the harness may only create, use and drop
-/// databases named `spanbolt-oracle-<yyyymmdd>-<n>`.
+/// databases named `spanbolt-oracle-<mmdd><run>-<n>`.
 #[derive(Clone, Debug)]
 pub struct SpannerOracle {
     pub project: String,
     pub instance: String,
-    /// Append-only log of every database created and dropped (also picks the next `<n>`).
+    /// Append-only log of every database created and dropped.
     pub db_log: std::path::PathBuf,
 }
 
@@ -96,7 +100,7 @@ pub struct Target {
     /// `projects/<p>/instances/<i>` the case databases live in.
     instance: String,
     spanner: Option<SpannerOracle>,
-    /// `spanbolt-oracle-<yyyymmdd>-` for real Spanner.
+    /// `spanbolt-oracle-<mmdd><run>-` for real Spanner (see `oracle_db_prefix`).
     db_prefix: String,
     log: std::sync::Mutex<()>,
     run_id: String,
@@ -155,7 +159,7 @@ impl Target {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or_default();
-        let run_id = to_base36((nanos / 1000) as u64 % 60_466_176); // 5 base-36 digits
+        let run_id = to_base36((nanos / 1000) as u64 % 60_466_176, 5);
         let mut t = Self {
             channel,
             auth: Auth::default(),
@@ -174,7 +178,7 @@ impl Target {
     }
 
     /// Connects to real Cloud Spanner with the local application-default credentials. Never
-    /// creates instances and never touches databases outside `spanbolt-oracle-<yyyymmdd>-<n>`.
+    /// creates instances and never touches databases outside `spanbolt-oracle-<mmdd><run>-<n>`.
     pub async fn connect_spanner(oracle: SpannerOracle) -> Result<Self, String> {
         let token = Arc::new(std::sync::RwLock::new(access_token()?));
         let refresh = token.clone();
@@ -201,10 +205,8 @@ impl Target {
             .map_err(|e| format!("cannot connect to {SPANNER_ENDPOINT}: {e}"))?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
             .unwrap_or_default();
-        let db_prefix = format!("{ORACLE_PREFIX}{}-", yyyymmdd(now));
-        let first = next_logged_number(&oracle.db_log, &db_prefix);
+        let db_prefix = oracle_db_prefix(now, std::process::id());
         let instance = format!("projects/{}/instances/{}", oracle.project, oracle.instance);
         Ok(Self {
             channel,
@@ -214,7 +216,7 @@ impl Target {
             db_prefix,
             log: std::sync::Mutex::new(()),
             run_id: String::new(),
-            counter: AtomicUsize::new(first),
+            counter: AtomicUsize::new(1),
             can_clone: false,
             templates: Mutex::new(HashMap::new()),
         })
@@ -489,20 +491,20 @@ impl Target {
 }
 
 /// One more than the highest `<n>` the log has for `prefix` (1 for an empty log).
-fn next_logged_number(log: &std::path::Path, prefix: &str) -> usize {
-    std::fs::read_to_string(log)
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| l.split_whitespace().nth(1))
-        .filter_map(|id| id.strip_prefix(prefix)?.parse::<usize>().ok())
-        .max()
-        .map_or(1, |n| n + 1)
+/// `spanbolt-oracle-<mmdd><run>-`: the UTC date, then four base-36 characters from the clock and
+/// the process id, so recorders running at the same time (in other worktrees, with other logs)
+/// don't pick the same names. Leaves room for a five-digit case number.
+fn oracle_db_prefix(now: Duration, pid: u32) -> String {
+    let date = yyyymmdd(now.as_secs() as i64);
+    let mix = (now.as_nanos() as u64 / 1000) ^ u64::from(pid).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let run = to_base36(mix % 36u64.pow(4), 4);
+    format!("{ORACLE_PREFIX}{}{run}-", &date[4..])
 }
 
-fn to_base36(mut n: u64) -> String {
+fn to_base36(mut n: u64, width: usize) -> String {
     let digits = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let mut out = Vec::new();
-    for _ in 0..5 {
+    for _ in 0..width {
         out.push(digits[(n % 36) as usize]);
         n /= 36;
     }
@@ -535,6 +537,13 @@ struct Ctx<'a> {
     ops: HashMap<String, String>,
     /// Session names saved by `create_session session=NAME`.
     named_sessions: HashMap<String, String>,
+}
+
+impl Ctx<'_> {
+    /// The case database's id, the last segment of its name.
+    fn db_id(&self) -> &str {
+        self.db.rsplit('/').next().unwrap_or(&self.db)
+    }
 }
 
 fn rw_options() -> pb::TransactionOptions {
@@ -934,9 +943,13 @@ impl<'a> Ctx<'a> {
                     .map(|_| Observation::default()))
             }
             Verb::Ddl => {
+                let id = self.db_id().to_string();
                 let req = da::UpdateDatabaseDdlRequest {
                     database: self.db.clone(),
-                    statements: split_statements(&step.body),
+                    statements: split_statements(&step.body)
+                        .into_iter()
+                        .map(|s| s.replace(DB_ID, &id))
+                        .collect(),
                     ..Default::default()
                 };
                 let res = match self.t.db_admin().update_database_ddl(req).await {
@@ -949,7 +962,9 @@ impl<'a> Ctx<'a> {
                     }
                     Err(s) => Err(s),
                 };
-                Ok(res.map(|()| Observation::default()))
+                Ok(res
+                    .map(|()| Observation::default())
+                    .map_err(|s| Status::new(s.code(), s.message().replace(&id, DB_ID))))
             }
             Verb::GetDdl => Ok(self
                 .t
@@ -960,6 +975,20 @@ impl<'a> Ctx<'a> {
                 .await
                 .map(|r| Observation {
                     statements: Some(r.into_inner().statements),
+                    ..Default::default()
+                })),
+            Verb::GetDatabase => Ok(self
+                .t
+                .db_admin()
+                .get_database(da::GetDatabaseRequest {
+                    name: self.db.clone(),
+                })
+                .await
+                .map(|r| Observation {
+                    columns: Some("version_retention_period STRING".into()),
+                    rows: vec![Json::Array(vec![Json::String(
+                        r.into_inner().version_retention_period,
+                    )])],
                     ..Default::default()
                 })),
             Verb::ListSessions => self.list_sessions(step).await,
@@ -1445,6 +1474,17 @@ mod tests {
             Some(pb::key_range::StartKeyType::StartOpen(_))
         ));
         assert!(!ks.all);
+    }
+
+    #[test]
+    fn oracle_db_names_fit_and_differ_per_run() {
+        let now = Duration::from_secs(1_795_553_832);
+        let a = oracle_db_prefix(now, 100);
+        let b = oracle_db_prefix(now, 101);
+        assert!(a.starts_with("spanbolt-oracle-1124"), "{a}");
+        assert_ne!(a, b);
+        // Spanner allows database ids of at most 30 characters.
+        assert!(format!("{a}99999").len() <= 30, "{a}");
     }
 
     #[test]

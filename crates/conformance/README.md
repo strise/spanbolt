@@ -39,10 +39,12 @@ cargo run --release -p spanbolt-conformance -- diff-oracles     # offline: where
 
 `record --oracle spanner` connects to `spanner.googleapis.com` with the application-default
 credentials (`gcloud auth application-default print-access-token`, refreshed every 20 minutes). It
-never creates instances: each case gets a database `spanbolt-oracle-<yyyymmdd>-<n>` in the given
-instance, dropped when the case ends (also when its schema or prelude fails). Every create and drop
-is appended to `target/conformance/spanner-oracle-dbs.log` (`--db-log`), which also picks the next
-`<n>`; check it for `drop-failed` lines after a run. The databases need
+never creates instances: each case gets a database `spanbolt-oracle-<mmdd><run>-<n>` in the given
+instance, dropped when the case ends (also when its schema or prelude fails). `<run>` is four
+base-36 characters from the clock and the process id, so recorders running at the same time in other
+worktrees don't collide on a name, and the id stays within Spanner's 30 characters. Every create and
+drop is appended to `target/conformance/spanner-oracle-dbs.log` (`--db-log`); check it for
+`drop-failed` lines after a run. The databases need
 `spanner.databases.create`, `drop`, `updateDdl`, `read`, `write` and `sessions.create` on the
 instance.
 
@@ -120,8 +122,9 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 | `begin [txn=NAME] [ro] [bound=]` | – | `BeginTransaction` (read-write unless `ro`). |
 | `commit [txn=NAME] [save=TS]` | – | Commits buffered mutations. |
 | `rollback [txn=NAME]` | – | |
-| `ddl:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation. |
+| `ddl:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation. `<dbid>` stands for the case database's id, in the statements and in the error message (`ALTER DATABASE \`<dbid>\` SET OPTIONS (...)`). |
 | `get_ddl` | – | `GetDatabaseDdl`; expects `statements:`. |
+| `get_database` | – | `GetDatabase`; expects the database's `version_retention_period` as a one-row result. |
 | `list_sessions [create=K] [page_size=N]` | – | Creates K sessions, then pages through `ListSessions`; expects `counts:` (sessions per page). |
 | `create_session session=S [multiplexed]` | – | `CreateSession`, saving the name under `S`. |
 | `get_session session=S [wait=D]` | – | Sleeps `D`, then `GetSession`; expects `counts: [1]` when `approximate_last_use_time` is at least 0.5 s after `create_time`, else `[0]`. |

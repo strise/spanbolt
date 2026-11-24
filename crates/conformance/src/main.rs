@@ -57,7 +57,7 @@ struct RecordArgs {
     #[arg(long)]
     spanner_project: Option<String>,
     /// Existing Spanner instance (with `--oracle spanner`). The harness creates, uses and drops
-    /// databases named `spanbolt-oracle-<yyyymmdd>-<n>` there and touches nothing else.
+    /// databases named `spanbolt-oracle-<mmdd><run>-<n>` there and touches nothing else.
     #[arg(long)]
     spanner_instance: Option<String>,
     /// Log of every Spanner database created and dropped.

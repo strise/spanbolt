@@ -27,7 +27,7 @@ use crate::exec::{BoxOp, Cx, Env, Eval, Memo, Op};
 use crate::func::{self, Sig};
 use crate::ops::*;
 use crate::types::{self, Type, unimplemented};
-use crate::validate::Node;
+use crate::validate::{HintRules, Node};
 use crate::value_ops::{Key, truthy};
 
 #[path = "graph_plan.rs"]
@@ -79,13 +79,15 @@ pub struct Options {
 }
 
 impl Options {
-    /// Language features enabled on top of the emulator's. Production Spanner analyses window
-    /// functions and NULLS FIRST/LAST, then rejects them while planning.
+    /// Language features enabled on top of the shim's. Both the emulator and Spanner parse
+    /// `INSERT ... ON CONFLICT`. Production Spanner also analyses window functions and NULLS
+    /// FIRST/LAST, then rejects them while planning.
     pub fn extra_features(&self) -> &'static [&'static str] {
         if self.emulator_compat {
-            &[]
+            &["FEATURE_INSERT_ON_CONFLICT_CLAUSE"]
         } else {
             &[
+                "FEATURE_INSERT_ON_CONFLICT_CLAUSE",
                 "FEATURE_ANALYTIC_FUNCTIONS",
                 "FEATURE_NULLS_FIRST_LAST_IN_ORDER_BY",
             ]
@@ -156,6 +158,8 @@ pub struct Planner<'c> {
     pub opts: Options,
     /// Statement-level `disable_query_null_filtered_index_check`.
     pub stmt_disable_nf_check: bool,
+    /// How hints are checked in this statement (set from the statement's own hints).
+    pub hint_rules: HintRules,
     /// Subqueries compiled so far (partitioned DML must have none).
     pub subqueries: usize,
     /// Search functions and search indexes the statement uses.
@@ -783,7 +787,7 @@ fn hint_value<'h>(
 
 type Value2 = AnyResolvedExprProto;
 
-fn literal_of(e: &AnyResolvedExprProto) -> Option<Value> {
+pub(crate) fn literal_of(e: &AnyResolvedExprProto) -> Option<Value> {
     match e.node.as_ref()? {
         E::ResolvedLiteralNode(l) => {
             let v = l.value.as_ref()?;
@@ -865,6 +869,7 @@ impl<'c> Planner<'c> {
             param_types: Vec::new(),
             opts,
             stmt_disable_nf_check: false,
+            hint_rules: HintRules::new(opts.emulator_compat),
             subqueries: 0,
             search: crate::prepared::SearchUse {
                 emulator: opts.emulator_compat,
@@ -877,6 +882,12 @@ impl<'c> Planner<'c> {
             reads: Vec::new(),
             reads_info_schema: false,
         }
+    }
+
+    /// Checks a statement's own hints and sets the rules for the hints inside it.
+    pub fn statement_hints(&mut self, node: Node, hints: &[ResolvedOptionProto]) -> Result<()> {
+        self.hint_rules = HintRules::statement(self.opts.emulator_compat, hints)?;
+        self.hint_rules.check(node, hints)
     }
 
     /// Statement-level search checks once the whole statement is planned: on Cloud Spanner,
@@ -1056,7 +1067,7 @@ impl<'c> Planner<'c> {
             }
             S::ResolvedSetOperationScanNode(so) => {
                 if let Some(b) = &so.parent {
-                    crate::validate::hints(Node::SetOperation, &b.hint_list)?;
+                    self.hint_rules.check(Node::SetOperation, &b.hint_list)?;
                 }
                 let kind = match so.op_type.and_then(|t| SetOperationType::try_from(t).ok()) {
                     Some(SetOperationType::UnionAll) => SetKind::UnionAll,
@@ -1195,7 +1206,7 @@ impl<'c> Planner<'c> {
             .cloned()
             .ok_or_else(|| Error::not_found(format!("Table not found: {full}")))?;
         let idx: Vec<usize> = t.column_index_list.iter().map(|&i| i as usize).collect();
-        crate::validate::hints(Node::TableScan, &base.hint_list)?;
+        self.hint_rules.check(Node::TableScan, &base.hint_list)?;
         if t.for_system_time_expr.is_some() {
             return Err(unimplemented("FOR SYSTEM_TIME AS OF"));
         }
@@ -1318,6 +1329,24 @@ impl<'c> Planner<'c> {
             }
             _ => None,
         };
+        // Cloud Spanner takes SEEKABLE_KEY_SIZE from 1 up to one less than the key columns of
+        // the forced index (its own key plus the primary key) or of the table.
+        if let Some(Value::Int64(n)) =
+            hint_value(hints, "", "SEEKABLE_KEY_SIZE").and_then(literal_of)
+        {
+            let key_len = match forced {
+                Some(Some(ix)) => {
+                    let ik = &storage.index(ix).key;
+                    ik.len() + tm.pk.iter().filter(|c| !ik.contains(c)).count()
+                }
+                _ => tm.pk.len(),
+            };
+            if n == 0 || n >= key_len as i64 {
+                return Err(Error::invalid_argument(
+                    "Request contains an invalid argument.",
+                ));
+            }
+        }
         let table_key: Vec<Option<i64>> = tm
             .pk
             .iter()
@@ -1617,6 +1646,7 @@ impl<'c> Planner<'c> {
         if let Some(w) = where_expr {
             conjuncts(w, &mut conj);
         }
+        self.hint_rules.check(Node::TableScan, &base.hint_list)?;
         let read_at = self.reads.len();
         let mut op =
             self.base_table(tid, ts, &base.hint_list, &layout, &idx, &Scope::TOP, &conj)?;
@@ -1685,7 +1715,7 @@ impl<'c> Planner<'c> {
         pushed: Vec<&AnyResolvedExprProto>,
     ) -> Result<Planned> {
         if let Some(b) = &j.parent {
-            crate::validate::hints(Node::JoinScan, &b.hint_list)?;
+            self.hint_rules.check(Node::JoinScan, &b.hint_list)?;
         }
         let kind = match j.join_type.and_then(|t| JoinType::try_from(t).ok()) {
             Some(JoinType::Left) => JoinKind::Left,
@@ -1936,7 +1966,7 @@ impl<'c> Planner<'c> {
 
     fn array_scan(&mut self, a: &ResolvedArrayScanProto, outer: &Scope) -> Result<Planned> {
         if let Some(b) = &a.parent {
-            crate::validate::hints(Node::ArrayScan, &b.hint_list)?;
+            self.hint_rules.check(Node::ArrayScan, &b.hint_list)?;
         }
         if a.array_expr_list.len() != 1 {
             return Err(unimplemented("UNNEST of more than one array"));
@@ -1986,7 +2016,7 @@ impl<'c> Planner<'c> {
 
     fn aggregate(&mut self, a: &ResolvedAggregateScanBaseProto, outer: &Scope) -> Result<Planned> {
         if let Some(b) = &a.parent {
-            crate::validate::hints(Node::AggregateScan, &b.hint_list)?;
+            self.hint_rules.check(Node::AggregateScan, &b.hint_list)?;
         }
         if !a.grouping_set_list.is_empty() || !a.rollup_column_list.is_empty() {
             return Err(unimplemented("GROUP BY ROLLUP/CUBE/GROUPING SETS"));
@@ -2447,7 +2477,7 @@ impl<'c> Planner<'c> {
     }
 
     fn call(&mut self, b: &ResolvedFunctionCallBaseProto, scope: &Scope) -> Result<Eval> {
-        crate::validate::hints(Node::FunctionCall, &b.hint_list)?;
+        self.hint_rules.check(Node::FunctionCall, &b.hint_list)?;
         crate::validate::function(full_fn_name(b))?;
         let name = fn_name(b).to_string();
         if crate::search::is_search_function(&name) && self.search.function.is_none() {
@@ -2704,7 +2734,7 @@ impl<'c> Planner<'c> {
     }
 
     fn subquery(&mut self, s: &ResolvedSubqueryExprProto, scope: &Scope) -> Result<Eval> {
-        crate::validate::hints(Node::Subquery, &s.hint_list)?;
+        self.hint_rules.check(Node::Subquery, &s.hint_list)?;
         self.subqueries += 1;
         let kind = s
             .subquery_type

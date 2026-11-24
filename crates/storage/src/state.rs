@@ -549,6 +549,14 @@ fn index_key(
     Ok(Some(n))
 }
 
+/// The encoded index key of a full table row, without the primary key that ends every index
+/// entry: the prefix all entries for these key values share. `None` when the index leaves the
+/// row out (a NULL in a null-filtered column).
+pub fn index_prefix(im: &IndexMeta, row: &[Value]) -> Result<Option<Vec<u8>>> {
+    let mut buf = Vec::new();
+    Ok(index_key(im, row, &[], &mut buf)?.map(|_| buf))
+}
+
 /// The base table's primary key values of an index entry row.
 fn entry_pk(im: &IndexMeta, tm: &TableMeta, entry: &[Value]) -> Vec<Value> {
     tm.pk

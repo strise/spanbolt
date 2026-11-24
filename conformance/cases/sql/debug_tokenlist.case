@@ -1,0 +1,273 @@
+# DEBUG_TOKENLIST, which only Cloud Spanner has. It prints production's token lists: positions
+# holding a set of tokens ([...]), boundary attributes, gaps, value-carrying TOKEN, TOKENIZE_BOOL,
+# TOKENIZE_NUMBER and TOKENIZE_JSON lists, and character n-grams. spanbolt's token lists follow the
+# emulator's format, so it answers UNIMPLEMENTED; these recordings are the target for a real port.
+tags: sql search
+schema:
+  CREATE TABLE D (
+    Id INT64 NOT NULL,
+    S STRING(MAX),
+    N INT64,
+    B BOOL,
+    J JSON,
+    A ARRAY<STRING(MAX)>,
+    Ft TOKENLIST AS (TOKENIZE_FULLTEXT(S)) HIDDEN,
+    Ngr TOKENLIST AS (TOKENIZE_NGRAMS(S)) HIDDEN,
+    Ngr23 TOKENLIST AS (TOKENIZE_NGRAMS(S, ngram_size_min => 2, ngram_size_max => 3)) HIDDEN,
+    Sub TOKENLIST AS (TOKENIZE_SUBSTRING(S)) HIDDEN,
+    Sub23 TOKENLIST AS (TOKENIZE_SUBSTRING(S, ngram_size_min => 2, ngram_size_max => 3)) HIDDEN,
+    Num TOKENLIST AS (TOKENIZE_NUMBER(N)) HIDDEN,
+    Bl TOKENLIST AS (TOKENIZE_BOOL(B)) HIDDEN,
+    Tok TOKENLIST AS (TOKEN(S)) HIDDEN,
+    Js TOKENLIST AS (TOKENIZE_JSON(J)) HIDDEN,
+    FullArr TOKENLIST AS (TOKENIZE_FULLTEXT(A)) HIDDEN,
+    SubArr TOKENLIST AS (TOKENIZE_SUBSTRING(A)) HIDDEN,
+    Cat TOKENLIST AS (TOKENLIST_CONCAT([TOKENIZE_FULLTEXT(S), TOKENIZE_FULLTEXT(A)])) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DIdx ON D(Ft, Ngr, Ngr23, Sub, Sub23, Num, Bl, Tok, Js, FullArr, SubArr, Cat)
+insert D cols=Id,S,N,B,J,A:
+  [1, "alpha", 0, true, "{\"a\": 1}", ["alpha"]]
+  [2, "alpha beta gamma", 42, false, "{\"a\": {\"b\": \"x y\"}, \"c\": [1, 2]}", ["alpha beta", "gamma"]]
+  [3, "Hello, World! foo-bar 123", -7, null, "[1, \"two\", null]", ["a", "b c"]]
+  [4, "ab", 1234567890, null, "null", []]
+  [5, "abcde", null, null, null, null]
+  [6, "abc  def", null, null, null, null]
+  [7, "", null, null, null, null]
+  [8, null, null, null, null, null]
+  [9, "Ærø straße", null, null, null, null]
+
+case fulltext
+query:
+  SELECT Id, DEBUG_TOKENLIST(Ft) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","alpha(boundary, end_boundary)"]
+  ["2","alpha(boundary), beta, gamma(end_boundary)"]
+  ["3","hello(boundary), world, foo, bar, 123(end_boundary)"]
+  ["4","ab(boundary, end_boundary)"]
+  ["5","abcde(boundary, end_boundary)"]
+  ["6","abc(boundary), def(end_boundary)"]
+  ["7",""]
+  ["8",null]
+  ["9","ærø(boundary), straße(end_boundary)"]
+
+case ngrams
+query:
+  SELECT Id, DEBUG_TOKENLIST(Ngr) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[a, al, alp, alph, h, ha, l, lp, lph, p, ph, pha], lpha"]
+  ["2","[\" \", \" b\", \" be\", \" g\", \" ga\", \"a \", \"a b\", \"a g\", \"ha \", \"ta \", a, al, alp, alph, am, amm, b, be, bet, e, et, eta, g, ga, gam, h, ha, l, lp, lph, m, ma, mm, mma, p, ph, pha, t, ta], lpha, \"pha \", \"ha b\", \"a be\", \" bet\", beta, \"eta \", \"ta g\", \"a ga\", \" gam\", gamm, amma"]
+  ["3","[!, \" \", \" 1\", \" 12\", \" W\", \" Wo\", \" f\", \" fo\", \"! \", \"! f\", \", \", \", W\", \",\", \"ar \", \"d! \", \"lo,\", \"o, \", \"o,\", \"r \", \"r 1\", -, -b, -ba, 1, 12, 123, 2, 23, 3, H, He, Hel, Hell, W, Wo, Wor, a, ar, b, ba, bar, d, d!, e, el, ell, f, fo, foo, l, ld, ld!, ll, llo, lo, o, o-, o-b, oo, oo-, or, orl, r, rl, rld], ello, \"llo,\", \"lo, \", \"o, W\", \", Wo\", \" Wor\", Worl, orld, rld!, \"ld! \", \"d! f\", \"! fo\", \" foo\", foo-, oo-b, o-ba, -bar, \"bar \", \"ar 1\", \"r 12\", \" 123\""]
+  ["4","[a, ab, b]"]
+  ["5","[a, ab, abc, abcd, b, bc, bcd, c, cd, cde, d, de, e], bcde"]
+  ["6","[\"  \", \"  d\", \" \", \" d\", \" de\", \"abc \", \"bc \", \"c  \", \"c \", a, ab, abc, b, bc, c, d, de, def, e, ef, f], \"bc  \", \"c  d\", \"  de\", \" def\""]
+  ["7",""]
+  ["8",null]
+  ["9","[\" \", \" s\", \" st\", \"rø \", \"Ærø \", \"ø \", \"ø s\", a, aß, aße, e, r, ra, raß, rø, s, st, str, t, tr, tra, Æ, Ær, Ærø, ß, ße, ø], \"rø s\", \"ø st\", \" str\", stra, traß, raße"]
+
+case ngrams_2_3
+query:
+  SELECT Id, DEBUG_TOKENLIST(Ngr23) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[al, alp, ha, lp, ph], lph, pha"]
+  ["2","[\" b\", \" g\", \"a \", al, alp, am, be, et, ga, ha, lp, ma, mm, ph, ta], lph, pha, \"ha \", \"a b\", \" be\", bet, eta, \"ta \", \"a g\", \" ga\", gam, amm, mma"]
+  ["3","[\" 1\", \" W\", \" f\", \"! \", \", \", \"o,\", \"r \", -b, 12, 23, He, Hel, Wo, ar, ba, d!, el, fo, ld, ll, lo, o-, oo, or, rl], ell, llo, \"lo,\", \"o, \", \", W\", \" Wo\", Wor, orl, rld, ld!, \"d! \", \"! f\", \" fo\", foo, oo-, o-b, -ba, bar, \"ar \", \"r 1\", \" 12\", 123"]
+  ["4","ab"]
+  ["5","[ab, abc, bc, cd, de], bcd, cde"]
+  ["6","[\"  \", \" d\", \"c \", ab, abc, bc, de, ef], \"bc \", \"c  \", \"  d\", \" de\", def"]
+  ["7",""]
+  ["8",null]
+  ["9","[\" s\", \"ø \", aß, ra, rø, st, tr, Ær, Ærø, ße], \"rø \", \"ø s\", \" st\", str, tra, raß, aße"]
+
+case substring
+query:
+  SELECT Id, DEBUG_TOKENLIST(Sub) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[a, al, alp, h, ha, l, lp, lph, p, ph, pha], alph, lpha"]
+  ["2","[a, al, alp, am, amm, b, be, bet, e, et, eta, g, ga, gam, h, ha, l, lp, lph, m, ma, mm, mma, p, ph, pha, t, ta], alph, lpha, <gap(1)>, beta, <gap(1)>, gamm, amma"]
+  ["3","[1, 12, 2, 23, 3, a, ar, b, ba, d, e, el, ell, f, fo, h, he, hel, l, ld, ll, llo, lo, o, oo, or, orl, r, rl, rld, w, wo, wor], hell, ello, <gap(1)>, worl, orld, <gap(1)>, foo, <gap(1)>, bar, <gap(1)>, 123"]
+  ["4","[a, b], ab"]
+  ["5","[a, ab, abc, b, bc, bcd, c, cd, cde, d, de, e], abcd, bcde"]
+  ["6","[a, ab, b, bc, c, d, de, e, ef, f], abc, <gap(1)>, def"]
+  ["7",""]
+  ["8",null]
+  ["9","[a, aß, aße, e, r, ra, raß, rø, s, st, str, t, tr, tra, ß, ße, æ, ær, ø], ærø, <gap(1)>, stra, traß, raße"]
+
+case substring_2_3
+query:
+  SELECT Id, DEBUG_TOKENLIST(Sub23) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[al, ha, lp, ph], alp, lph, pha"]
+  ["2","[al, am, be, et, ga, ha, lp, ma, mm, ph, ta], alp, lph, pha, <gap(1)>, bet, eta, <gap(1)>, gam, amm, mma"]
+  ["3","[12, 23, ar, ba, el, fo, he, ld, ll, lo, oo, or, rl, wo], hel, ell, llo, <gap(1)>, wor, orl, rld, <gap(1)>, foo, <gap(1)>, bar, <gap(1)>, 123"]
+  ["4","ab"]
+  ["5","[ab, bc, cd, de], abc, bcd, cde"]
+  ["6","[ab, bc, de, ef], abc, <gap(1)>, def"]
+  ["7",""]
+  ["8",null]
+  ["9","[aß, ra, rø, st, tr, ße, ær], ærø, <gap(1)>, str, tra, raß, aße"]
+
+case number
+query:
+  SELECT Id, DEBUG_TOKENLIST(Num) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","==0, [0, 0], [0, 1], [0, 3], [0, 7], [0, 15], [0, 31], [0, 63], [0, 127], [0, 255], [0, 511], [0, 1023], [0, 2047], [0, 4095], [0, 8191], [0, 16383], [0, 32767], [0, 65535], [0, 131071], [0, 262143], [0, 524287], [0, 1048575], [0, 2097151], [0, 4194303], [0, 8388607], [0, 16777215], [0, 33554431], [0, 67108863], [0, 134217727], [0, 268435455], [0, 536870911], [0, 1073741823], [0, 2147483647], [0, 4294967295], [0, 8589934591], [0, 17179869183], [0, 34359738367], [0, 68719476735], [0, 137438953471], [0, 274877906943], [0, 549755813887], [0, 1099511627775], [0, 2199023255551], [0, 4398046511103], [0, 8796093022207], [0, 17592186044415], [0, 35184372088831], [0, 70368744177663], [0, 140737488355327], [0, 281474976710655], [0, 562949953421311], [0, 1125899906842623], [0, 2251799813685247], [0, 4503599627370495], [0, 9007199254740991], [0, 18014398509481983], [0, 36028797018963967], [0, 72057594037927935], [0, 144115188075855871], [0, 288230376151711743], [0, 576460752303423487], [0, 1152921504606846975], [0, 2305843009213693951], [0, 4611686018427387903], [0, 9223372036854775807]"]
+  ["2","==42, [0, 63], [0, 127], [0, 255], [0, 511], [0, 1023], [0, 2047], [0, 4095], [0, 8191], [0, 16383], [0, 32767], [0, 65535], [0, 131071], [0, 262143], [0, 524287], [0, 1048575], [0, 2097151], [0, 4194303], [0, 8388607], [0, 16777215], [0, 33554431], [0, 67108863], [0, 134217727], [0, 268435455], [0, 536870911], [0, 1073741823], [0, 2147483647], [0, 4294967295], [0, 8589934591], [0, 17179869183], [0, 34359738367], [0, 68719476735], [0, 137438953471], [0, 274877906943], [0, 549755813887], [0, 1099511627775], [0, 2199023255551], [0, 4398046511103], [0, 8796093022207], [0, 17592186044415], [0, 35184372088831], [0, 70368744177663], [0, 140737488355327], [0, 281474976710655], [0, 562949953421311], [0, 1125899906842623], [0, 2251799813685247], [0, 4503599627370495], [0, 9007199254740991], [0, 18014398509481983], [0, 36028797018963967], [0, 72057594037927935], [0, 144115188075855871], [0, 288230376151711743], [0, 576460752303423487], [0, 1152921504606846975], [0, 2305843009213693951], [0, 4611686018427387903], [0, 9223372036854775807], [32, 47], [32, 63], [40, 43], [40, 47], [42, 42], [42, 43]"]
+  ["3","==-7, [-9223372036854775808, -1], [-4611686018427387904, -1], [-2305843009213693952, -1], [-1152921504606846976, -1], [-576460752303423488, -1], [-288230376151711744, -1], [-144115188075855872, -1], [-72057594037927936, -1], [-36028797018963968, -1], [-18014398509481984, -1], [-9007199254740992, -1], [-4503599627370496, -1], [-2251799813685248, -1], [-1125899906842624, -1], [-562949953421312, -1], [-281474976710656, -1], [-140737488355328, -1], [-70368744177664, -1], [-35184372088832, -1], [-17592186044416, -1], [-8796093022208, -1], [-4398046511104, -1], [-2199023255552, -1], [-1099511627776, -1], [-549755813888, -1], [-274877906944, -1], [-137438953472, -1], [-68719476736, -1], [-34359738368, -1], [-17179869184, -1], [-8589934592, -1], [-4294967296, -1], [-2147483648, -1], [-1073741824, -1], [-536870912, -1], [-268435456, -1], [-134217728, -1], [-67108864, -1], [-33554432, -1], [-16777216, -1], [-8388608, -1], [-4194304, -1], [-2097152, -1], [-1048576, -1], [-524288, -1], [-262144, -1], [-131072, -1], [-65536, -1], [-32768, -1], [-16384, -1], [-8192, -1], [-4096, -1], [-2048, -1], [-1024, -1], [-512, -1], [-256, -1], [-128, -1], [-64, -1], [-32, -1], [-16, -1], [-8, -7], [-8, -5], [-8, -1], [-7, -7]"]
+  ["4","==1234567890, [0, 2147483647], [0, 4294967295], [0, 8589934591], [0, 17179869183], [0, 34359738367], [0, 68719476735], [0, 137438953471], [0, 274877906943], [0, 549755813887], [0, 1099511627775], [0, 2199023255551], [0, 4398046511103], [0, 8796093022207], [0, 17592186044415], [0, 35184372088831], [0, 70368744177663], [0, 140737488355327], [0, 281474976710655], [0, 562949953421311], [0, 1125899906842623], [0, 2251799813685247], [0, 4503599627370495], [0, 9007199254740991], [0, 18014398509481983], [0, 36028797018963967], [0, 72057594037927935], [0, 144115188075855871], [0, 288230376151711743], [0, 576460752303423487], [0, 1152921504606846975], [0, 2305843009213693951], [0, 4611686018427387903], [0, 9223372036854775807], [1073741824, 1342177279], [1073741824, 1610612735], [1073741824, 2147483647], [1207959552, 1241513983], [1207959552, 1275068415], [1207959552, 1342177279], [1224736768, 1241513983], [1233125376, 1235222527], [1233125376, 1237319679], [1233125376, 1241513983], [1234173952, 1234698239], [1234173952, 1235222527], [1234436096, 1234698239], [1234567168, 1234568191], [1234567168, 1234569215], [1234567168, 1234571263], [1234567168, 1234575359], [1234567168, 1234583551], [1234567168, 1234599935], [1234567168, 1234632703], [1234567168, 1234698239], [1234567680, 1234567935], [1234567680, 1234568191], [1234567808, 1234567935], [1234567872, 1234567903], [1234567872, 1234567935], [1234567888, 1234567891], [1234567888, 1234567895], [1234567888, 1234567903], [1234567890, 1234567890], [1234567890, 1234567891]"]
+  ["5",null]
+  ["6",null]
+  ["7",null]
+  ["8",null]
+  ["9",null]
+
+case bool
+query:
+  SELECT Id, DEBUG_TOKENLIST(Bl) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","y"]
+  ["2","n"]
+  ["3",null]
+  ["4",null]
+  ["5",null]
+  ["6",null]
+  ["7",null]
+  ["8",null]
+  ["9",null]
+
+case token
+query:
+  SELECT Id, DEBUG_TOKENLIST(Tok) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","alpha"]
+  ["2","\"alpha beta gamma\""]
+  ["3","\"Hello, World! foo-bar 123\""]
+  ["4","ab"]
+  ["5","abcde"]
+  ["6","\"abc  def\""]
+  ["7",""]
+  ["8",null]
+  ["9","\"Ærø straße\""]
+
+case json
+query:
+  SELECT Id, DEBUG_TOKENLIST(Js) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","\\x0c, \\x0c\\x01\\x61, \\x0c\\x01\\x61\\x12"]
+  ["2","\\x0c, \\x0c\\x01\\x61, \\x0c\\x01\\x61\\x0c, \\x0c\\x01\\x61\\x0c\\x01\\x62, \"\\x0c\\x01\\x61\\x0c\\x01\\x62\\rx y\", \\x0c\\x01\\x63, \\x0c\\x01\\x63\\x10, \\x0c\\x01\\x63\\x10\\x12, \\x0c\\x01\\x63\\x10\\\""]
+  ["3","\\x10, \\x10\\x12, \\x10\\rtwo, \\x10\\x00"]
+  ["4","\\x00"]
+  ["5",null]
+  ["6",null]
+  ["7",null]
+  ["8",null]
+  ["9",null]
+
+case fulltext_array
+query:
+  SELECT Id, DEBUG_TOKENLIST(FullArr) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","alpha(boundary, end_boundary)"]
+  ["2","alpha(boundary), beta(end_boundary), <gap(25)>, gamma(boundary, end_boundary)"]
+  ["3","a(boundary, end_boundary), <gap(25)>, bc(boundary, end_boundary)"]
+  ["4",""]
+  ["5",null]
+  ["6",null]
+  ["7",null]
+  ["8",null]
+  ["9",null]
+
+case substring_array
+query:
+  SELECT Id, DEBUG_TOKENLIST(SubArr) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","[a, al, alp, h, ha, l, lp, lph, p, ph, pha], alph, lpha"]
+  ["2","[a, al, alp, am, amm, b, be, bet, e, et, eta, g, ga, gam, h, ha, l, lp, lph, m, ma, mm, mma, p, ph, pha, t, ta], alph, lpha, <gap(1)>, beta, <gap(25)>, gamm, amma"]
+  ["3","a, <gap(25)>, b, <gap(1)>, c"]
+  ["4",""]
+  ["5",null]
+  ["6",null]
+  ["7",null]
+  ["8",null]
+  ["9",null]
+
+case concat
+query:
+  SELECT Id, DEBUG_TOKENLIST(Cat) AS t FROM D ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","alpha(boundary, end_boundary), <gap(25)>, alpha(boundary, end_boundary)"]
+  ["2","alpha(boundary), beta, gamma(end_boundary), <gap(25)>, alpha(boundary), beta(end_boundary), <gap(25)>, gamma(boundary, end_boundary)"]
+  ["3","hello(boundary), world, foo, bar, 123(end_boundary), <gap(25)>, a(boundary, end_boundary), <gap(25)>, bc(boundary, end_boundary)"]
+  ["4","ab(boundary, end_boundary), <gap(25)>"]
+  ["5","abcde(boundary, end_boundary)"]
+  ["6","abc(boundary), def(end_boundary)"]
+  ["7",""]
+  ["8",null]
+  ["9","ærø(boundary), straße(end_boundary)"]
+
+case in_query
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('alpha beta')) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: t STRING
+  ["alpha(boundary), beta(end_boundary)"]
+
+case string_arg
+query:
+  SELECT DEBUG_TOKENLIST('alpha') AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:DEBUG_TOKENLIST\n Argument types: STRING\n Signature: DEBUG_TOKENLIST(TOKENLIST)\n Argument 1: Unable to coerce type STRING to expected type TOKENLIST [at 1:8]

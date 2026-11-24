@@ -9,9 +9,10 @@ use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
 use googlesql_sys::proto::resolved_insert_stmt_enums::InsertMode;
 use googlesql_sys::proto::*;
 use spanbolt_proto::spanner as pb;
-use spanbolt_storage::key::encode_key;
+use spanbolt_storage::key::{encode_key, prefix_end};
 use spanbolt_storage::{
-    Code, Error, KeySet, Mutation, Result, TableId, TableMeta, Timestamp, Value, WriteKind,
+    Code, Error, IndexId, KeySet, Mutation, Result, TableId, TableMeta, Timestamp, Value,
+    WriteKind, index_prefix,
 };
 use spanbolt_txn::ReadWriteTxn;
 
@@ -36,10 +37,19 @@ enum Source {
     Query { op: BoxOp, positions: Vec<usize> },
 }
 
+/// The conflicts an INSERT skips instead of failing (INSERT OR IGNORE, ON CONFLICT DO NOTHING).
+#[derive(Default)]
+struct Skip {
+    /// A row whose primary key exists.
+    key: bool,
+    /// A row whose key in one of these unique indexes exists.
+    indexes: Vec<IndexId>,
+}
+
 enum Kind {
     Insert {
         mode: WriteKind,
-        ignore: bool,
+        ignore: Skip,
         columns: Vec<usize>,
         source: Source,
     },
@@ -179,10 +189,7 @@ fn returning(
 
 fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fields)> {
     if let Some(b) = &ins.parent {
-        crate::validate::hints(Node::Insert, &b.hint_list)?;
-    }
-    if ins.on_conflict_clause.is_some() {
-        return Err(unimplemented("INSERT ... ON CONFLICT"));
+        p.statement_hints(Node::Insert, &b.hint_list)?;
     }
     let ts = ins
         .table_scan
@@ -202,11 +209,18 @@ fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fi
                 .ok_or_else(|| Error::internal("insert column not in table"))
         })
         .collect::<Result<_>>()?;
-    let (mode, ignore) = match ins.insert_mode.and_then(|m| InsertMode::try_from(m).ok()) {
+    let (mode, key) = match ins.insert_mode.and_then(|m| InsertMode::try_from(m).ok()) {
         Some(InsertMode::OrIgnore) => (WriteKind::Insert, true),
         Some(InsertMode::OrUpdate) => (WriteKind::InsertOrUpdate, false),
         Some(InsertMode::OrReplace) => (WriteKind::Replace, false),
         _ => (WriteKind::Insert, false),
+    };
+    let ignore = match &ins.on_conflict_clause {
+        Some(oc) => on_conflict(p, oc, table, &layout)?,
+        None => Skip {
+            key,
+            indexes: Vec::new(),
+        },
     };
     let source = if let Some(q) = &ins.query {
         let planned = p.scan(q, &Scope::TOP)?;
@@ -249,9 +263,194 @@ fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fi
     ))
 }
 
+/// A unique index and the encoded index key (without the primary key suffix) a row would have.
+type IndexKey = (IndexId, Vec<u8>);
+
+/// The keys each row would have in the unique indexes ON CONFLICT DO NOTHING checks. Two rows
+/// with the same key are UNIMPLEMENTED: which one Cloud Spanner keeps follows no rule we found
+/// (sometimes the first, sometimes the last, sometimes neither).
+fn conflict_index_keys(
+    state: &spanbolt_storage::DbState,
+    tm: &TableMeta,
+    indexes: &[IndexId],
+    columns: &[usize],
+    rows: &[Vec<Value>],
+    defaults: &[(usize, usize)],
+) -> Result<Vec<Vec<IndexKey>>> {
+    if indexes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut seen: HashSet<IndexKey> = HashSet::new();
+    let mut out = Vec::with_capacity(rows.len());
+    for (r, row) in rows.iter().enumerate() {
+        let mut full = vec![Value::Null; tm.columns.len()];
+        let mut supplied = vec![false; tm.columns.len()];
+        for (i, &c) in columns.iter().enumerate() {
+            if !defaults.contains(&(r, i)) {
+                full[c] = row[i].clone();
+                supplied[c] = true;
+            }
+        }
+        let mut keys = Vec::new();
+        for &ix in indexes {
+            let im = state.catalog.index(ix);
+            if let Some(&c) = im.key.iter().find(|&&c| {
+                let cm = &tm.columns[c];
+                !supplied[c] && (cm.default.is_some() || cm.generated || cm.identity)
+            }) {
+                return Err(unimplemented(format!(
+                    "ON CONFLICT DO NOTHING on index {} with a default or generated value for column {}",
+                    im.name, tm.columns[c].name
+                )));
+            }
+            let Some(pf) = index_prefix(im, &full)? else {
+                continue;
+            };
+            if !seen.insert((ix, pf.clone())) {
+                return Err(unimplemented(format!(
+                    "ON CONFLICT DO NOTHING with two rows that have the same key in unique index {}",
+                    im.name
+                )));
+            }
+            keys.push((ix, pf));
+        }
+        out.push(keys);
+    }
+    Ok(out)
+}
+
+/// `ON CONFLICT [target] DO NOTHING`: without a target Cloud Spanner skips rows that clash on
+/// the primary key or any unique index; a target names the primary key or one unique index.
+fn on_conflict(
+    p: &Planner,
+    oc: &ResolvedOnConflictClauseProto,
+    table: TableId,
+    layout: &[i64],
+) -> Result<Skip> {
+    use googlesql_sys::proto::resolved_on_conflict_clause_enums::ConflictAction;
+    if oc
+        .conflict_action
+        .and_then(|a| ConflictAction::try_from(a).ok())
+        != Some(ConflictAction::Nothing)
+    {
+        return Err(unimplemented("INSERT ... ON CONFLICT DO UPDATE"));
+    }
+    let storage = &p.cat.storage;
+    let tm = storage.table(table);
+    let unique: Vec<IndexId> = tm
+        .indexes
+        .iter()
+        .copied()
+        .filter(|&ix| {
+            let im = storage.index(ix);
+            im.unique && !im.managed
+        })
+        .collect();
+    let compat = p.opts.emulator_compat;
+    let no_match = || {
+        Error::new(
+            if compat {
+                Code::FailedPrecondition
+            } else {
+                Code::InvalidArgument
+            },
+            "There is no unique constraint matching the ON CONFLICT specification",
+        )
+    };
+    // Neither Spanner nor the emulator takes a null-filtered unique index as the target; Spanner
+    // also refuses one named by ON UNIQUE CONSTRAINT, and an empty target when the table has one.
+    let null_filtered = |ix: IndexId| -> Result<()> {
+        let im = storage.index(ix);
+        if !im.null_filtered {
+            return Ok(());
+        }
+        Err(Error::new(
+            Code::Unimplemented,
+            if compat {
+                format!(
+                    "Null filtered index as conflict target is not supported: {}",
+                    im.name
+                )
+            } else {
+                format!(
+                    "ON CONFLICT clause with null filtering index as conflict target is not supported. Index: {}",
+                    im.name
+                )
+            },
+        ))
+    };
+    if let Some(name) = oc
+        .unique_constraint_name
+        .as_deref()
+        .filter(|n| !n.is_empty())
+    {
+        let ix = unique
+            .iter()
+            .copied()
+            .find(|&ix| storage.index(ix).name.eq_ignore_ascii_case(name))
+            .ok_or_else(no_match)?;
+        // The emulator only checks a target column list, not a named constraint.
+        if !compat {
+            null_filtered(ix)?;
+        }
+        return Ok(Skip {
+            key: false,
+            indexes: vec![ix],
+        });
+    }
+    if oc.conflict_target_column_list.is_empty() {
+        if compat {
+            return Err(Error::new(
+                Code::Unimplemented,
+                "ON CONFLICT clause with empty conflict target in INSERT statement is not supported in Emulator",
+            ));
+        }
+        for &ix in &unique {
+            null_filtered(ix)?;
+        }
+        return Ok(Skip {
+            key: true,
+            indexes: unique,
+        });
+    }
+    let mut target: Vec<usize> = oc
+        .conflict_target_column_list
+        .iter()
+        .map(|c| {
+            let id = c.column_id.unwrap_or(-1);
+            layout
+                .iter()
+                .position(|&l| l == id)
+                .ok_or_else(|| Error::internal("conflict target not in table"))
+        })
+        .collect::<Result<_>>()?;
+    target.sort_unstable();
+    target.dedup();
+    let same = |cols: &[usize]| {
+        let mut c = cols.to_vec();
+        c.sort_unstable();
+        c == target
+    };
+    if same(&tm.pk) {
+        return Ok(Skip {
+            key: true,
+            indexes: Vec::new(),
+        });
+    }
+    let ix = unique
+        .into_iter()
+        .find(|&ix| same(&storage.index(ix).key))
+        .ok_or_else(no_match)?;
+    null_filtered(ix)?;
+    Ok(Skip {
+        key: false,
+        indexes: vec![ix],
+    })
+}
+
 fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fields)> {
     if let Some(b) = &up.parent {
-        crate::validate::hints(Node::Update, &b.hint_list)?;
+        p.statement_hints(Node::Update, &b.hint_list)?;
     }
     if up.from_scan.is_some() || up.array_offset_column.is_some() {
         return Err(unimplemented("UPDATE with FROM or nested updates"));
@@ -320,7 +519,7 @@ fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fie
 
 fn delete(p: &mut Planner, del: &ResolvedDeleteStmtProto) -> Result<(DmlPlan, Fields)> {
     if let Some(b) = &del.parent {
-        crate::validate::hints(Node::Delete, &b.hint_list)?;
+        p.statement_hints(Node::Delete, &b.hint_list)?;
     }
     if del.using_scan.is_some() || del.array_offset_column.is_some() {
         return Err(unimplemented("DELETE with USING or nested deletes"));
@@ -639,6 +838,8 @@ pub fn execute(
             } = keyed_rows(&tm, columns, rows, defaults, now)?;
             let columns = &columns;
             let mut seen: HashSet<Vec<u8>> = HashSet::new();
+            let index_keys =
+                conflict_index_keys(&state, &tm, &ignore.indexes, columns, &rows, &defaults)?;
             let mut kept_rows = Vec::new();
             let mut kept_cells = Vec::new();
             let mut kept_defaults: Vec<Vec<usize>> = Vec::new();
@@ -647,7 +848,7 @@ pub fn execute(
                 let repeated = seen.contains(&enc);
                 let exists = repeated || state.tables[d.table].get(&enc[..]).is_some();
                 if exists && *mode == WriteKind::Insert {
-                    if *ignore {
+                    if ignore.key {
                         continue;
                     }
                     return Err(Error::constraint(
@@ -658,6 +859,20 @@ pub fn execute(
                             if repeated { "inserted" } else { "existing" }
                         ),
                     ));
+                }
+                if let Some(pfs) = index_keys.get(r)
+                    && pfs.iter().any(|(ix, pf)| {
+                        let end = prefix_end(pf);
+                        state.indexes[*ix]
+                            .range::<_, [u8]>((
+                                std::ops::Bound::Included(&pf[..]),
+                                std::ops::Bound::Excluded(&end[..]),
+                            ))
+                            .next()
+                            .is_some()
+                    })
+                {
+                    continue;
                 }
                 seen.insert(enc);
                 let action = if exists { "UPDATE" } else { "INSERT" };

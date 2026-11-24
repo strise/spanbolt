@@ -1,0 +1,1253 @@
+# Hint names per node, hint values, DML hints and spanner_emulator.ignore_unknown_hints.
+tags: sql hints
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+    W INT64,
+  ) PRIMARY KEY (K);
+  CREATE INDEX TByV ON T(V);
+  CREATE TABLE U (
+    K INT64 NOT NULL,
+    X INT64,
+  ) PRIMARY KEY (K)
+insert T cols=K,V,W:
+  [1, "a", 10]
+  [2, "b", 20]
+  [3, "a", 30]
+insert U cols=K,X:
+  [1, 100]
+  [2, 200]
+
+case stmt_allow_distributed_merge
+query:
+  @{ALLOW_DISTRIBUTED_MERGE=TRUE} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_DISTRIBUTED_MERGE.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_execution_method
+query:
+  @{EXECUTION_METHOD=BATCH} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_execution_method_bad_value
+query:
+  @{EXECUTION_METHOD=SIDEWAYS} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: execution_method hint: SIDEWAYS.
+
+case table_execution_method
+query:
+  SELECT K FROM T@{EXECUTION_METHOD=ROW} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  same
+
+case stmt_use_unenforced_foreign_key
+query:
+  @{USE_UNENFORCED_FOREIGN_KEY=TRUE} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: USE_UNENFORCED_FOREIGN_KEY.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_allow_timestamp_predicate_pushdown
+query:
+  @{ALLOW_TIMESTAMP_PREDICATE_PUSHDOWN=TRUE} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_TIMESTAMP_PREDICATE_PUSHDOWN.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case table_seekable_key_size
+query:
+  SELECT K FROM T@{FORCE_INDEX=TByV, SEEKABLE_KEY_SIZE=1} WHERE V = 'a' ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["3"]
+
+case table_seekable_key_size_string
+query:
+  SELECT K FROM T@{SEEKABLE_KEY_SIZE='one'} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: seekable_key_size.
+
+case stmt_optimizer_statistics_package
+query:
+  @{OPTIMIZER_STATISTICS_PACKAGE=latest} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_STATISTICS_PACKAGE.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_optimizer_version_latest
+query:
+  @{OPTIMIZER_VERSION=latest_version} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case table_scan_method_bad_value
+query:
+  SELECT K FROM T@{SCAN_METHOD=COLUMNAR} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "COLUMNAR".
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case table_scan_method_row
+query:
+  SELECT K FROM T@{SCAN_METHOD=ROW} ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case table_force_index_int
+query:
+  SELECT K FROM T@{FORCE_INDEX=1} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: FORCE_INDEX hint: 1.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: force_index.
+
+case stmt_force_index_base_table
+query:
+  @{FORCE_INDEX=_BASE_TABLE} SELECT K FROM T ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case stmt_force_index_named
+query:
+  @{FORCE_INDEX=TByV} SELECT K FROM T WHERE V = 'a' ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid statement-level hint value: FORCE_INDEX="TByV".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unsupported statement-level hint value: force_index=TByV.
+
+case join_method_bad_value
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=SIDEWAYS_JOIN} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: JOIN_METHOD hint: "SIDEWAYS_JOIN".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid value for join_type/join_method hint: SIDEWAYS_JOIN.
+
+case join_method_hash
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=HASH_JOIN, HASH_JOIN_BUILD_SIDE=BUILD_RIGHT} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: hash_join_build_side hint is only supported for HASH joins.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+
+case join_build_side_without_hash_join
+query:
+  SELECT T.K FROM T JOIN @{HASH_JOIN_BUILD_SIDE=BUILD_LEFT} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: hash_join_build_side hint is only supported for HASH joins.
+expect@spanner:
+  same
+
+case join_build_side_bad_value
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=HASH_JOIN, HASH_JOIN_BUILD_SIDE=MIDDLE} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: hash_join_build_side hint is only supported for HASH joins.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid value for hash_join_build_side hint: MIDDLE.
+
+case join_force_join_order_int
+query:
+  SELECT T.K FROM T JOIN @{FORCE_JOIN_ORDER=1} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: FORCE_JOIN_ORDER hint: 1.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: force_join_order.
+
+case join_hash_join_execution_bad_value
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=HASH_JOIN, HASH_JOIN_EXECUTION=THREE_PASS} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: HASH_JOIN_EXECUTION hint: "THREE_PASS".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid value for hash_join_execution hint: THREE_PASS.
+
+case group_method_bad_value
+query:
+  SELECT V, COUNT(*) AS n FROM T GROUP @{GROUP_METHOD=SORT_GROUP} BY V ORDER BY V
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: GROUP_METHOD hint: "SORT_GROUP".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: group_type/group_method hint: SORT_GROUP.
+
+case index_strategy_bad_value
+query:
+  SELECT K FROM T@{INDEX_STRATEGY=EVERYTHING} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: INDEX_STRATEGY hint: "EVERYTHING".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: index_strategy hint: EVERYTHING.
+
+case stmt_parameter_sensitive_bad_value
+query:
+  @{PARAMETER_SENSITIVE=sometimes} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: PARAMETER_SENSITIVE hint: "sometimes".
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_lock_scanned_ranges_bad_value
+query:
+  @{LOCK_SCANNED_RANGES=everything} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: LOCK_SCANNED_RANGES hint: "everything".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: everything hint: lock_scanned_ranges.
+
+case stmt_enhance_query_timeout_string
+query:
+  @{ENHANCE_QUERY_TIMEOUT_MS='soon'} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: ENHANCE_QUERY_TIMEOUT_MS hint: "soon".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: enhance_query_timeout_ms.
+
+case stmt_use_additional_parallelism_string
+query:
+  @{USE_ADDITIONAL_PARALLELISM='yes'} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: USE_ADDITIONAL_PARALLELISM hint: "yes".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: use_additional_parallelism.
+
+case duplicate_hint
+query:
+  SELECT K FROM T@{SCAN_METHOD=ROW, SCAN_METHOD=BATCH} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Multiple values for hint: SCAN_METHOD
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Providing the same hint multiple times is not supported: scan_method.
+
+case dml_optimizer_version
+dml:
+  @{OPTIMIZER_VERSION=6} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  count: 1
+
+case dml_lock_scanned_ranges
+dml:
+  @{LOCK_SCANNED_RANGES=exclusive} DELETE FROM T WHERE K = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case dml_lock_scanned_ranges_bad_value
+dml:
+  @{LOCK_SCANNED_RANGES=nope} DELETE FROM T WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: LOCK_SCANNED_RANGES hint: "nope".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: nope hint: lock_scanned_ranges.
+
+case dml_insert_optimizer_version
+dml:
+  @{OPTIMIZER_VERSION=6} INSERT INTO U (K, X) VALUES (3, 300)
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  count: 1
+
+case dml_use_additional_parallelism
+dml:
+  @{USE_ADDITIONAL_PARALLELISM=TRUE} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: USE_ADDITIONAL_PARALLELISM.
+expect@spanner:
+  same
+
+case dml_pdml_max_parallelism_on_delete
+dml:
+  @{PDML_MAX_PARALLELISM=2} DELETE FROM T WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: PDML_MAX_PARALLELISM.
+expect@spanner:
+  count: 1
+
+case dml_unknown_statement_hint
+dml:
+  @{NOPE_HINT=1} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: NOPE_HINT.
+expect@spanner:
+  same
+
+case delete_force_index
+dml:
+  DELETE FROM T@{FORCE_INDEX=TByV} WHERE V = 'a'
+expect:
+  count: 2
+expect@spanner:
+  same
+
+case delete_force_index_unknown
+dml:
+  DELETE FROM T@{FORCE_INDEX=Nope} WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: The table does not have a secondary index called Nope
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The table T does not have an index called Nope
+
+case update_force_index_unknown
+dml:
+  UPDATE T@{FORCE_INDEX=Nope} SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: The table does not have a secondary index called Nope
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The table T does not have an index called Nope
+
+case update_force_index
+dml:
+  UPDATE T@{FORCE_INDEX=TByV} SET W = 11 WHERE V = 'b'
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case delete_unknown_table_hint
+dml:
+  DELETE FROM T@{NOPE_HINT=1} WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: NOPE_HINT.
+expect@spanner:
+  same
+
+case delete_scan_method_bad_value
+dml:
+  DELETE FROM T@{SCAN_METHOD=COLUMNAR} WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "COLUMNAR".
+expect@spanner:
+  count: 1
+
+case ignore_unknown_hints_query
+query:
+  @{spanner_emulator.ignore_unknown_hints=true} SELECT K FROM T@{SOME_NEW_HINT=1} ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SOME_NEW_HINT.
+
+case ignore_unknown_hints_statement
+query:
+  @{spanner_emulator.ignore_unknown_hints=true, SOME_NEW_HINT=1} SELECT K FROM T ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SOME_NEW_HINT.
+
+case ignore_unknown_hints_join
+query:
+  @{spanner_emulator.ignore_unknown_hints=true} SELECT T.K FROM T JOIN @{SOME_NEW_HINT=1} U ON T.K = U.K ORDER BY T.K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SOME_NEW_HINT.
+
+case ignore_unknown_hints_emulator_hint
+query:
+  @{spanner_emulator.ignore_unknown_hints=true, spanner_emulator.some_new_hint=1} SELECT K FROM T ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case ignore_unknown_hints_false
+query:
+  @{spanner_emulator.ignore_unknown_hints=false} SELECT K FROM T@{SOME_NEW_HINT=1} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SOME_NEW_HINT.
+expect@spanner:
+  same
+
+case ignore_unknown_hints_bad_value
+query:
+  @{spanner_emulator.ignore_unknown_hints=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for emulator-only hint spanner_emulator.ignore_unknown_hints: Literal(type=INT64, value=1) .
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case ignore_unknown_hints_still_checks_values
+query:
+  @{spanner_emulator.ignore_unknown_hints=true} SELECT K FROM T@{SCAN_METHOD=COLUMNAR} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "COLUMNAR".
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case ignore_unknown_hints_dml
+dml:
+  @{spanner_emulator.ignore_unknown_hints=true, OPTIMIZER_VERSION=6} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case ignore_unknown_hints_dml_table
+dml:
+  @{spanner_emulator.ignore_unknown_hints=true} DELETE FROM T@{SOME_NEW_HINT=1} WHERE K = 1
+expect:
+  count: 1
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SOME_NEW_HINT.
+
+case unknown_emulator_hint
+query:
+  @{spanner_emulator.some_new_hint=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid emulator-only hint: some_new_hint.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case other_engine_hint
+query:
+  @{bigquery.some_hint=1} SELECT K FROM T ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case table_scan_method_unknown_value
+query:
+  SELECT K FROM T@{SCAN_METHOD=SIDEWAYS} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "SIDEWAYS".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: scan_method hint: SIDEWAYS.
+
+case stmt_scan_method_columnar
+query:
+  @{SCAN_METHOD=COLUMNAR} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "COLUMNAR".
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_execution_method_row
+query:
+  @{EXECUTION_METHOD=ROW} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_execution_method_default
+query:
+  @{EXECUTION_METHOD=DEFAULT} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected keyword DEFAULT [at 1:20]
+expect@spanner:
+  same
+
+case stmt_execution_method_int
+query:
+  @{EXECUTION_METHOD=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: execution_method.
+
+case stmt_allow_distributed_merge_int
+query:
+  @{ALLOW_DISTRIBUTED_MERGE=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_DISTRIBUTED_MERGE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: allow_distributed_merge.
+
+case stmt_use_unenforced_foreign_key_string
+query:
+  @{USE_UNENFORCED_FOREIGN_KEY='yes'} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: USE_UNENFORCED_FOREIGN_KEY.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: use_unenforced_foreign_key.
+
+case stmt_allow_timestamp_predicate_pushdown_string
+query:
+  @{ALLOW_TIMESTAMP_PREDICATE_PUSHDOWN='yes'} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_TIMESTAMP_PREDICATE_PUSHDOWN.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: allow_timestamp_predicate_pushdown.
+
+case stmt_optimizer_version_bool
+query:
+  @{OPTIMIZER_VERSION=TRUE} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The value of optimizer_version hint has to be latest or a positive int32 value
+
+case stmt_optimizer_statistics_package_int
+query:
+  @{OPTIMIZER_STATISTICS_PACKAGE=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_STATISTICS_PACKAGE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: optimizer_statistics_package.
+
+case stmt_parameter_sensitive_int
+query:
+  @{PARAMETER_SENSITIVE=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: PARAMETER_SENSITIVE hint: 1.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: parameter_sensitive.
+
+case table_seekable_key_size_zero
+query:
+  SELECT K FROM T@{SEEKABLE_KEY_SIZE=0} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case stmt_seekable_key_size
+query:
+  @{SEEKABLE_KEY_SIZE=1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  same
+
+case table_allow_distributed_merge
+query:
+  SELECT K FROM T@{ALLOW_DISTRIBUTED_MERGE=TRUE} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_DISTRIBUTED_MERGE.
+expect@spanner:
+  same
+
+case duplicate_hint_mixed_case
+query:
+  SELECT K FROM T@{scan_method=ROW, SCAN_METHOD=BATCH} ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Providing the same hint multiple times is not supported: scan_method.
+
+case dml_optimizer_statistics_package
+dml:
+  @{OPTIMIZER_STATISTICS_PACKAGE=latest} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_STATISTICS_PACKAGE.
+expect@spanner:
+  count: 1
+
+case dml_allow_distributed_merge
+dml:
+  @{ALLOW_DISTRIBUTED_MERGE=TRUE} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_DISTRIBUTED_MERGE.
+expect@spanner:
+  same
+
+case dml_execution_method
+dml:
+  @{EXECUTION_METHOD=ROW} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  same
+
+case dml_use_unenforced_foreign_key
+dml:
+  @{USE_UNENFORCED_FOREIGN_KEY=TRUE} DELETE FROM T WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: USE_UNENFORCED_FOREIGN_KEY.
+expect@spanner:
+  same
+
+case dml_allow_timestamp_predicate_pushdown
+dml:
+  @{ALLOW_TIMESTAMP_PREDICATE_PUSHDOWN=TRUE} DELETE FROM T WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: ALLOW_TIMESTAMP_PREDICATE_PUSHDOWN.
+expect@spanner:
+  same
+
+case dml_scan_method
+dml:
+  @{SCAN_METHOD=ROW} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SCAN_METHOD.
+expect@spanner:
+  same
+
+case dml_force_index_base_table
+dml:
+  @{FORCE_INDEX=_BASE_TABLE} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: FORCE_INDEX.
+expect@spanner:
+  same
+
+case dml_constant_folding
+dml:
+  @{CONSTANT_FOLDING=TRUE} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: CONSTANT_FOLDING.
+expect@spanner:
+  same
+
+case dml_join_method
+dml:
+  @{JOIN_METHOD=HASH_JOIN} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: JOIN_METHOD.
+expect@spanner:
+  same
+
+case dml_pdml_max_parallelism_on_insert
+dml:
+  @{PDML_MAX_PARALLELISM=2} INSERT INTO U (K, X) VALUES (3, 300)
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: PDML_MAX_PARALLELISM.
+expect@spanner:
+  same
+
+case dml_pdml_max_parallelism_string
+dml:
+  @{PDML_MAX_PARALLELISM='two'} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: PDML_MAX_PARALLELISM hint: "two".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: pdml_max_parallelism.
+
+case dml_optimizer_version_string
+skip: Cloud Spanner rejects a quoted OPTIMIZER_VERSION string but accepts the same text as an identifier; the resolved AST doesn't tell them apart
+dml:
+  @{OPTIMIZER_VERSION='latest_version'} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The value of optimizer_version hint has to be latest or a positive int32 value
+
+case dml_lock_scanned_ranges_int
+dml:
+  @{LOCK_SCANNED_RANGES=1} DELETE FROM T WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: LOCK_SCANNED_RANGES hint: 1.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: lock_scanned_ranges.
+
+case query_pdml_max_parallelism
+query:
+  @{PDML_MAX_PARALLELISM=2} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: PDML_MAX_PARALLELISM.
+expect@spanner:
+  same
+
+case update_table_scan_method_bad_value
+dml:
+  UPDATE T@{SCAN_METHOD=SIDEWAYS} SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "SIDEWAYS".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: scan_method hint: SIDEWAYS.
+
+case update_table_seekable_key_size
+dml:
+  UPDATE T@{SEEKABLE_KEY_SIZE=1} SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case delete_force_index_int
+dml:
+  DELETE FROM T@{FORCE_INDEX=1} WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: FORCE_INDEX hint: 1.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: force_index.
+
+case stmt_optimizer_version_latest_ident
+query:
+  @{OPTIMIZER_VERSION=latest} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_optimizer_version_zero
+query:
+  @{OPTIMIZER_VERSION=0} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The value of optimizer_version hint has to be latest or a positive int32 value
+
+case stmt_optimizer_version_too_big
+query:
+  @{OPTIMIZER_VERSION=3000000000} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The value of optimizer_version hint has to be latest or a positive int32 value
+
+case dml_optimizer_version_latest_version
+dml:
+  @{OPTIMIZER_VERSION=latest_version} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  count: 1
+
+case dml_optimizer_version_latest
+dml:
+  @{OPTIMIZER_VERSION=latest} UPDATE T SET W = 11 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  count: 1
+
+case stmt_optimizer_statistics_package_any
+query:
+  @{OPTIMIZER_STATISTICS_PACKAGE='nonexistent_pkg'} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_STATISTICS_PACKAGE.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case table_seekable_key_size_whole_key
+query:
+  SELECT K FROM T@{SEEKABLE_KEY_SIZE=1} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case table_seekable_key_size_whole_index_key
+query:
+  SELECT K FROM T@{FORCE_INDEX=TByV, SEEKABLE_KEY_SIZE=2} WHERE V = 'a' ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case table_seekable_key_size_beyond_key
+query:
+  SELECT K FROM T@{FORCE_INDEX=TByV, SEEKABLE_KEY_SIZE=3} WHERE V = 'a' ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case table_seekable_key_size_without_filter
+query:
+  SELECT K FROM T@{FORCE_INDEX=TByV, SEEKABLE_KEY_SIZE=1} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case table_seekable_key_size_negative
+query:
+  SELECT K FROM T@{FORCE_INDEX=TByV, SEEKABLE_KEY_SIZE=-1} WHERE V = 'a' ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: SEEKABLE_KEY_SIZE.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: seekable_key_size hint: -1.
+
+case stmt_execution_method_mixed_case
+query:
+  @{EXECUTION_METHOD=Batch} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_execution_method_default_string
+query:
+  @{EXECUTION_METHOD='default'} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: EXECUTION_METHOD.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: execution_method hint: default.
+
+case table_scan_method_columnar_lower
+query:
+  SELECT K FROM T@{SCAN_METHOD=columnar} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "columnar".
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case table_scan_method_auto
+query:
+  SELECT K FROM T@{SCAN_METHOD=AUTO} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: SCAN_METHOD hint: "AUTO".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: scan_method hint: AUTO.
+
+case stmt_parameter_sensitive_always
+query:
+  @{PARAMETER_SENSITIVE=always} SELECT K FROM T ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case stmt_lock_scanned_ranges_shared
+query:
+  @{LOCK_SCANNED_RANGES=shared} SELECT K FROM T ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case group_type_hash_group
+query:
+  SELECT V, COUNT(*) AS n FROM T GROUP @{GROUP_TYPE=HASH_GROUP} BY V ORDER BY V
+expect:
+  columns: V STRING, n INT64
+  ["a","2"]
+  ["b","1"]
+expect@spanner:
+  same
+
+case join_type_loop_join
+query:
+  SELECT T.K FROM T JOIN @{JOIN_TYPE=LOOP_JOIN} U ON T.K = U.K ORDER BY T.K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case join_method_nested_loop_join
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=NESTED_LOOP_JOIN} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: JOIN_METHOD hint: "NESTED_LOOP_JOIN".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid value for join_type/join_method hint: NESTED_LOOP_JOIN.
+
+case join_method_push_broadcast_hash_join
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=PUSH_BROADCAST_HASH_JOIN} U ON T.K = U.K ORDER BY T.K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case join_build_side_with_apply_join
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=APPLY_JOIN, HASH_JOIN_BUILD_SIDE=BUILD_LEFT} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: hash_join_build_side hint is only supported for HASH joins.
+expect@spanner:
+  same
+
+case join_build_side_with_join_type
+query:
+  SELECT T.K FROM T JOIN @{JOIN_TYPE=hash_join, HASH_JOIN_BUILD_SIDE=build_left} U ON T.K = U.K ORDER BY T.K
+expect:
+  error: INVALID_ARGUMENT
+  message: hash_join_build_side hint is only supported for HASH joins.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+
+case duplicate_hint_bad_value
+query:
+  SELECT K FROM T@{SCAN_METHOD=SIDEWAYS, SCAN_METHOD=BATCH} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Multiple values for hint: SCAN_METHOD
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Providing the same hint multiple times is not supported: scan_method.
+
+case unknown_hint_before_bad_value
+query:
+  SELECT K FROM T@{SCAN_METHOD=SIDEWAYS, NOPE=1} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: NOPE.
+expect@spanner:
+  same
+
+case stmt_unknown_hint_before_table_bad_value
+query:
+  @{NOPE=1} SELECT K FROM T@{SCAN_METHOD=SIDEWAYS} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: NOPE.
+expect@spanner:
+  same
+
+case index_strategy_force_index_union
+query:
+  SELECT K FROM T@{INDEX_STRATEGY=FORCE_INDEX_UNION} ORDER BY K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+
+case groupby_scan_optimization_string
+query:
+  SELECT K FROM T@{GROUPBY_SCAN_OPTIMIZATION='x'} ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: GROUPBY_SCAN_OPTIMIZATION hint: "x".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: groupby_scan_optimization.
+
+case disable_inline_string
+query:
+  SELECT ABS(K) @{DISABLE_INLINE='x'} FROM T ORDER BY 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: DISABLE_INLINE hint: "x".
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: disable_inline.
+
+case batch_mode_string
+query:
+  SELECT x FROM UNNEST([1,2]) @{BATCH_MODE='x'} AS x
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: BATCH_MODE hint: "x".
+expect@spanner:
+  columns: x INT64
+  ["1"]
+  ["2"]
+
+case join_hash_join_execution_lower
+query:
+  SELECT T.K FROM T JOIN @{JOIN_METHOD=HASH_JOIN, HASH_JOIN_EXECUTION=one_pass} U ON T.K = U.K ORDER BY T.K
+expect:
+  columns: K INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same
+
+case stmt_use_additional_parallelism_null
+query:
+  @{USE_ADDITIONAL_PARALLELISM=NULL} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: USE_ADDITIONAL_PARALLELISM hint: NULL.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid hint value for: use_additional_parallelism.
+
+case stmt_optimizer_version_7
+query:
+  @{OPTIMIZER_VERSION=7} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_optimizer_version_9
+query:
+  @{OPTIMIZER_VERSION=9} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_optimizer_version_10
+query:
+  @{OPTIMIZER_VERSION=10} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Query optimizer version: 10 is not supported
+
+case stmt_optimizer_version_mixed_case
+query:
+  @{OPTIMIZER_VERSION=Latest_Version} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  columns: K INT64
+  ["1"]
+  ["2"]
+  ["3"]
+
+case stmt_optimizer_version_negative
+query:
+  @{OPTIMIZER_VERSION=-1} SELECT K FROM T ORDER BY K
+expect:
+  error: INVALID_ARGUMENT
+  message: Unsupported hint: OPTIMIZER_VERSION.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The value of optimizer_version hint has to be latest or a positive int32 value

@@ -1058,6 +1058,9 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
             source.push(i);
         }
     }
+    // Spanner trims the text and collapses each run of whitespace to one space; the source
+    // offsets still point into the original value.
+    let (text, source) = collapse_whitespace(&text, &source);
     if text.is_empty() {
         return Ok(Value::Json(Arc::from("{\"snippets\":[]}")));
     }
@@ -1127,6 +1130,29 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         "{{\"snippets\":[{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}]}}",
         highlights.join(",")
     ))))
+}
+
+/// `text` trimmed, with each run of whitespace replaced by one space, and the source index of
+/// each remaining character (a run's space keeps the index of its first character).
+fn collapse_whitespace(text: &str, source: &[usize]) -> (String, Vec<usize>) {
+    let mut out = String::with_capacity(text.len());
+    let mut src = Vec::with_capacity(source.len());
+    let mut space: Option<usize> = None;
+    for (c, &i) in text.chars().zip(source) {
+        if c.is_whitespace() {
+            if !out.is_empty() && space.is_none() {
+                space = Some(i);
+            }
+            continue;
+        }
+        if let Some(s) = space.take() {
+            out.push(' ');
+            src.push(s);
+        }
+        out.push(c);
+        src.push(i);
+    }
+    (out, src)
 }
 
 fn snippet_emulator(args: &[Value]) -> Result<Value> {
@@ -1286,6 +1312,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(v, Value::Float64(3.0));
+    }
+
+    #[test]
+    fn snippet_prod_collapses_whitespace() {
+        let v = snippet(&[s("test       123\n abc"), s("123")], false).unwrap();
+        let Value::Json(j) = v else { panic!("{v:?}") };
+        assert_eq!(
+            &*j,
+            r#"{"snippets":[{"highlights":[{"begin":6,"end":9}],"snippet":"test 123 abc","source_begin":1,"source_end":20}]}"#
+        );
+        let src: Vec<usize> = (0..7).collect();
+        assert_eq!(
+            collapse_whitespace("  a \t b ", &src),
+            ("a b".to_string(), vec![2, 3, 6])
+        );
     }
 
     #[test]

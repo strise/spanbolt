@@ -1,0 +1,55 @@
+tags: mutations
+# A generated column that calls a function doesn't read a column named like the function
+# (spanbolt #83): `UPPER(Name)` reads Name, not the column Upper.
+schema:
+  CREATE TABLE G (
+    K INT64 NOT NULL,
+    Name STRING(MAX),
+    A STRING(MAX) AS (UPPER(Name)) STORED,
+    Upper STRING(MAX) AS (CONCAT(A, '!')) STORED,
+  ) PRIMARY KEY (K);
+  CREATE TABLE GK (
+    Name STRING(MAX) NOT NULL,
+    Upper STRING(MAX),
+    K STRING(MAX) NOT NULL AS (UPPER(Name)) STORED,
+  ) PRIMARY KEY (K)
+
+case evaluated_after_the_column_it_reads
+insert G cols=K,Name:
+  [1, "abc"]
+read G cols=K,Name,A,Upper:
+  all
+expect:
+  columns: K INT64, Name STRING, A STRING, Upper STRING
+  ["1","abc","ABC","ABC!"]
+
+case evaluated_after_the_column_it_reads_dml
+dml:
+  INSERT INTO G (K, Name) VALUES (1, 'abc')
+expect:
+  count: 1
+query:
+  SELECT K, A, Upper FROM G
+expect:
+  columns: K INT64, A STRING, Upper STRING
+  ["1","ABC","ABC!"]
+
+case generated_key_needs_only_its_inputs
+insert GK cols=Name:
+  ["abc"]
+read GK cols=K,Name,Upper:
+  all
+expect:
+  columns: K STRING, Name STRING, Upper STRING
+  ["ABC","abc",null]
+
+case generated_key_needs_only_its_inputs_dml
+dml:
+  INSERT INTO GK (Name) VALUES ('abc')
+expect:
+  count: 1
+query:
+  SELECT K, Name, Upper FROM GK
+expect:
+  columns: K STRING, Name STRING, Upper STRING
+  ["ABC","abc",null]

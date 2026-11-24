@@ -1,0 +1,112 @@
+# At most three change streams may track the same table, non-key column, or ALL.
+tags: ddl change_stream
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+    W STRING(MAX),
+  ) PRIMARY KEY (K)
+
+case four_for_all
+ddl:
+  CREATE CHANGE STREAM C1 FOR ALL
+ddl:
+  CREATE CHANGE STREAM C2 FOR ALL
+ddl:
+  CREATE CHANGE STREAM C3 FOR ALL
+ddl:
+  CREATE CHANGE STREAM C4 FOR ALL
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: ALL.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: ALL.
+
+case all_then_table
+ddl:
+  CREATE CHANGE STREAM C1 FOR ALL
+ddl:
+  CREATE CHANGE STREAM C2 FOR ALL
+ddl:
+  CREATE CHANGE STREAM C3 FOR ALL
+ddl:
+  CREATE CHANGE STREAM C4 FOR T(V)
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: V.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.V.
+ddl:
+  CREATE CHANGE STREAM C5 FOR T
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C5 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C5 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.
+
+case columns_then_table
+ddl:
+  CREATE CHANGE STREAM C1 FOR T(V)
+ddl:
+  CREATE CHANGE STREAM C2 FOR T(V)
+ddl:
+  CREATE CHANGE STREAM C3 FOR T(V, W)
+ddl:
+  CREATE CHANGE STREAM C4 FOR T
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: V.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.V.
+ddl:
+  CREATE CHANGE STREAM C5 FOR T(W)
+ddl:
+  ALTER CHANGE STREAM C5 SET FOR T(V)
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C5 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: V.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C5 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.V.
+
+case key_columns_only
+ddl:
+  CREATE CHANGE STREAM C1 FOR T()
+ddl:
+  CREATE CHANGE STREAM C2 FOR T()
+ddl:
+  CREATE CHANGE STREAM C3 FOR T()
+ddl:
+  CREATE CHANGE STREAM C4 FOR T()
+ddl:
+  CREATE CHANGE STREAM C5 FOR T
+ddl:
+  CREATE CHANGE STREAM C6 FOR T
+
+case alter_set_for
+ddl:
+  CREATE CHANGE STREAM C1 FOR T
+ddl:
+  CREATE CHANGE STREAM C2 FOR T
+ddl:
+  CREATE CHANGE STREAM C3 FOR T
+ddl:
+  ALTER CHANGE STREAM C3 SET FOR T
+ddl:
+  ALTER CHANGE STREAM C3 SET FOR T(V)
+ddl:
+  CREATE CHANGE STREAM C4
+ddl:
+  ALTER CHANGE STREAM C4 SET FOR T
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: V.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C4 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.V.
+ddl:
+  ALTER CHANGE STREAM C4 SET FOR T(W)

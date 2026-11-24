@@ -1892,7 +1892,10 @@ impl Schema {
                                 .find(|x| x.name.eq_ignore_ascii_case(c))
                                 .map(|x| x.name.clone())
                                 .ok_or_else(|| {
-                                    DdlError::NotFound(format!("Column not found: {}.{c}", t.name))
+                                    DdlError::NotFound(format!(
+                                        "Column not found in table {}: {c}",
+                                        t.name
+                                    ))
                                 })?,
                         ),
                     };

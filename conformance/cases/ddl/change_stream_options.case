@@ -1,0 +1,213 @@
+# Change stream OPTIONS: option names, value types and values, and ALTER CHANGE STREAM SET OPTIONS.
+tags: ddl change_stream
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (K)
+
+case unknown_option
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( RETENTION_PERIOD = '2d' )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C1 FOR T OPTIONS ( RETENTION_PERIOD = '2d' ) : Option: RETENTION_PERIOD is unknown.
+expect@spanner:
+  same
+ddl:
+  CREATE CHANGE STREAM C2 FOR T OPTIONS ( nope = 'x' )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C2 FOR T OPTIONS ( nope = 'x' ) : Option: nope is unknown.
+expect@spanner:
+  same
+ddl:
+  CREATE CHANGE STREAM C3 FOR T
+ddl:
+  ALTER CHANGE STREAM C3 SET OPTIONS ( nope = 'x' )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER CHANGE STREAM C3 SET OPTIONS ( nope = 'x' ) : Option: nope is unknown.
+expect@spanner:
+  same
+
+case string_option_types
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( retention_period = 5 )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C1 FOR T OPTIONS ( retention_period = 5 ) : Unexpected value for option: retention_period. Supported option values are strings and NULL.
+expect@spanner:
+  same
+ddl:
+  CREATE CHANGE STREAM C2 FOR T OPTIONS ( value_capture_type = true )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C2 FOR T OPTIONS ( value_capture_type = true ) : Unexpected value for option: value_capture_type. Supported option values are strings and NULL.
+expect@spanner:
+  same
+ddl:
+  CREATE CHANGE STREAM C3 FOR T OPTIONS ( retention_period = NULL, value_capture_type = NULL )
+
+case bool_option_types
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( exclude_insert = 'yes' )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C1 FOR T OPTIONS ( exclude_insert = 'yes' ) : Unexpected value for option: exclude_insert. Supported option values are booleans and NULL.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C1 FOR T OPTIONS ( exclude_insert = 'yes' ) : Unexpected value for option: exclude_insert. Supported option values are true, false, and null.
+ddl:
+  CREATE CHANGE STREAM C2 FOR T OPTIONS ( exclude_ttl_deletes = 1 )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C2 FOR T OPTIONS ( exclude_ttl_deletes = 1 ) : Unexpected value for option: exclude_ttl_deletes. Supported option values are booleans and NULL.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE CHANGE STREAM C2 FOR T OPTIONS ( exclude_ttl_deletes = 1 ) : Unexpected value for option: exclude_ttl_deletes. Supported option values are true, false, and null.
+ddl:
+  CREATE CHANGE STREAM C3 FOR T OPTIONS ( allow_txn_exclusion = NULL, exclude_update = false, exclude_delete = true )
+
+case value_capture_type
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( value_capture_type = 'new_row' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid value_capture_type: new_row. Change Streams only support value capture types in OLD_AND_NEW_VALUES, NEW_ROW, and NEW_VALUES.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C1 has invalid value_capture_type option: new_row. Invalid value_capture_type
+ddl:
+  CREATE CHANGE STREAM C2 FOR T OPTIONS ( value_capture_type = 'BOGUS' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid value_capture_type: BOGUS. Change Streams only support value capture types in OLD_AND_NEW_VALUES, NEW_ROW, and NEW_VALUES.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C2 has invalid value_capture_type option: BOGUS. Invalid value_capture_type
+ddl:
+  CREATE CHANGE STREAM C3 FOR T OPTIONS ( value_capture_type = 'NEW_ROW_AND_OLD_VALUES' )
+ddl:
+  CREATE CHANGE STREAM C4 FOR T OPTIONS ( value_capture_type = 'OLD_AND_NEW_VALUES' )
+ddl:
+  CREATE CHANGE STREAM C5 FOR T OPTIONS ( value_capture_type = 'NEW_VALUES' )
+ddl:
+  CREATE CHANGE STREAM C6 FOR T OPTIONS ( value_capture_type = 'NEW_ROW' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C6 : because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C6 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.
+
+case retention_period
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( retention_period = '23h' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid retention_period: 23h. Change Streams retention period must be a value in the range [24h, 7d].
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C1 has invalid retention_period option: 23h. Change Streams retention period must be a value in the range [24h, 30d]
+ddl:
+  CREATE CHANGE STREAM C2 FOR T OPTIONS ( retention_period = 'abc' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid time duration format: abc.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C2 has invalid retention_period option: abc. Invalid time duration format
+ddl:
+  CREATE CHANGE STREAM C3 FOR T OPTIONS ( retention_period = '31d' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid retention_period: 31d. Change Streams retention period must be a value in the range [24h, 7d].
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C3 has invalid retention_period option: 31d. Change Streams retention period must be a value in the range [24h, 30d]
+ddl:
+  CREATE CHANGE STREAM C4 FOR T OPTIONS ( retention_period = '8d' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid retention_period: 8d. Change Streams retention period must be a value in the range [24h, 7d].
+expect@spanner:
+  ok
+ddl:
+  CREATE CHANGE STREAM C5 FOR T OPTIONS ( retention_period = '24h' )
+expect@spanner:
+  same
+ddl:
+  CREATE CHANGE STREAM C6 FOR T OPTIONS ( retention_period = '86400s' )
+expect@spanner:
+  same
+ddl:
+  CREATE CHANGE STREAM C7 FOR T OPTIONS ( retention_period = '1440m' )
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Failed to create or alter Change Stream C7 because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: T.
+
+case retention_period_upper_bound
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( retention_period = '7d' )
+ddl:
+  CREATE CHANGE STREAM C2 FOR T OPTIONS ( retention_period = '30d' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid retention_period: 30d. Change Streams retention period must be a value in the range [24h, 7d].
+expect@spanner:
+  ok
+
+case retention_checked_before_value_capture_type
+ddl:
+  CREATE CHANGE STREAM C1 FOR T OPTIONS ( retention_period = '1h', value_capture_type = 'nope' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid retention_period: 1h. Change Streams retention period must be a value in the range [24h, 7d].
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C1 has invalid value_capture_type option: nope. Invalid value_capture_type, ChangeStream C1 has invalid retention_period option: 1h. Change Streams retention period must be a value in the range [24h, 30d]
+
+case alter_options_merge
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+  ) PRIMARY KEY (K);
+  CREATE CHANGE STREAM C FOR T OPTIONS ( retention_period = '36h', value_capture_type = 'NEW_ROW', exclude_ttl_deletes = true, allow_txn_exclusion = true )
+ddl:
+  ALTER CHANGE STREAM C SET OPTIONS ( retention_period = '2d', exclude_ttl_deletes = NULL )
+query:
+  SELECT OPTION_NAME, OPTION_TYPE, OPTION_VALUE FROM INFORMATION_SCHEMA.CHANGE_STREAM_OPTIONS WHERE CHANGE_STREAM_NAME = 'C' ORDER BY OPTION_NAME
+expect:
+  columns: OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+  ["retention_period","STRING","2d"]
+  ["value_capture_type","STRING","NEW_ROW"]
+expect@spanner:
+  columns: OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+  ["allow_txn_exclusion","BOOL","TRUE"]
+  ["retention_period","STRING","2d"]
+  ["value_capture_type","STRING","NEW_ROW"]
+ddl:
+  ALTER CHANGE STREAM C SET OPTIONS ( value_capture_type = 'bogus' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid value_capture_type: bogus. Change Streams only support value capture types in OLD_AND_NEW_VALUES, NEW_ROW, and NEW_VALUES.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C has invalid value_capture_type option: bogus. Invalid value_capture_type
+ddl:
+  ALTER CHANGE STREAM C SET OPTIONS ( retention_period = '1h' )
+expect:
+  error: FAILED_PRECONDITION
+  message: Invalid retention_period: 1h. Change Streams retention period must be a value in the range [24h, 7d].
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: ChangeStream C has invalid retention_period option: 1h. Change Streams retention period must be a value in the range [24h, 30d]
+ddl:
+  ALTER CHANGE STREAM C SET OPTIONS ( exclude_insert = 'no' )
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER CHANGE STREAM C SET OPTIONS ( exclude_insert = 'no' ) : Unexpected value for option: exclude_insert. Supported option values are booleans and NULL.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER CHANGE STREAM C SET OPTIONS ( exclude_insert = 'no' ) : Unexpected value for option: exclude_insert. Supported option values are true, false, and null.

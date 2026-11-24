@@ -1,0 +1,217 @@
+# Schema object names: a letter first, then letters, digits and underscores, at most 128
+# characters. Production and the emulator (since 1.5.43) reject the rest, quoted or not.
+tags: ddl
+schema:
+  CREATE TABLE A (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (K)
+
+case table_leading_underscore
+ddl:
+  CREATE TABLE _T (K INT64) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table name not valid: _T.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table name not valid: _T.
+
+case column_leading_underscore
+ddl:
+  CREATE TABLE T (_id STRING(MAX)) PRIMARY KEY (_id)
+expect:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: _id.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: T._id.
+
+case add_column_leading_underscore
+ddl:
+  ALTER TABLE A ADD COLUMN _x INT64
+expect:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: _x.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: A._x.
+
+case table_quoted_hyphen
+ddl:
+  CREATE TABLE `my-table` (K INT64) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table name not valid: my-table.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table name not valid: my-table.
+
+case column_quoted_space
+ddl:
+  CREATE TABLE T (K INT64, `a b` INT64) PRIMARY KEY (K)
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: T.a b.
+
+case table_quoted_leading_digit
+ddl:
+  CREATE TABLE `1T` (K INT64) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE `1T` (K INT64) PRIMARY KEY (K) : Syntax error on line 1, column 14: Encountered an unknown character ('`'). while parsing: identifier
+expect@spanner:
+  same
+
+case table_quoted_non_ascii
+ddl:
+  CREATE TABLE `Tæ` (K INT64) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table name not valid: Tæ.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table name not valid: T\303\246.
+
+case table_name_128_chars
+ddl:
+  CREATE TABLE Taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (K INT64) PRIMARY KEY (K)
+
+case table_name_129_chars
+ddl:
+  CREATE TABLE Taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa (K INT64) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table name not valid: Taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table name not valid: Taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.
+
+case column_name_129_chars
+ddl:
+  CREATE TABLE T (K INT64, Caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa INT64) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: Caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column name not valid: T.Caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.
+
+case index_leading_underscore
+ddl:
+  CREATE INDEX _I ON A(V)
+expect:
+  error: INVALID_ARGUMENT
+  message: Index name not valid: _I.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: index name not valid: _I.
+
+case index_quoted_hyphen
+ddl:
+  CREATE INDEX `a-i` ON A(V)
+expect:
+  error: INVALID_ARGUMENT
+  message: Index name not valid: a-i.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: index name not valid: a-i.
+
+case foreign_key_leading_underscore
+ddl:
+  ALTER TABLE A ADD CONSTRAINT _fk FOREIGN KEY (K) REFERENCES A (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Foreign Key name not valid: _fk.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: foreign key name not valid: _fk.
+
+case check_leading_underscore
+ddl:
+  ALTER TABLE A ADD CONSTRAINT _ck CHECK (K > 0)
+expect:
+  error: INVALID_ARGUMENT
+  message: name not valid: _ck.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: check constraint name not valid: _ck.
+
+case view_leading_underscore
+ddl:
+  CREATE VIEW _V SQL SECURITY INVOKER AS SELECT A.K FROM A
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: VIEW name not valid: _V.
+
+case sequence_leading_underscore
+ddl:
+  CREATE SEQUENCE _S OPTIONS (sequence_kind = 'bit_reversed_positive')
+expect:
+  error: INVALID_ARGUMENT
+  message: Sequence name not valid: _S.
+expect@spanner:
+  same
+
+case change_stream_leading_underscore
+ddl:
+  CREATE CHANGE STREAM _cs FOR A
+expect:
+  error: INVALID_ARGUMENT
+  message: Change Stream name not valid: _cs.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: change stream name not valid: _cs.
+
+case rename_table_leading_underscore
+ddl:
+  ALTER TABLE A RENAME TO _A
+expect:
+  error: INVALID_ARGUMENT
+  message: Table name not valid: _A.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table name not valid: _A.
+
+case synonym_leading_underscore
+ddl:
+  ALTER TABLE A ADD SYNONYM _Syn
+expect:
+  error: INVALID_ARGUMENT
+  message: Synonym name not valid: _Syn.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table name not valid: _Syn.
+
+case schema_leading_underscore
+ddl:
+  CREATE SCHEMA _sch
+expect:
+  error: INVALID_ARGUMENT
+  message: Schema name not valid: _sch.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: schema name not valid: _sch.
+
+case search_index_leading_underscore
+ddl:
+  ALTER TABLE A ADD COLUMN Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN
+ddl:
+  CREATE SEARCH INDEX _si ON A(Tokens)
+expect:
+  error: INVALID_ARGUMENT
+  message: Index name not valid: _si.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: search index name not valid: _si.
+
+case underscore_inside_name
+ddl:
+  CREATE TABLE T_1 (K_1 INT64, v_ INT64) PRIMARY KEY (K_1)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE T_1 (\n  K_1 INT64,\n  v_ INT64,\n) PRIMARY KEY(K_1)"
+expect@spanner:
+  same

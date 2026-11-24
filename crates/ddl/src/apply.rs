@@ -1167,6 +1167,12 @@ impl Schema {
                 }
                 let mut next = t.clone();
                 next.columns.push(column.clone());
+                if !compat && next.columns.len() > MAX_COLUMNS_PER_TABLE {
+                    return Err(pre(format!(
+                        "Cannot add column {} to table {tname} because it would have too many columns; the limit is {MAX_COLUMNS_PER_TABLE}.",
+                        column.name
+                    )));
+                }
                 too_many_columns(&next)?;
                 let size = non_key_size(&next);
                 if size > MAX_NON_KEY_COLUMNS_SIZE {

@@ -163,7 +163,22 @@ impl Engine {
     }
 
     fn plan(&self, cat: &SqlCatalog, sql: &str, params_json: &str) -> Result<Prepared> {
-        let stmt = crate::analyze::statement(cat, sql, params_json)?;
+        let stmt = crate::analyze::statement(cat, sql, params_json).map_err(|e| {
+            // Only Cloud Spanner has DEBUG_TOKENLIST. It prints production's token lists, and
+            // spanbolt's follow the emulator's format, so there is nothing faithful to print.
+            if !self.opts.emulator_compat
+                && e.code == spanbolt_storage::Code::InvalidArgument
+                && e.message
+                    .strip_prefix("Function not found: ")
+                    .is_some_and(|r| {
+                        r.get(..15)
+                            .is_some_and(|n| n.eq_ignore_ascii_case("debug_tokenlist"))
+                    })
+            {
+                return crate::types::unimplemented("DEBUG_TOKENLIST");
+            }
+            e
+        })?;
         let mut planner = Planner::new(cat, self.opts);
         match stmt.node {
             Some(StmtNode::ResolvedQueryStmtNode(q)) => {

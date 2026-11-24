@@ -80,8 +80,12 @@ impl Engine {
     }
 
     pub fn catalog(&self, state: &DbState) -> Result<Arc<SqlCatalog>> {
-        self.cache
-            .get(&state.schema, &state.catalog, self.opts.extra_features())
+        self.cache.get(
+            &state.schema,
+            &state.catalog,
+            self.opts.extra_features(),
+            self.opts.emulator_compat,
+        )
     }
 
     /// Checks the property graph `name` of `schema` against its tables, as `CREATE PROPERTY GRAPH`
@@ -101,9 +105,12 @@ impl Engine {
             .retain(|o| !(o.kind == "PROPERTY GRAPH" && o.name.eq_ignore_ascii_case(name)));
         let others = Arc::new(others);
         let storage = Arc::new(spanbolt_storage::Catalog::build(&others)?);
-        let cat = self
-            .cache
-            .get(&others, &storage, self.opts.extra_features())?;
+        let cat = self.cache.get(
+            &others,
+            &storage,
+            self.opts.extra_features(),
+            self.opts.emulator_compat,
+        )?;
         crate::graph::analyse(&cat.gsql, &storage, &g.ddl).map(|_| ())
     }
 
@@ -221,6 +228,7 @@ impl Engine {
                     },
                     subplans: planner.subplans,
                     reads: planner.reads,
+                    reads_info_schema: planner.reads_info_schema,
                 })
             }
             Some(node) => {
@@ -234,6 +242,7 @@ impl Engine {
                     search: planner.search,
                     subplans: planner.subplans,
                     reads: planner.reads,
+                    reads_info_schema: planner.reads_info_schema,
                 })
             }
             None => Err(Error::internal("empty statement")),
@@ -342,7 +351,7 @@ impl Engine {
                 let state = rw.current_state()?;
                 let cat = self.catalog(&state)?;
                 let p = self.prepare(&cat, &st)?;
-                p.search.check_read_write()?;
+                p.check_read_write(self.opts.emulator_compat)?;
                 p.check_pending_reads(rw, &state.catalog, self.opts.emulator_compat)?;
                 let params = self.bind(&p, &st)?;
                 match &p.body {
@@ -480,7 +489,7 @@ impl Engine {
                 let state = rw.current_state()?;
                 let cat = self.catalog(&state)?;
                 let p = self.prepare(&cat, &st)?;
-                p.search.check_read_write()?;
+                p.check_read_write(self.opts.emulator_compat)?;
                 p.check_pending_reads(rw, &state.catalog, self.opts.emulator_compat)?;
                 let params = self.bind(&p, &st)?;
                 match &p.body {

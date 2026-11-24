@@ -24,6 +24,15 @@ pub(crate) fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
     {
         return Error::invalid_argument(format!("Incomplete query parameters {name}"));
     }
+    // Spanner and the emulator suggest no table for a table that isn't found.
+    if e.message.starts_with("Table not found: ")
+        && let Some(at) = e.message.find("; Did you mean ")
+        && let Some(q) = e.message[at..].find('?')
+    {
+        let mut message = e.message.clone();
+        message.replace_range(at..at + q + 1, "");
+        return Error::new(code, message);
+    }
     Error::new(code, e.message)
 }
 

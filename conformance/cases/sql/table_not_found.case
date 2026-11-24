@@ -1,0 +1,24 @@
+# An unknown table's error names no similar table, as GoogleSQL's suggestion would.
+tags: sql
+schema:
+  CREATE TABLE Items (
+    ItemId INT64 NOT NULL,
+  ) PRIMARY KEY (ItemId)
+
+case user_table_typo
+query:
+  SELECT * FROM Itemz
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: Itemz [at 1:15]
+expect@spanner:
+  same
+
+case info_table_typo
+query:
+  SELECT * FROM INFORMATION_SCHEMA.TABLEZ
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: INFORMATION_SCHEMA.TABLEZ [at 1:15]
+expect@spanner:
+  same

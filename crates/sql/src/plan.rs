@@ -170,6 +170,8 @@ pub struct Planner<'c> {
     graph_ref: Option<Planned>,
     /// The base-table columns each table scan reads.
     pub reads: Vec<crate::prepared::ScanRead>,
+    /// The statement reads an INFORMATION_SCHEMA table.
+    pub reads_info_schema: bool,
 }
 
 /// What Cloud Spanner checks about where search functions appear in a statement.
@@ -873,6 +875,7 @@ impl<'c> Planner<'c> {
             graph: None,
             graph_ref: None,
             reads: Vec::new(),
+            reads_info_schema: false,
         }
     }
 
@@ -1228,6 +1231,7 @@ impl<'c> Planner<'c> {
                 })
             }
             Relation::Info(it) => {
+                self.reads_info_schema = true;
                 let key = it
                     .columns
                     .iter()

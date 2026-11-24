@@ -1428,15 +1428,20 @@ fn opaque(kind: &str, name: &str, ddl: String, drop: bool) -> Statement {
 
 // ---- change streams (stored as opaque objects with canonical DDL) ----
 
+/// What a change stream tracks.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CsTarget {
+pub enum CsTarget {
+    /// No FOR clause (or `DROP FOR ALL`).
     None,
     All,
+    /// `FOR T, U(a, b), V()`: each table with its columns; `None` is the whole table, an empty
+    /// list its key columns only.
     Tables(Vec<(String, Option<Vec<String>>)>),
 }
 
+/// A change stream, parsed from its canonical `CREATE CHANGE STREAM` statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChangeStream {
+pub struct ChangeStream {
     pub name: String,
     pub target: CsTarget,
     pub options: Vec<(String, String)>,
@@ -1480,7 +1485,7 @@ impl ChangeStream {
     }
 
     /// Parses a canonical `CREATE CHANGE STREAM` statement.
-    pub(crate) fn parse(ddl: &str) -> R<ChangeStream> {
+    pub fn parse(ddl: &str) -> R<ChangeStream> {
         let mut p = Parser::new(ddl)?;
         p.expect_kw("CREATE")?;
         p.expect_kw("CHANGE")?;

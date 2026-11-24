@@ -24,6 +24,8 @@ pub struct Prepared {
     pub subplans: Vec<(String, std::sync::Arc<BoxOp>)>,
     /// The base-table columns the statement reads, for the pending commit timestamp check.
     pub reads: Vec<ScanRead>,
+    /// The statement reads an INFORMATION_SCHEMA table.
+    pub reads_info_schema: bool,
 }
 
 /// The columns one table scan reads, and the index it is forced through.
@@ -35,6 +37,17 @@ pub struct ScanRead {
 }
 
 impl Prepared {
+    /// Cloud Spanner reads INFORMATION_SCHEMA only outside read-write transactions; the emulator
+    /// reads it anywhere.
+    pub fn check_read_write(&self, emulator_compat: bool) -> spanbolt_storage::Result<()> {
+        if self.reads_info_schema && !emulator_compat {
+            return Err(spanbolt_storage::Error::invalid_argument(
+                "Unsupported concurrency mode in query using INFORMATION_SCHEMA.",
+            ));
+        }
+        self.search.check_read_write()
+    }
+
     /// Rejects the statement in a read-write transaction whose DML wrote, with
     /// `PENDING_COMMIT_TIMESTAMP()`, a column it reads (or the key of an index it is forced
     /// through, outside `--emulator-compat`).

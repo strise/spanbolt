@@ -64,14 +64,14 @@ pub(crate) const DEFAULTS: &str = "DEFAULT values";
 pub(crate) const GENERATED: &str = "Stored generated columns";
 pub(crate) const CHECKS: &str = "CHECK constraints on existing rows";
 
-/// Fills the DEFAULT and identity values of the `missing` columns of `row` (one value per column, in
-/// schema order), as a write that omits those columns stores them.
-pub fn fill_missing(
+/// Computes the `missing` columns of `row` (one value per column, in schema order) as a write that
+/// omits them stores them: DEFAULT and identity values, then the stored generated columns.
+pub fn compute_missing(
     tm: &TableMeta,
     row: &mut [Value],
     missing: &dyn Fn(usize) -> bool,
 ) -> Result<()> {
-    compute_row(tm, row, missing, &|_| false)
+    compute_row(tm, row, missing, &|_| true)
 }
 
 /// Fills the defaults of `missing` columns and recomputes the stored generated columns selected

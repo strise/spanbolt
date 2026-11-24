@@ -5,6 +5,15 @@ schema:
   CREATE TABLE U (
     Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
     Source STRING(MAX) NOT NULL,
+  ) PRIMARY KEY (Id);
+  CREATE TABLE G (
+    Src STRING(MAX) NOT NULL,
+    K STRING(MAX) NOT NULL AS (UPPER(Src)) STORED,
+  ) PRIMARY KEY (K);
+  CREATE TABLE V (
+    Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
+    Note STRING(MAX) DEFAULT ('fresh'),
+    N INT64,
   ) PRIMARY KEY (Id)
 
 case dml_insert_default_key_then_return
@@ -37,3 +46,24 @@ expect:
   columns: Source STRING
   ["x"]
   ["y"]
+
+case dml_insert_generated_key_then_return
+dml:
+  INSERT INTO G (Src) VALUES ('a'), ('b') THEN RETURN K, Src
+expect:
+  count: 2
+  columns: K STRING, Src STRING
+  ["A","a"]
+  ["B","b"]
+
+case dml_insert_or_update_keeps_omitted_columns
+dml:
+  INSERT INTO V (Id, Note, N) VALUES ('x', 'kept', 1)
+expect:
+  count: 1
+dml:
+  INSERT OR UPDATE INTO V (Id, N) VALUES ('x', 2) THEN RETURN Id, Note, N
+expect:
+  count: 1
+  columns: Id STRING, Note STRING, N INT64
+  ["x","kept","2"]

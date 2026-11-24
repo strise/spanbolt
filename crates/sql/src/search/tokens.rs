@@ -238,12 +238,28 @@ pub fn ngrams_of(s: &[u8], min: i64, max: i64, out: &mut Vec<Vec<u8>>) {
     }
 }
 
+/// Cloud Spanner's n-grams: character n-grams of every size in `min..=max`.
+pub fn char_ngrams_of(s: &str, min: i64, max: i64, out: &mut Vec<Vec<u8>>) {
+    let bounds: Vec<usize> = s.char_indices().map(|(i, _)| i).chain([s.len()]).collect();
+    let chars = bounds.len() - 1;
+    for n in min..=max {
+        let n = n as usize;
+        if n > chars {
+            break;
+        }
+        for i in 0..=chars - n {
+            out.push(s.as_bytes()[bounds[i]..bounds[i + n]].to_vec());
+        }
+    }
+}
+
 /// `int` truncation of an INT64 argument, as the emulator reads ngram sizes.
 fn as_int(v: i64) -> i64 {
     v as i32 as i64
 }
 
-/// `emulator` lower-cases the text like the emulator; Cloud Spanner keeps its case.
+/// `emulator` lower-cases the text and cuts byte n-grams like the emulator; Cloud Spanner keeps
+/// its case and cuts character n-grams.
 pub fn tokenize_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
     let max = as_int(int_arg(args, 1, 4));
     let min = as_int(int_arg(args, 2, 1));
@@ -258,7 +274,7 @@ pub fn tokenize_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
             if emulator {
                 ngrams_of(lower(s).as_bytes(), min, max, &mut toks.borrow_mut());
             } else {
-                ngrams_of(s.as_bytes(), min, max, &mut toks.borrow_mut());
+                char_ngrams_of(s, min, max, &mut toks.borrow_mut());
             }
             Ok(())
         },

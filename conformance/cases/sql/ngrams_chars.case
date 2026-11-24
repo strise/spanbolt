@@ -1,0 +1,117 @@
+# TOKENIZE_NGRAMS over non-ASCII text. Cloud Spanner cuts n-grams from characters; the emulator
+# cuts them from UTF-8 bytes (and lower-cases), so an n-gram of the query can match half of a
+# character in the emulator, and a query has more n-grams there than characters.
+tags: sql search
+schema:
+  CREATE TABLE N (
+    Id INT64 NOT NULL,
+    Name STRING(MAX),
+    Name_Tri TOKENLIST AS (TOKENIZE_NGRAMS(Name, ngram_size_min => 3, ngram_size_max => 3)) HIDDEN,
+    Name_Ngrams TOKENLIST AS (TOKENIZE_NGRAMS(Name)) HIDDEN,
+    Name_Bi TOKENLIST AS (TOKENIZE_NGRAMS(Name, ngram_size_min => 2, ngram_size_max => 2)) HIDDEN,
+    Name_Sub TOKENLIST AS (TOKENIZE_SUBSTRING(Name, ngram_size_min => 3, ngram_size_max => 3)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX NSearch ON N(Name_Tri, Name_Ngrams, Name_Bi, Name_Sub)
+insert N cols=Id,Name:
+  [1, "aØX"]
+  [2, "Ærø"]
+  [3, "Tromsø kommune"]
+  [4, "straße"]
+  [5, "ASCII only"]
+
+# A two-character query is one bigram in characters, one trigram in bytes.
+case trigram_half_character
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Tri, 'ØX') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  columns: Id INT64
+
+# 'Ærøx' has two character trigrams (one matches) and four byte trigrams (three match).
+case min_ngrams_counts_characters
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Tri, 'Ærøx', min_ngrams => 3) ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  columns: Id INT64
+
+case percent_counts_characters
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Bi, 'Tromsø', min_ngrams_percent => 100.0) ORDER BY Id
+expect:
+  columns: Id INT64
+  ["3"]
+expect@spanner:
+  same
+
+case typo_non_ascii
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Tri, 'Tromsö', min_ngrams => 1) ORDER BY Id
+expect:
+  columns: Id INT64
+  ["3"]
+expect@spanner:
+  same
+
+case single_character
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Ngrams, 'ß') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  same
+
+case score_non_ascii
+query:
+  SELECT Id, SCORE_NGRAMS(Name_Ngrams, 'Tromsø') AS s FROM N ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.0]
+  ["2",0.0]
+  ["3",0.38461538461538464]
+  ["4",0.0]
+  ["5",0.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["1",0.0]
+  ["2",0.0]
+  ["3",0.375]
+  ["4",0.0]
+  ["5",0.0]
+
+case score_tri_non_ascii
+query:
+  SELECT Id, SCORE_NGRAMS(Name_Tri, 'straße') AS s FROM N ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["1",0.0]
+  ["2",0.0]
+  ["3",0.0]
+  ["4",1.0]
+  ["5",0.0]
+expect@spanner:
+  same
+
+# SEARCH_NGRAMS over TOKENIZE_SUBSTRING cuts n-grams from the words of the value.
+case substring_half_character
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Sub, 'øx') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  columns: Id INT64
+
+case substring_min_ngrams_counts_characters
+query:
+  SELECT Id FROM N WHERE SEARCH_NGRAMS(Name_Sub, 'ærøx', min_ngrams => 3) ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  columns: Id INT64

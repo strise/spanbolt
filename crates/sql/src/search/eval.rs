@@ -839,17 +839,19 @@ pub fn search_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
                 _ => return Err(ret_check(70, "search_ngrams_evaluator.cc)")),
             }
             source_null = p[3] != b"0";
-            // Prod's TOKENIZE_NGRAMS keeps case, and so does the query over it.
-            let fold = emulator || substring;
             for w in split(q.as_bytes()) {
-                let n = (w.len() as i64).min(max);
-                if fold {
-                    qn.extend(ngrams(w, n, max));
-                } else {
-                    let mut out = Vec::new();
-                    tokens::ngrams_of(w, n, max, &mut out);
-                    qn.extend(out);
+                if emulator {
+                    qn.extend(ngrams(w, (w.len() as i64).min(max), max));
+                    continue;
                 }
+                // Prod cuts character n-grams, and over TOKENIZE_NGRAMS keeps the query's case
+                // as it keeps the value's.
+                let w = String::from_utf8_lossy(w);
+                let w = if substring { lower(&w) } else { w.into_owned() };
+                let mut out = Vec::new();
+                let n = (w.chars().count() as i64).min(max);
+                tokens::char_ngrams_of(&w, n, max, &mut out);
+                qn.extend(out);
             }
         } else if t == GAP {
             continue;
@@ -863,7 +865,11 @@ pub fn search_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
     }
     if substring {
         for w in words {
-            tokens::ngrams_of(w, min, max, &mut tl);
+            if emulator {
+                tokens::ngrams_of(w, min, max, &mut tl);
+            } else {
+                tokens::char_ngrams_of(&String::from_utf8_lossy(w), min, max, &mut tl);
+            }
         }
     }
     if source_null {
@@ -928,17 +934,22 @@ fn trigrams(pre: &str, text: &str, post: &str, out: &mut HashSet<[char; 3]>) {
     out.extend(c.windows(3).map(|w| [w[0], w[1], w[2]]));
 }
 
-/// The text of one TOKENIZE_NGRAMS value from its n-grams (smallest size first, in order).
+/// The text of one TOKENIZE_NGRAMS value from its character n-grams (smallest size first, in
+/// order): the first n-gram, then the last character of each next one of the same size.
 fn ngrams_text(grams: &[&[u8]], min: usize) -> String {
-    let mut text: Vec<u8> = Vec::new();
-    for g in grams.iter().take_while(|g| g.len() == min) {
+    let mut text = String::new();
+    for g in grams {
+        let g = String::from_utf8_lossy(g);
+        if g.chars().count() != min {
+            break;
+        }
         if text.is_empty() {
-            text.extend_from_slice(g);
-        } else if let Some(&b) = g.last() {
-            text.push(b);
+            text.push_str(&g);
+        } else if let Some(c) = g.chars().last() {
+            text.push(c);
         }
     }
-    String::from_utf8_lossy(&text).into_owned()
+    text
 }
 
 /// Cloud Spanner's SCORE_NGRAMS: the Jaccard index of character trigram sets of the whole query
@@ -1084,30 +1095,11 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
             .map(|m| (char_at[m.start()], char_at[m.end()]))
             .collect();
     }
-    let first = matches.first().map_or(0, |m| m.0);
-    let len = chars.len();
-    let mut end = len;
-    if end - first >= width {
-        // Cut at the width and drop the last word, which the cut may have split.
-        end = first + width - 1;
-        while end > first && alnum(end - 1) {
-            end -= 1;
-        }
-        while end > first && !alnum(end - 1) {
-            end -= 1;
-        }
-        if end == first {
-            end = first + width - 1;
-        }
-    }
-    let mut begin = 0usize;
-    if end > width {
-        begin = end - width;
-        while begin < end && alnum(begin) {
-            begin += 1;
-        }
-        while begin < end && !alnum(begin) {
-            begin += 1;
+    let (mut begin, mut end) = (0, chars.len());
+    if end >= width {
+        match width_cut(&chars, matches.first().copied(), width) {
+            Some(span) => (begin, end) = span,
+            None => return Ok(Value::Json(Arc::from("{\"snippets\":[]}"))),
         }
     }
     while end > begin && !alnum(end - 1) {
@@ -1130,6 +1122,58 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         "{{\"snippets\":[{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}]}}",
         highlights.join(",")
     ))))
+}
+
+/// The character span of a snippet cut from text wider than `width`. Cloud Spanner keeps words
+/// on both sides of the first match (of the first word without one): this grows the snippet a
+/// word at a time, left then right, while it stays within `width - 2` characters, and stops
+/// growing a side at the first word that doesn't fit. `None` when the match alone doesn't fit
+/// (prod returns no snippet). Fitted to recordings (`snippet_whitespace.case`,
+/// `snippet_width.case`): prod's rule isn't public, and near the end of the text it keeps more
+/// than this does.
+fn width_cut(
+    chars: &[char],
+    first_match: Option<(usize, usize)>,
+    width: usize,
+) -> Option<(usize, usize)> {
+    let mut words: Vec<(usize, usize)> = Vec::new();
+    let mut start = None;
+    for (i, c) in chars.iter().enumerate() {
+        match (c.is_alphanumeric(), start) {
+            (true, None) => start = Some(i),
+            (false, Some(s)) => {
+                words.push((s, i));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        words.push((s, chars.len()));
+    }
+    let limit = width.saturating_sub(2);
+    let (mut begin, mut end) = first_match.or_else(|| words.first().copied())?;
+    if end - begin > limit {
+        return None;
+    }
+    let (mut left, mut right) = (true, true);
+    while left || right {
+        if left {
+            // The last word that ends at or before `begin`.
+            match words.partition_point(|w| w.1 <= begin).checked_sub(1) {
+                Some(i) if end - words[i].0 <= limit => begin = words[i].0,
+                _ => left = false,
+            }
+        }
+        if right {
+            // The first word that starts at or after `end`.
+            match words.get(words.partition_point(|w| w.0 < end)) {
+                Some(w) if w.1 - begin <= limit => end = w.1,
+                _ => right = false,
+            }
+        }
+    }
+    Some((begin, end))
 }
 
 /// `text` trimmed, with each run of whitespace replaced by one space, and the source index of
@@ -1327,6 +1371,40 @@ mod tests {
             collapse_whitespace("  a \t b ", &src),
             ("a b".to_string(), vec![2, 3, 6])
         );
+    }
+
+    #[test]
+    fn snippet_prod_width_keeps_words_before_the_match() {
+        let text = "one two three four five six seven eight";
+        let cut = |q: &str, w: i64| {
+            let args = [s(text), s(q), Value::Null, Value::Null, Value::Int64(w)];
+            let Value::Json(j) = snippet(&args, false).unwrap() else {
+                panic!()
+            };
+            let v: serde_json::Value = serde_json::from_str(&j).unwrap();
+            v["snippets"][0]["snippet"].as_str().map(str::to_string)
+        };
+        // Recorded from Cloud Spanner (snippet_whitespace.case).
+        assert_eq!(cut("two", 12).as_deref(), Some("one two"));
+        assert_eq!(cut("four", 12).as_deref(), Some("three four"));
+        assert_eq!(cut("two", 16).as_deref(), Some("one two three"));
+        assert_eq!(cut("eight", 13).as_deref(), Some("seven eight"));
+        assert_eq!(cut("zzz", 14).as_deref(), Some("one two"));
+        // The match alone doesn't fit: no snippet.
+        assert_eq!(cut("three", 6), None);
+    }
+
+    #[test]
+    fn ngrams_prod_are_characters() {
+        let t =
+            tokens::tokenize_ngrams(&[s("Ærø"), Value::Int64(2), Value::Int64(2)], false).unwrap();
+        let Value::TokenList(ref b) = t else { panic!() };
+        let toks: Vec<&[u8]> = tokens::decode(b).unwrap();
+        assert_eq!(toks[1..], ["Ær".as_bytes(), "rø".as_bytes()]);
+        let search = |q: &str| search_ngrams(&[t.clone(), s(q)], false).unwrap();
+        assert_eq!(search("Ærø"), Value::Bool(true));
+        // One character bigram, and it isn't in the value.
+        assert_eq!(search("øX"), Value::Bool(false));
     }
 
     #[test]

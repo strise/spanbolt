@@ -960,7 +960,13 @@ impl<'a> Ctx<'a> {
                         }
                         self.t.wait(op).await.map(|_| ())
                     }
-                    Err(s) => Err(s),
+                    Err(s) => {
+                        // An empty name: the request itself failed, so there is no operation.
+                        if let Some(label) = step.opts.get("op") {
+                            self.ops.insert(label.clone(), String::new());
+                        }
+                        Err(s)
+                    }
                 };
                 Ok(res
                     .map(|()| Observation::default())
@@ -1012,7 +1018,9 @@ impl<'a> Ctx<'a> {
 
     /// `GetOperation` on an operation saved by `ddl op=NAME`. Observes `counts: [1]` when it is
     /// found and done (`[0]` when not done); the operation and database names in an error message
-    /// become `<op>` and `<db>`.
+    /// become `<op>` and `<db>`. With the `meta` flag it observes `counts: [done, failed,
+    /// statements, commit_timestamps]` from the `UpdateDatabaseDdlMetadata`, and `counts: [-1]`
+    /// when the `UpdateDatabaseDdl` request itself failed, so there is no operation.
     async fn get_operation(&mut self, step: &Step) -> Result<Result<Observation, Status>, String> {
         let label = &step.opts["op"];
         let name = self
@@ -1020,10 +1028,40 @@ impl<'a> Ctx<'a> {
             .get(label)
             .ok_or_else(|| format!("unknown saved operation `{label}`"))?
             .clone();
+        let meta = step.has_flag("meta");
+        if name.is_empty() {
+            if !meta {
+                return Err(format!("the request behind operation `{label}` failed"));
+            }
+            return Ok(Ok(Observation {
+                counts: Some(vec![-1]),
+                ..Default::default()
+            }));
+        }
         let res = OperationsClient::new(self.t.chan())
             .get_operation(lro::GetOperationRequest { name: name.clone() })
             .await;
         Ok(match res {
+            Ok(op) if meta => {
+                let op = op.into_inner();
+                let md = op
+                    .metadata
+                    .as_ref()
+                    .map(|m| <da::UpdateDatabaseDdlMetadata as prost::Message>::decode(&*m.value))
+                    .transpose()
+                    .map_err(|e| format!("operation `{label}`: bad metadata: {e}"))?
+                    .unwrap_or_default();
+                let failed = matches!(op.result, Some(lro::operation::Result::Error(_)));
+                Ok(Observation {
+                    counts: Some(vec![
+                        i64::from(op.done),
+                        i64::from(failed),
+                        md.statements.len() as i64,
+                        md.commit_timestamps.len() as i64,
+                    ]),
+                    ..Default::default()
+                })
+            }
             Ok(op) => Ok(Observation {
                 counts: Some(vec![i64::from(op.get_ref().done)]),
                 ..Default::default()

@@ -1413,6 +1413,7 @@ version = "0.2.1"
 dependencies = [
  "base64 0.23.1",
  "clap",
+ "prost",
  "prost-types",
  "regex",
  "serde_json",

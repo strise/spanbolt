@@ -122,8 +122,9 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 | `begin [txn=NAME] [ro] [bound=]` | – | `BeginTransaction` (read-write unless `ro`). |
 | `commit [txn=NAME] [save=TS]` | – | Commits buffered mutations. |
 | `rollback [txn=NAME]` | – | |
-| `ddl:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation. `<dbid>` stands for the case database's id, in the statements and in the error message (`ALTER DATABASE \`<dbid>\` SET OPTIONS (...)`). |
+| `ddl [op=NAME]:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation (`op=` saves its name). `<dbid>` stands for the case database's id, in the statements and in the error message (`ALTER DATABASE \`<dbid>\` SET OPTIONS (...)`). |
 | `get_ddl` | – | `GetDatabaseDdl`; expects `statements:`. |
+| `get_operation op=NAME [meta]` | – | `GetOperation` on the operation saved by `ddl op=NAME`; expects `counts: [1]` (done). With `meta`: `counts: [done, failed, statements, commit_timestamps]` from its `UpdateDatabaseDdlMetadata`, or `[-1]` when the `UpdateDatabaseDdl` request itself failed. |
 | `get_database` | – | `GetDatabase`; expects the database's `version_retention_period` as a one-row result. |
 | `list_sessions [create=K] [page_size=N]` | – | Creates K sessions, then pages through `ListSessions`; expects `counts:` (sessions per page). |
 | `create_session session=S [multiplexed]` | – | `CreateSession`, saving the name under `S`. |

@@ -45,8 +45,9 @@ fn to_proto(entry: &DatabaseEntry, emulator_compat: bool) -> da::Database {
 #[derive(Debug)]
 pub enum DdlFailure {
     /// The statement is invalid against the schema. The emulator fails the whole request
-    /// synchronously and applies nothing.
-    Schema(Status),
+    /// synchronously and applies nothing; Cloud Spanner commits the statements before it and
+    /// reports this one in the operation's error.
+    Schema(usize, Status),
     /// The schema change is valid but the existing rows violate it (a unique index over duplicates,
     /// a CHECK the rows fail). The emulator commits the statements before it and reports this one
     /// in the operation's error.
@@ -56,7 +57,7 @@ pub enum DdlFailure {
 impl DdlFailure {
     pub fn into_status(self) -> Status {
         match self {
-            DdlFailure::Schema(s) | DdlFailure::Data(_, s) => s,
+            DdlFailure::Schema(_, s) | DdlFailure::Data(_, s) => s,
         }
     }
 }
@@ -74,9 +75,9 @@ pub fn apply_ddl(
     let mut schema = (*state.schema).clone();
     // With rows, each statement's schema and checks, for the data phase.
     let mut steps: Vec<(Schema, Vec<DataCheck>)> = Vec::new();
-    for sql in statements {
-        let checks =
-            apply_schema(&mut schema, sql, !state.prod_messages).map_err(DdlFailure::Schema)?;
+    for (i, sql) in statements.iter().enumerate() {
+        let checks = apply_schema(&mut schema, sql, !state.prod_messages)
+            .map_err(|e| DdlFailure::Schema(i, e))?;
         if has_rows {
             steps.push((schema.clone(), checks));
         }
@@ -84,7 +85,7 @@ pub fn apply_ddl(
     if !has_rows {
         return state
             .with_schema_at(schema, now)
-            .map_err(|e| DdlFailure::Schema(to_status(e)));
+            .map_err(|e| DdlFailure::Schema(0, to_status(e)));
     }
     let mut migrated = state.clone();
     for (i, (schema, checks)) in steps.into_iter().enumerate() {
@@ -347,37 +348,56 @@ impl DatabaseAdmin for DatabaseAdminService {
                 "Operation already exists: {op_name}"
             )));
         }
-        // Like the emulator: an invalid statement fails the request and applies nothing; rows that
-        // violate a statement fail the operation, keeping the statements before it.
+        // Cloud Spanner rejects the request when a statement doesn't parse. Past that, a statement
+        // that is invalid against the schema, or whose rows violate it, fails the operation and
+        // keeps the statements before it. The emulator (`--emulator-compat`) fails the request
+        // and applies nothing for an invalid statement, and keeps the statements before one the
+        // rows violate. UNIMPLEMENTED always fails the request.
+        let compat = self.emu.emulator_compat;
+        if !compat {
+            for sql in &req.statements {
+                spanbolt_ddl::parse_statement(sql).map_err(|e| to_status(e.into()))?;
+            }
+        }
         let mut schema_error: Option<Status> = None;
-        let mut data_error: Option<(usize, Status)> = None;
+        let mut op_error: Option<(usize, Status)> = None;
         let now = self.emu.clock.now();
         let result = entry.db.update_state(|s| {
-            let failure = match apply_ddl(s, &req.statements, now) {
+            let (mut keep, mut status) = match apply_ddl(s, &req.statements, now) {
                 Ok(next) => return Ok((next, req.statements.join("; "))),
-                Err(f) => f,
-            };
-            let (status, keep) = match failure {
-                DdlFailure::Schema(e) => {
+                Err(DdlFailure::Schema(_, e))
+                    if compat || e.code() == tonic::Code::Unimplemented =>
+                {
                     let err = spanbolt_storage::Error::new(code_of(&e), e.message());
                     schema_error = Some(e);
                     return Err(err);
                 }
-                DdlFailure::Data(i, e) => (e, i),
+                Err(DdlFailure::Schema(i, e) | DdlFailure::Data(i, e)) => (i, e),
+            };
+            // The statements before the failing one. A schema failure is found before the rows
+            // are checked, so they can still fail on the rows of an earlier statement: then that
+            // one is the error, and fewer statements are kept.
+            let next = loop {
+                if keep == 0 {
+                    break None;
+                }
+                match apply_ddl(s, &req.statements[..keep], now) {
+                    Ok(next) => break Some(next),
+                    Err(DdlFailure::Schema(i, e) | DdlFailure::Data(i, e)) => {
+                        keep = i;
+                        status = e;
+                    }
+                }
             };
             let err = spanbolt_storage::Error::new(code_of(&status), status.message());
-            data_error = Some((keep, status));
-            if keep == 0 {
-                return Err(err);
-            }
-            apply_ddl(s, &req.statements[..keep], now)
-                .map(|next| (next, req.statements[..keep].join("; ")))
-                .map_err(|_| err)
+            op_error = Some((keep, status));
+            next.map(|next| (next, req.statements[..keep].join("; ")))
+                .ok_or(err)
         });
         if let Some(e) = schema_error {
             return Err(e);
         }
-        let committed = match (&result, &data_error) {
+        let committed = match (&result, &op_error) {
             (Ok(_), Some((keep, _))) => *keep,
             (Ok(_), None) => req.statements.len(),
             (Err(_), Some(_)) => 0,
@@ -393,7 +413,7 @@ impl DatabaseAdmin for DatabaseAdminService {
             ..Default::default()
         };
         let meta = any(&format!("{TYPE_PREFIX}UpdateDatabaseDdlMetadata"), &meta);
-        let op = match data_error {
+        let op = match op_error {
             Some((_, e)) => failed(op_name, meta, &e),
             None => done(
                 op_name,

@@ -37,7 +37,8 @@ It also adds what the emulator lacks:
 - **Production behaviour by default.** Where the emulator and production Spanner disagree and we
   have recorded production's answer (full-text search, `NULL_FILTERED` indexes, window functions,
   filtered indexes, reading a field of a returned `ARRAY<STRUCT>` subquery, INFORMATION_SCHEMA's
-  views and columns), spanbolt follows production. `--emulator-compat` restores the emulator's behaviour.
+  views and columns, a DDL batch that fails midway keeping the statements before the failing one),
+  spanbolt follows production. `--emulator-compat` restores the emulator's behaviour.
 
 The extra features live in a small `spanbolt.v1.Control` gRPC service
 (`crates/proto/proto/spanbolt/v1/control.proto`).

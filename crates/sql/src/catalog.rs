@@ -55,7 +55,19 @@ pub struct SqlCatalog {
     pub misses: std::sync::atomic::AtomicU64,
 }
 
+fn view_of(r: Option<&Relation>) -> Option<Arc<ViewDef>> {
+    match r? {
+        Relation::View(v) => Some(v.clone()),
+        _ => None,
+    }
+}
+
 impl SqlCatalog {
+    /// The view `full_name` names, if it names one.
+    pub fn view(&self, full_name: &str) -> Option<Arc<ViewDef>> {
+        view_of(self.relation(full_name))
+    }
+
     pub fn relation(&self, full_name: &str) -> Option<&Relation> {
         self.relations.get(&full_name.to_ascii_lowercase())
     }
@@ -417,13 +429,14 @@ pub fn build(
         pending = next;
     }
     let mut graphs = HashMap::new();
+    let views = |name: &str| view_of(b.relations.get(&name.to_ascii_lowercase()));
     for g in schema.opaque.iter().filter(|o| o.kind == "PROPERTY GRAPH") {
         // A graph the current tables no longer support is left out; DDL rejects creating one.
-        let Ok(def) = crate::graph::analyse(&gsql, &storage, &g.ddl) else {
+        let Ok(def) = crate::graph::analyse(&gsql, &storage, &views, &g.ddl) else {
             continue;
         };
         if gsql
-            .add_property_graph(&crate::graph::shim_json(&def, &storage))
+            .add_property_graph(&crate::graph::shim_json(&def))
             .is_ok()
         {
             graphs.insert(def.name.to_ascii_lowercase(), Arc::new(def));

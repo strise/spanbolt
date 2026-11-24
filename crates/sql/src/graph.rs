@@ -11,8 +11,11 @@ use googlesql_sys::proto::{
     ResolvedGraphNodeTableReferenceProto,
 };
 use serde_json::{Value as Json, json};
+use std::sync::Arc;
+
 use spanbolt_storage::{Catalog as StorageCatalog, Error, Result, TableId};
 
+use crate::catalog::ViewDef;
 use crate::types::{self, Type, unimplemented};
 
 pub struct GraphDef {
@@ -37,16 +40,26 @@ pub struct ElementTable {
     /// The element table's name: its alias, or the base table's name.
     pub name: String,
     pub table: String,
-    pub table_id: TableId,
-    /// Key columns, as positions in the base table.
+    /// What the element table reads: a stored table or a view.
+    pub input: ElementInput,
+    /// The input's column names, by position.
+    pub columns: Vec<String>,
+    /// Key columns, as positions in the input's row.
     pub key: Vec<usize>,
     pub labels: Vec<String>,
     pub properties: Vec<PropertyDef>,
-    /// Column ids of the definition's table scan, by base table position (-1 if unused), so
-    /// property expressions compile against a base table row.
+    /// Column ids of the definition's table scan, by input position (-1 if unused), so
+    /// property expressions compile against an input row.
     pub layout: Vec<i64>,
     pub source: Option<NodeRef>,
     pub destination: Option<NodeRef>,
+}
+
+#[derive(Clone)]
+pub enum ElementInput {
+    Table(TableId),
+    /// The view's rows, computed by its analysed query. Its columns are the query's output.
+    View(Arc<ViewDef>),
 }
 
 pub struct PropertyDef {
@@ -100,24 +113,25 @@ fn column_name(e: &AnyResolvedExprProto) -> Result<&str> {
     }
 }
 
-fn positions(
-    storage: &StorageCatalog,
-    table: TableId,
-    exprs: &[AnyResolvedExprProto],
-) -> Result<Vec<usize>> {
-    let tm = storage.table(table);
+fn positions(et: &ElementTable, exprs: &[AnyResolvedExprProto]) -> Result<Vec<usize>> {
     exprs
         .iter()
         .map(|e| {
             let name = column_name(e)?;
-            tm.column(name)
-                .ok_or_else(|| Error::internal(format!("column {name} not in {}", tm.name)))
+            et.columns
+                .iter()
+                .position(|c| c.eq_ignore_ascii_case(name))
+                .ok_or_else(|| Error::internal(format!("column {name} not in {}", et.table)))
         })
         .collect()
 }
 
+/// Finds the view a catalog name refers to, if it names one.
+pub type ViewLookup<'v> = dyn Fn(&str) -> Option<Arc<ViewDef>> + 'v;
+
 fn element_table(
     storage: &StorageCatalog,
+    views: &ViewLookup,
     t: &ResolvedGraphElementTableProto,
 ) -> Result<ElementTable> {
     if t.dynamic_label.is_some() || t.dynamic_properties.is_some() {
@@ -133,13 +147,29 @@ fn element_table(
         .and_then(|t| t.full_name.clone().or_else(|| t.name.clone()))
         .ok_or_else(|| Error::internal("graph element table without a table"))?;
     // The analyser has resolved the name, so a scan that isn't a stored table reads a view.
-    let table_id = storage.table_id(&table).ok_or_else(|| {
-        unimplemented(format!(
-            "Property graph element tables over views ({table})"
-        ))
-    })?;
-    let width = storage.table(table_id).columns.len();
-    let mut layout = vec![-1; width];
+    let (input, columns) = match storage.table_id(&table) {
+        Some(id) => (
+            ElementInput::Table(id),
+            storage
+                .table(id)
+                .columns
+                .iter()
+                .map(|c| c.name.clone())
+                .collect::<Vec<_>>(),
+        ),
+        None => {
+            let v = views(&table)
+                .ok_or_else(|| Error::internal(format!("graph element table {table} not found")))?;
+            let cols = v
+                .query
+                .output_column_list
+                .iter()
+                .map(|o| o.name.clone().unwrap_or_default())
+                .collect();
+            (ElementInput::View(v), cols)
+        }
+    };
+    let mut layout = vec![-1; columns.len()];
     let cols = scan
         .parent
         .as_ref()
@@ -164,23 +194,25 @@ fn element_table(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(ElementTable {
+    let mut et = ElementTable {
         name: t.alias.clone().unwrap_or_else(|| table.clone()),
-        key: positions(storage, table_id, &t.key_list)?,
+        key: Vec::new(),
         table,
-        table_id,
+        input,
+        columns,
         labels: t.label_name_list.clone(),
         properties,
         layout,
         source: None,
         destination: None,
-    })
+    };
+    et.key = positions(&et, &t.key_list)?;
+    Ok(et)
 }
 
 fn node_ref(
-    storage: &StorageCatalog,
     nodes: &[ElementTable],
-    edge: TableId,
+    edge: &ElementTable,
     r: &ResolvedGraphNodeTableReferenceProto,
 ) -> Result<NodeRef> {
     let name = r.node_table_identifier.as_deref().unwrap_or("");
@@ -190,13 +222,14 @@ fn node_ref(
         .ok_or_else(|| Error::internal(format!("node table {name} not found")))?;
     Ok(NodeRef {
         node,
-        edge_columns: positions(storage, edge, &r.edge_table_column_list)?,
-        node_columns: positions(storage, nodes[node].table_id, &r.node_table_column_list)?,
+        edge_columns: positions(edge, &r.edge_table_column_list)?,
+        node_columns: positions(&nodes[node], &r.node_table_column_list)?,
     })
 }
 
 fn from_stmt(
     storage: &StorageCatalog,
+    views: &ViewLookup,
     s: &ResolvedCreatePropertyGraphStmtProto,
 ) -> Result<GraphDef> {
     let name = s
@@ -208,16 +241,16 @@ fn from_stmt(
     let nodes = s
         .node_table_list
         .iter()
-        .map(|t| element_table(storage, t))
+        .map(|t| element_table(storage, views, t))
         .collect::<Result<Vec<_>>>()?;
     let mut edges = Vec::new();
     for t in &s.edge_table_list {
-        let mut e = element_table(storage, t)?;
+        let mut e = element_table(storage, views, t)?;
         let (Some(src), Some(dst)) = (&t.source_node_reference, &t.dest_node_reference) else {
             return Err(Error::internal("edge table without node references"));
         };
-        e.source = Some(node_ref(storage, &nodes, e.table_id, src)?);
-        e.destination = Some(node_ref(storage, &nodes, e.table_id, dst)?);
+        e.source = Some(node_ref(&nodes, &e, src)?);
+        e.destination = Some(node_ref(&nodes, &e, dst)?);
         edges.push(e);
     }
     let properties = s
@@ -251,10 +284,11 @@ fn from_stmt(
     })
 }
 
-/// Analyses a `CREATE PROPERTY GRAPH` statement against the catalog's tables.
+/// Analyses a `CREATE PROPERTY GRAPH` statement against the catalog's tables and views.
 pub fn analyse(
     gsql: &googlesql_sys::Catalog,
     storage: &StorageCatalog,
+    views: &ViewLookup,
     ddl: &str,
 ) -> Result<GraphDef> {
     let stmt = gsql
@@ -262,7 +296,9 @@ pub fn analyse(
         .map_err(crate::analyze::map_error)?;
     match stmt.node {
         Some(StmtNode::ResolvedCreateStatementNode(c)) => match c.node {
-            Some(CreateNode::ResolvedCreatePropertyGraphStmtNode(s)) => from_stmt(storage, &s),
+            Some(CreateNode::ResolvedCreatePropertyGraphStmtNode(s)) => {
+                from_stmt(storage, views, &s)
+            }
             _ => Err(Error::internal("not a CREATE PROPERTY GRAPH statement")),
         },
         _ => Err(Error::internal("not a CREATE PROPERTY GRAPH statement")),
@@ -270,14 +306,16 @@ pub fn analyse(
 }
 
 /// The graph JSON of `gsql_catalog_add_property_graph`.
-pub fn shim_json(g: &GraphDef, storage: &StorageCatalog) -> String {
-    let col = |t: TableId, i: usize| storage.table(t).columns[i].name.clone();
-    let cols = |t: TableId, is: &[usize]| is.iter().map(|&i| col(t, i)).collect::<Vec<_>>();
+fn cols(e: &ElementTable, is: &[usize]) -> Vec<String> {
+    is.iter().map(|&i| e.columns[i].clone()).collect()
+}
+
+pub fn shim_json(g: &GraphDef) -> String {
     let element = |e: &ElementTable| {
         let mut v = json!({
             "name": e.name,
             "table": e.table,
-            "key": cols(e.table_id, &e.key),
+            "key": cols(e, &e.key),
             "labels": e.labels,
             "properties": e.properties.iter()
                 .map(|p| json!({"name": p.name, "sql": p.sql}))
@@ -286,8 +324,8 @@ pub fn shim_json(g: &GraphDef, storage: &StorageCatalog) -> String {
         let reference = |r: &NodeRef| {
             json!({
                 "node": g.nodes[r.node].name,
-                "edge_columns": cols(e.table_id, &r.edge_columns),
-                "node_columns": cols(g.nodes[r.node].table_id, &r.node_columns),
+                "edge_columns": cols(e, &r.edge_columns),
+                "node_columns": cols(&g.nodes[r.node], &r.node_columns),
             })
         };
         if let (Some(s), Some(d)) = (&e.source, &e.destination) {
@@ -319,9 +357,7 @@ fn by_name(mut v: Vec<Json>) -> Vec<Json> {
     v
 }
 
-pub fn metadata_json(g: &GraphDef, storage: &StorageCatalog) -> Json {
-    let col = |t: TableId, i: usize| storage.table(t).columns[i].name.clone();
-    let cols = |t: TableId, is: &[usize]| is.iter().map(|&i| col(t, i)).collect::<Vec<_>>();
+pub fn metadata_json(g: &GraphDef) -> Json {
     let element = |e: &ElementTable, kind: &str| {
         let mut v = json!({
             "name": e.name,
@@ -329,7 +365,7 @@ pub fn metadata_json(g: &GraphDef, storage: &StorageCatalog) -> Json {
             "baseCatalogName": "",
             "baseSchemaName": "",
             "baseTableName": e.table,
-            "keyColumns": cols(e.table_id, &e.key),
+            "keyColumns": cols(e, &e.key),
             "labelNames": e.labels,
             "propertyDefinitions": e.properties.iter()
                 .map(|p| json!({
@@ -341,8 +377,8 @@ pub fn metadata_json(g: &GraphDef, storage: &StorageCatalog) -> Json {
         let reference = |r: &NodeRef| {
             json!({
                 "nodeTableName": g.nodes[r.node].name,
-                "edgeTableColumns": cols(e.table_id, &r.edge_columns),
-                "nodeTableColumns": cols(g.nodes[r.node].table_id, &r.node_columns),
+                "edgeTableColumns": cols(e, &r.edge_columns),
+                "nodeTableColumns": cols(&g.nodes[r.node], &r.node_columns),
             })
         };
         if let (Some(s), Some(d)) = (&e.source, &e.destination) {

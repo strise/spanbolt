@@ -198,3 +198,32 @@ query:
   SELECT PROPERTY_GRAPH_NAME FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS
 expect:
   columns: PROPERTY_GRAPH_NAME STRING
+
+# The emulator returns quantified_path's and optional_match's rows in a different order from run to
+# run (they have no ORDER BY, so they compare as multisets, but re-recording reorders them). These
+# variants order the rows in SQL around GRAPH_TABLE, as the emulator ignores some GQL ORDER BYs.
+case quantified_path_ordered
+query:
+  SELECT top, hops FROM GRAPH_TABLE(Ownership
+    MATCH (c:Company WHERE c.Id = 'c1')<-[e:Owns]-{1,3}(top)
+    COLUMNS (top.Id AS top, ARRAY_LENGTH(e) AS hops))
+  ORDER BY top, hops
+expect:
+  columns: top STRING, hops INT64
+  ["c2","1"]
+  ["c3","2"]
+  ["c4","1"]
+  ["p1","1"]
+  ["p2","3"]
+
+case optional_match_ordered
+query:
+  SELECT company, owner FROM GRAPH_TABLE(Ownership
+    MATCH (c:Company WHERE c.Id IN ('c3', 'c4'))
+    OPTIONAL MATCH (c)<-[:Owns]-(x)
+    RETURN c.Id AS company, x.Id AS owner)
+  ORDER BY company
+expect:
+  columns: company STRING, owner STRING
+  ["c3","p2"]
+  ["c4",null]

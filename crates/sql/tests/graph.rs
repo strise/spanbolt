@@ -540,6 +540,92 @@ fn graph_table_in_sql() {
     );
 }
 
+/// Element tables over views (the graph-with-views how-to): views as node and edge tables, mixed
+/// with a base table, with columns in another order than the base table and a computed column.
+fn graph_over_views() -> Db {
+    let mut ddl = TABLES.to_vec();
+    ddl.extend([
+        "CREATE VIEW active_company SQL SECURITY INVOKER AS
+           SELECT c.name AS name, c.id AS id, UPPER(c.country) AS country FROM eg_company c WHERE NOT c.is_bankrupt",
+        "CREATE VIEW active_owns SQL SECURITY INVOKER AS
+           SELECT o.id, o.src_id, o.dst_id, o.share_percentage FROM eg_owns o WHERE o.is_active",
+        "CREATE PROPERTY GRAPH g
+           NODE TABLES (
+             active_company KEY (id) LABEL Company PROPERTIES (id, name, country),
+             eg_person KEY (id) LABEL Person PROPERTIES (id, name)
+           )
+           EDGE TABLES (
+             active_owns AS owns_company KEY (id) SOURCE KEY (src_id) REFERENCES active_company (id) DESTINATION KEY (dst_id) REFERENCES active_company (id) LABEL OWNS PROPERTIES (id, share_percentage AS share),
+             active_owns AS owns_person KEY (id) SOURCE KEY (src_id) REFERENCES eg_person (id) DESTINATION KEY (dst_id) REFERENCES active_company (id) LABEL OWNS PROPERTIES (id, share_percentage AS share)
+           )",
+    ]);
+    open(
+        &ddl,
+        &ROWS.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+    )
+}
+
+#[test]
+fn graph_over_views_scans_and_seeks_the_views() {
+    let db = graph_over_views();
+    // c4 is bankrupt, so not a node; o5 is inactive, o6 starts at c4 and o9 dangles.
+    assert_eq!(
+        db.rows("GRAPH g MATCH (c:Company) RETURN c.id, c.name, c.country"),
+        strs(&[
+            &["c1", "Nordvik Eiendom AS", "NO"],
+            &["c2", "Holding AS", "NO"],
+            &["c3", "Top Invest AS", "NO"],
+            &["c5", "Neighbour AS", "NO"],
+        ])
+    );
+    assert_eq!(
+        db.rows("GRAPH g MATCH (a)-[o:OWNS]->(b) RETURN a.id AS a, o.id AS o, o.share AS share, b.id AS b"),
+        strs(&[
+            &["c2", "o1", "60", "c1"],
+            &["c3", "o3", "100", "c2"],
+            &["p1", "o2", "40", "c1"],
+            &["p2", "o4", "100", "c3"],
+        ])
+    );
+    // Anchored on a view node by key, then walked both ways through view edges.
+    assert_eq!(
+        db.rows(
+            "GRAPH g MATCH (c:Company WHERE c.id = 'c2')-[o:OWNS]-(x) RETURN x.id AS x, o.id AS o"
+        ),
+        strs(&[&["c1", "o1"], &["c3", "o3"]])
+    );
+    assert_eq!(
+        db.rows(
+            "GRAPH g MATCH (c:Company WHERE c.id = 'c1')<-[e:OWNS]-{1,3}(top) RETURN top.id AS top, ARRAY_LENGTH(e) AS hops"
+        ),
+        strs(&[&["c2", "1"], &["c3", "2"], &["p1", "1"], &["p2", "3"]])
+    );
+    assert_eq!(
+        db.query("GRAPH g MATCH (p:Person) RETURN p.id AS id ORDER BY id"),
+        strs(&[&["p1"], &["p2"]])
+    );
+}
+
+#[test]
+fn graph_over_views_reads_the_snapshot_and_reports_the_view() {
+    let db = graph_over_views();
+    let m = &db
+        .query("SELECT PROPERTY_GRAPH_METADATA_JSON FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS")[0][0];
+    let m: serde_json::Value = serde_json::from_str(m).expect("json");
+    let nodes = m["nodeTables"].as_array().expect("nodes");
+    assert!(
+        nodes.iter().any(|n| n["baseTableName"] == "active_company"
+            && n["keyColumns"] == serde_json::json!(["id"])),
+        "{m}"
+    );
+    assert_eq!(
+        db.query(
+            "SELECT owner FROM GRAPH_TABLE(g MATCH (a)-[o:OWNS]->(b:Company WHERE b.name = 'Nordvik Eiendom AS') COLUMNS (a.id AS owner)) ORDER BY owner"
+        ),
+        strs(&[&["c2"], &["p1"]])
+    );
+}
+
 #[test]
 fn analyze_plan_of_a_graph_query() {
     let db = entity_graph();

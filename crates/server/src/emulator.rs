@@ -378,6 +378,40 @@ impl Emulator {
         Ok(entry)
     }
 
+    /// Creates the database `name` (`projects/P/instances/I/databases/D`) with an empty schema,
+    /// and its instance first if needed, as `--database` does at startup. Returns whether the
+    /// instance and the database were created; existing ones (from a snapshot) are kept.
+    pub fn ensure_database(&self, name: &str) -> Result<(bool, bool), Status> {
+        let dn = names::database_name(name)?;
+        let (project, instance_id) = names::instance_from_name(dn.instance)?;
+        names::validate_instance_id(instance_id)?;
+        names::validate_database_id(dn.id)?;
+        let created_instance = if self.instance(dn.instance).is_ok() {
+            false
+        } else {
+            let now = self.clock.now();
+            let meta = InstanceMeta {
+                config: format!("projects/{project}/instanceConfigs/{EMULATOR_CONFIG}"),
+                display_name: instance_id.to_string(),
+                node_count: 1,
+                processing_units: 1000,
+                labels: BTreeMap::new(),
+                create_time: now,
+                update_time: now,
+            };
+            match self.create_instance(dn.instance.to_string(), meta) {
+                Ok(_) => true,
+                Err(e) if e.code() == tonic::Code::AlreadyExists => false,
+                Err(e) => return Err(e),
+            }
+        };
+        match self.add_database(name, || self.new_database(Schema::default())) {
+            Ok(_) => Ok((created_instance, true)),
+            Err(e) if e.code() == tonic::Code::AlreadyExists => Ok((created_instance, false)),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn drop_database(&self, name: &str) -> Result<(), Status> {
         let dn = names::database_name(name)?;
         let inst = self.instance(dn.instance)?;

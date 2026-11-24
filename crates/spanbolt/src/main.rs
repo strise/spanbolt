@@ -47,6 +47,11 @@ struct ServeArgs {
     /// index, SCORE without SEARCH, its SNIPPET JSON).
     #[arg(long)]
     emulator_compat: bool,
+    /// Databases to create at startup, as `projects/P/instances/I/databases/D` (repeat the flag or
+    /// separate with commas), each with an empty schema and its instance if missing. Ones that
+    /// already exist, from `--snapshot`, are kept.
+    #[arg(long = "database", env = "SPANBOLT_DATABASES", value_delimiter = ',')]
+    databases: Vec<String>,
 }
 
 #[derive(Args)]
@@ -154,6 +159,27 @@ async fn serve(args: ServeArgs, started: Instant) -> std::process::ExitCode {
                     path.display(),
                     e.message
                 );
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+    }
+    for name in args
+        .databases
+        .iter()
+        .map(|d| d.trim())
+        .filter(|d| !d.is_empty())
+    {
+        match emu.ensure_database(name) {
+            Ok((instance, database)) => {
+                let what = match (instance, database) {
+                    (true, _) => "created with its instance",
+                    (false, true) => "created",
+                    (false, false) => "already exists",
+                };
+                eprintln!("spanbolt: database {name} {what}");
+            }
+            Err(e) => {
+                eprintln!("spanbolt: cannot create database {name}: {}", e.message());
                 return std::process::ExitCode::FAILURE;
             }
         }

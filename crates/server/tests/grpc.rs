@@ -1209,3 +1209,50 @@ async fn approximate_last_use_time_moves_with_use() {
     emu.idle.advance(30 * MIN);
     assert_eq!(listed(&mut sp).await.approximate_last_use_time, at(0));
 }
+
+#[tokio::test]
+async fn startup_databases_create_their_instance_once() {
+    let emu = Arc::new(Emulator::default());
+    let name = "projects/p/instances/startup/databases/app";
+    assert_eq!(emu.ensure_database(name).ok(), Some((true, true)));
+    assert_eq!(
+        emu.ensure_database("projects/p/instances/startup/databases/other")
+            .ok(),
+        Some((false, true))
+    );
+    assert_eq!(emu.ensure_database(name).ok(), Some((false, false)));
+    for bad in [
+        "projects/p/instances/startup",
+        "projects/p/instances/Bad_Instance/databases/app",
+        "projects/p/instances/startup/databases/9db",
+    ] {
+        assert_eq!(
+            emu.ensure_database(bad).err().map(|e| e.code()),
+            Some(tonic::Code::InvalidArgument),
+            "{bad}"
+        );
+    }
+    let server = spanbolt_server::spawn("127.0.0.1:0", emu)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let channel = Channel::from_shared(format!("http://{}", server.addr))
+        .unwrap_or_else(|e| panic!("{e}"))
+        .connect()
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let inst = InstanceAdminClient::new(channel.clone())
+        .get_instance(ia::GetInstanceRequest {
+            name: "projects/p/instances/startup".into(),
+            field_mask: None,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert_eq!(inst.config, "projects/p/instanceConfigs/emulator-config");
+    let db = DatabaseAdminClient::new(channel)
+        .get_database(da::GetDatabaseRequest { name: name.into() })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert_eq!(db.version_retention_period, "1h");
+}

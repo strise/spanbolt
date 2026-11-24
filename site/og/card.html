@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- Source for the link preview images. Render with scripts/render-og.sh:
+     ?w=1200&h=630 → site/og.png (og:image), ?w=1280&h=640 → site/og/github-social.png (repo social preview). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>spanbolt preview card</title>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root { --ink: #121210; --paper: #ece8dc; --dim: #8f8a7b; --bolt: #ff5a1f; --hair: #24231e; --w: 1200px; --h: 630px; }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: var(--w); height: var(--h); overflow: hidden; background: var(--ink); }
+.card {
+  position: relative; width: var(--w); height: var(--h); color: var(--paper);
+  font-family: "IBM Plex Sans", sans-serif;
+  background-image: linear-gradient(var(--hair) 1px, transparent 1px), linear-gradient(90deg, var(--hair) 1px, transparent 1px);
+  background-size: 40px 40px; background-position: -1px -1px;
+  padding: 56px 64px; display: flex; flex-direction: column;
+}
+.frame { position: absolute; inset: 24px; border: 2px solid var(--paper); pointer-events: none; }
+.tag { align-self: flex-start; font: 500 18px/1 "IBM Plex Mono", monospace; letter-spacing: .12em; text-transform: uppercase; background: var(--bolt); color: var(--ink); padding: 9px 14px; }
+h1 { font: 900 168px/.86 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin-top: 26px; letter-spacing: -.005em; }
+.sub { font: 700 44px/1.05 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin-top: 18px; max-width: 760px; }
+.sub em { font-style: normal; color: var(--bolt); }
+.bottom { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; }
+.metric { font-family: "IBM Plex Mono", monospace; }
+.metric .label { font-size: 17px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.metric .v { font-size: 46px; font-weight: 500; margin-top: 8px; white-space: nowrap; }
+.metric .v s { color: var(--dim); text-decoration-thickness: 3px; }
+.metric .v b { color: var(--bolt); font-weight: 500; }
+.url { font: 500 20px/1 "IBM Plex Mono", monospace; color: var(--dim); text-align: right; white-space: nowrap; }
+.url strong { color: var(--paper); font-weight: 500; }
+svg { position: absolute; right: 70px; top: 52px; width: 300px; height: 300px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="frame"></div>
+  <svg viewBox="0 0 100 100" aria-hidden="true"><polygon points="58,4 18,58 46,58 38,96 82,38 54,38" fill="#ff5a1f" stroke="#ece8dc" stroke-width="2.5"/></svg>
+  <span class="tag">Open source · Rust · Apache-2.0</span>
+  <h1>spanbolt</h1>
+  <p class="sub">A fast drop-in replacement for the <em>Cloud Spanner emulator</em></p>
+  <div class="bottom">
+    <div class="metric">
+      <div class="label">Point query, 100k rows · emulator → spanbolt</div>
+      <div class="v"><s>88 ms</s> → <b>70 µs</b></div>
+    </div>
+    <div class="url"><strong>strise.github.io/spanbolt</strong><br><br>5–7x faster test suites</div>
+  </div>
+</div>
+<script>
+var q = new URLSearchParams(location.search);
+if (q.get("w")) document.documentElement.style.setProperty("--w", q.get("w") + "px");
+if (q.get("h")) document.documentElement.style.setProperty("--h", q.get("h") + "px");
+</script>
+</body>
+</html>

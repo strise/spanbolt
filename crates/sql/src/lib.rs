@@ -27,6 +27,7 @@ pub mod plan;
 mod prepared;
 mod schema_expr;
 mod search;
+mod struct_result;
 mod struct_shape;
 mod time;
 pub mod types;

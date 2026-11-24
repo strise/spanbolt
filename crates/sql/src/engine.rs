@@ -114,6 +114,64 @@ impl Engine {
         crate::graph::analyse(&cat.gsql, &storage, &|n| cat.view(n), &g.ddl).map(|_| ())
     }
 
+    /// Checks the view `name` of `schema` as `CREATE VIEW` does; `replacing` when `CREATE OR
+    /// REPLACE` changes an existing view. The error is the statement's.
+    pub fn validate_view(&self, schema: &Arc<Schema>, name: &str, replacing: bool) -> Result<()> {
+        let key = name.to_ascii_lowercase();
+        let Some(view) = schema.views.get(&key) else {
+            return Ok(());
+        };
+        // Analysed against the other objects, as the view itself is not defined yet.
+        let mut others = (**schema).clone();
+        others.views.remove(&key);
+        let others = Arc::new(others);
+        let storage = Arc::new(spanbolt_storage::Catalog::build(&others)?);
+        let cat = self.cache.get(
+            &others,
+            &storage,
+            self.opts.extra_features(),
+            self.opts.emulator_compat,
+        )?;
+        let compat = self.opts.emulator_compat;
+        let body = crate::view_check::body(&view.sql);
+        let Err(e) = crate::view_check::check(&cat, body, !compat) else {
+            return Ok(());
+        };
+        if e.code == spanbolt_storage::Code::Unimplemented {
+            return Err(e);
+        }
+        // Positions are in the statement each prints the view as: the emulator always quotes the
+        // name, Spanner only when it must.
+        let quoted = if compat {
+            format!("`{}`", view.name)
+        } else {
+            spanbolt_ddl::quote_ident(&view.name)
+        };
+        let prefix = format!("CREATE VIEW {quoted} SQL SECURITY INVOKER AS ");
+        let reason = shift_first_line(&e.message, prefix.chars().count());
+        let analysing = format!("Error analyzing the definition of view `{}`: ", view.name);
+        Err(match (replacing, compat) {
+            (false, _) => Error::invalid_argument(format!("{analysing}{reason}")),
+            (true, true) => Error::new(
+                spanbolt_storage::Code::FailedPrecondition,
+                format!(
+                    "Cannot replace VIEW `{}` because new definition is invalid with the \
+                     following diagnostic message: {reason}",
+                    view.name
+                ),
+            ),
+            // Spanner's message has the two escaped newlines in it.
+            (true, false) => Error::new(
+                spanbolt_storage::Code::FailedPrecondition,
+                format!(
+                    "Cannot replace VIEW `{}` because new definition is invalid with the \
+                     following diagnostic message:\\n\\n{analysing}{reason}",
+                    view.name
+                ),
+            ),
+        })
+    }
+
     /// GoogleSQL catalogs this engine holds (pruned when the next catalog is looked up).
     pub fn cached_catalogs(&self) -> usize {
         self.cache.len()
@@ -719,4 +777,15 @@ fn check_no_struct_columns(fields: &[(String, Type)]) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Moves a trailing `[at 1:C]` position right by `by` columns; other lines keep theirs.
+fn shift_first_line(msg: &str, by: usize) -> String {
+    if let Some(i) = msg.rfind("[at 1:")
+        && let Some(end) = msg[i..].find(']')
+        && let Ok(col) = msg[i + 6..i + end].parse::<usize>()
+    {
+        return format!("{}[at 1:{}]{}", &msg[..i], col + by, &msg[i + end + 1..]);
+    }
+    msg.to_string()
 }

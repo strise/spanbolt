@@ -208,12 +208,26 @@ fn apply_schema(
             return Err(Status::unimplemented(message.clone()));
         }
     }
+    // `CREATE OR REPLACE VIEW` of an existing view words a bad query differently.
+    let replacing = match &stmt {
+        Statement::CreateView {
+            view,
+            or_replace: true,
+        } => schema.views.contains_key(&view.name.to_ascii_lowercase()),
+        _ => false,
+    };
     if emulator_compat {
         schema.apply_emulator_compat(&stmt).map_err(ddl)?;
     } else {
         schema.apply(&stmt).map_err(ddl)?;
     }
     validate_exprs(schema, &stmt)?;
+    if let Statement::CreateView { view, .. } = &stmt
+        && let Some(ev) = spanbolt_storage::expr::expr_evaluator()
+    {
+        ev.validate_view(&std::sync::Arc::new(schema.clone()), &view.name, replacing)
+            .map_err(to_status)?;
+    }
     Ok(checks)
 }
 

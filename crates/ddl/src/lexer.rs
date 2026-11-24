@@ -467,6 +467,39 @@ pub(crate) fn column_references(sql: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
+/// A token of a SQL text, for checks that need positions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SqlToken {
+    /// An identifier or keyword, with whether it was backquoted.
+    Ident { text: String, quoted: bool },
+    /// Punctuation or an operator.
+    Sym(&'static str),
+    /// A literal.
+    Literal,
+}
+
+/// The tokens of `sql` with their byte offsets, without comments; `None` if it doesn't lex.
+pub fn sql_tokens(sql: &str) -> Option<Vec<(SqlToken, usize)>> {
+    let toks = tokenize(sql).ok()?;
+    Some(
+        toks.into_iter()
+            .filter_map(|t| {
+                let tok = match t.tok {
+                    Tok::Ident(text) => SqlToken::Ident {
+                        text,
+                        quoted: false,
+                    },
+                    Tok::QuotedIdent(text) => SqlToken::Ident { text, quoted: true },
+                    Tok::Sym(s) => SqlToken::Sym(s),
+                    Tok::Eof => return None,
+                    _ => SqlToken::Literal,
+                };
+                Some((tok, t.start))
+            })
+            .collect(),
+    )
+}
+
 pub fn is_reserved(word: &str) -> bool {
     RESERVED.iter().any(|k| k.eq_ignore_ascii_case(word))
 }

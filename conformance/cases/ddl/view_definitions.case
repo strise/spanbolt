@@ -1,0 +1,221 @@
+tags: ddl views oracle
+schema:
+  CREATE TABLE Account (
+    AccountId INT64 NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (AccountId)
+
+case missing_table
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Nope AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:65]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:63]
+
+case wrong_case_table
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 1:63]
+
+case wrong_case_column
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.accountid FROM Account AS a
+
+case wrong_case_alias
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT ACCOUNT.AccountId FROM Account
+
+case missing_column
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.Nope FROM Account AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Name Nope not found inside a [at 1:50]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Name Nope not found inside a [at 1:48]
+
+case wrong_case_view_ref
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
+ddl:
+  CREATE VIEW W SQL SECURITY INVOKER AS SELECT v.AccountId FROM v
+
+case wrong_case_second_line
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS
+  SELECT a.AccountId
+  FROM account AS a
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 2:6]
+
+case query_wrong_case_table
+query:
+  SELECT a.AccountId FROM account AS a
+expect:
+  columns: AccountId INT64
+expect@spanner:
+  same
+
+case unnamed_column
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: CREATE VIEW columns must be named, but column 1 has no name [at 1:41]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: CREATE VIEW columns must be named, but column 1 has no name [at 1:39]
+
+case view_query_after_ok
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
+query:
+  SELECT v.AccountId FROM v
+expect:
+  columns: AccountId INT64
+expect@spanner:
+  same
+
+case or_replace_missing_table
+ddl:
+  CREATE OR REPLACE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Nope AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:65]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:63]
+
+case or_replace_wrong_case
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
+ddl:
+  CREATE OR REPLACE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot replace VIEW `V` because new definition is invalid with the following diagnostic message:\n\nError analyzing the definition of view `V`: Table not found: account [at 1:63]
+
+case cte_wrong_case
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS WITH Cte AS (SELECT Account.AccountId FROM Account) SELECT c.AccountId FROM CTE AS c
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: WITH clauses are unsupported in view definitions.
+expect@spanner:
+  same
+
+case two_errors
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.Nope FROM account AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Name Nope not found inside a [at 1:50]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 1:58]
+
+case batch_after_view
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a;
+  CREATE TABLE T2 (K INT64 NOT NULL) PRIMARY KEY (K)
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 1:63]
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Account (\n  AccountId INT64 NOT NULL,\n  Name STRING(MAX),\n) PRIMARY KEY(AccountId)"
+  "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a"
+expect@spanner:
+  statements:
+  "CREATE TABLE Account (\n  AccountId INT64 NOT NULL,\n  Name STRING(MAX),\n) PRIMARY KEY(AccountId)"
+
+case or_replace_existing_missing_table
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
+ddl:
+  CREATE OR REPLACE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Nope AS a
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot replace VIEW `V` because new definition is invalid with the following diagnostic message: Table not found: Nope [at 1:65]
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot replace VIEW `V` because new definition is invalid with the following diagnostic message:\n\nError analyzing the definition of view `V`: Table not found: Nope [at 1:63]
+
+case definer_missing_table
+ddl:
+  CREATE VIEW V SQL SECURITY DEFINER AS SELECT a.AccountId FROM Nope AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:65]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:63]
+
+case quoted_name_missing_table
+ddl:
+  CREATE VIEW `Order` SQL SECURITY INVOKER AS SELECT a.AccountId FROM Nope AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `Order`: Table not found: Nope [at 1:69]
+expect@spanner:
+  same
+
+case multiline_emulator
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS
+  SELECT a.AccountId
+  FROM Nope AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 2:6]
+expect@spanner:
+  same
+
+case leading_comment
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS /* c */ SELECT a.AccountId FROM Nope AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:65]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: Nope [at 1:63]
+
+case nested_with
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT x.AccountId FROM (WITH c AS (SELECT Account.AccountId FROM Account) SELECT c.AccountId FROM c) AS x
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: WITH is not supported on subqueries in this language version [at 1:66]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: WITH is not supported on subqueries in this language version [at 1:64]
+
+case star_column
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT * FROM Account
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: SELECT * is not allowed in strict name resolution mode [at 1:48]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: SELECT * is not allowed in strict name resolution mode [at 1:46]
+
+case dup_column
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId, Account.AccountId FROM Account
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: CREATE VIEW has columns with duplicate name AccountId [at 1:41]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: CREATE VIEW has columns with duplicate name AccountId [at 1:39]

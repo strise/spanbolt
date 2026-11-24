@@ -32,6 +32,17 @@ pub trait ExprEvaluator: Send + Sync {
         Ok(())
     }
 
+    /// Checks the view `name` of `schema` when DDL creates or replaces it; `replacing` when it
+    /// existed before.
+    fn validate_view(
+        &self,
+        _schema: &Arc<spanbolt_ddl::Schema>,
+        _name: &str,
+        _replacing: bool,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Checks the property graph `name` of `schema` when DDL creates or replaces it.
     fn validate_property_graph(
         &self,

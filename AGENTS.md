@@ -35,8 +35,10 @@ docs/building.md cover setup.
   (tonic, in process), `--example search_bench` (SEARCH over 10k rows with and without a search index), `--example session_bench` (heap per session, BatchCreateSessions and ListSessions over 1M sessions; no SQL engine needed), `-p spanbolt-sql --example ddl_bench` (`DDL=<schema dump>`: DDL apply and first SQL after a DDL, replaying a large schema migration) and `python3 scripts/sql_bench.py HOST:PORT` (Python client, any endpoint).
   Soak: `--example soak -- --duration 3600` (conformance in a loop plus creates/clones/drops and a
   mixed workload; CSV of RSS, footprint, live heap, p50/p99 and cache sizes), summarised by
-  `python3 scripts/soak_report.py CSV --svg out.svg`. On macOS judge memory by `heap_mb` and
-  `footprint_mb`: RSS includes the shim library and freed pages the OS hasn't reclaimed. Runs in `docs/soak/`. Server memory on large streams: `python3 scripts/stream_rss.py HOST:PORT SERVER_PID [n ...]`.
+  `python3 scripts/soak_report.py CSV --svg out.svg`. Soak runs on mimalloc like the binary. On macOS
+  judge memory by `rust_heap_mb` (live bytes in mimalloc), `malloc_mb` (the shim's C++ heap in the
+  system malloc zones) and `footprint_mb`: RSS includes the shim library and freed pages the OS
+  hasn't reclaimed. Runs before 2026-11-24 used the system allocator and have one `heap_mb` for both. Runs in `docs/soak/`. Server memory on large streams: `python3 scripts/stream_rss.py HOST:PORT SERVER_PID [n ...]`.
 - Threads (`crates/server/src/offload.rs`): every gRPC and REST call runs its handler on tokio's blocking pool, because handlers do engine work synchronously; on the runtime workers a few long queries would stall every other call and the HTTP/2 handshake of new connections. Check with `--example connect_storm -- HOST:PORT` (40 new clients connecting while 24 others run long queries).
 - Streaming (`crates/server/src/stream.rs`, `wire.rs`): `PartialWriter` encodes values into wire bytes as rows arrive; `wire::SpannerRouter` serves ExecuteStreamingSql/StreamingRead with a pass-through codec and hands every other Spanner method to the generated server.
 - Full-text search (`crates/sql/src/search`): a port of the emulator's tokenizers, rquery parser and evaluators (TOKENLISTs are emulator-format token lists). A `SEARCH` conjunct over a TOKENIZE_FULLTEXT column in a search index scans candidate rows from an inverted index cached per table version and updated from the row map's diff.

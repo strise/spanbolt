@@ -16,15 +16,23 @@
 //!   both;
 //! - one long-lived database taking single-row commits and reads (MVCC history).
 //!
-//! Every `--sample` seconds a CSV row gets: elapsed, RSS, operations and p50/p99 per operation
+//! Runs on the `spanbolt` binary's allocator (mimalloc, src/main.rs). Memory columns: `rss_mb`,
+//! `footprint_mb` (macOS physical footprint, counts compressed pages), `rust_heap_mb` (live bytes
+//! allocated through mimalloc, i.e. by Rust code) and `malloc_mb` (bytes in use in the system malloc
+//! zones: the GoogleSQL shim's C++ heap, which mimalloc does not replace). mimalloc's own numbers
+//! don't give the live heap: release builds keep no live-byte statistics, and its committed memory
+//! on macOS is the eagerly committed arena reservation (a constant 2 GiB).
+//!
+//! Every `--sample` seconds a CSV row gets: elapsed, memory, operations and p50/p99 per operation
 //! kind in that window, registry sizes (databases, sessions, transactions, operations) and SQL
-//! cache sizes. The summary at the end fits RSS growth after `--warmup` seconds.
+//! cache sizes. The summary at the end fits memory growth after `--warmup` seconds.
 
+use std::alloc::{GlobalAlloc, Layout};
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write as _;
 use std::process::Command;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -40,6 +48,68 @@ use spanbolt_proto::spanner as pb;
 use spanbolt_proto::spanner::spanner_client::SpannerClient;
 use spanbolt_server::Emulator;
 use tonic::transport::Channel;
+
+/// The allocator the `spanbolt` binary uses (src/main.rs), so memory and latency match it, with a
+/// count of the bytes live in it.
+#[global_allocator]
+static GLOBAL: Counting = Counting;
+
+/// Live bytes, sharded by thread so the count doesn't serialise allocations: one shared counter
+/// cost a third of the soak's throughput. A shard can go negative (freed on another thread); the
+/// sum is the live total.
+static LIVE: [Shard; 64] = [const { Shard(AtomicIsize::new(0)) }; 64];
+static NEXT_SHARD: AtomicUsize = AtomicUsize::new(0);
+
+#[repr(align(128))]
+struct Shard(AtomicIsize);
+
+thread_local! {
+    static SHARD: usize = NEXT_SHARD.fetch_add(1, Ordering::Relaxed) % LIVE.len();
+}
+
+fn count(delta: isize) {
+    // `try_with`: allocations while the thread's locals are torn down go to shard 0.
+    let i = SHARD.try_with(|s| *s).unwrap_or(0);
+    LIVE[i].0.fetch_add(delta, Ordering::Relaxed);
+}
+
+fn rust_heap() -> u64 {
+    LIVE.iter()
+        .map(|s| s.0.load(Ordering::Relaxed))
+        .sum::<isize>()
+        .max(0) as u64
+}
+
+struct Counting;
+
+// SAFETY: every call goes to mimalloc unchanged; only the counter is added.
+unsafe impl GlobalAlloc for Counting {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        let p = unsafe { mimalloc::MiMalloc.alloc(l) };
+        if !p.is_null() {
+            count(l.size() as isize);
+        }
+        p
+    }
+    unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
+        let p = unsafe { mimalloc::MiMalloc.alloc_zeroed(l) };
+        if !p.is_null() {
+            count(l.size() as isize);
+        }
+        p
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        unsafe { mimalloc::MiMalloc.dealloc(p, l) };
+        count(-(l.size() as isize));
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, size: usize) -> *mut u8 {
+        let q = unsafe { mimalloc::MiMalloc.realloc(p, l, size) };
+        if !q.is_null() {
+            count(size as isize - l.size() as isize);
+        }
+        q
+    }
+}
 
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
@@ -140,11 +210,12 @@ fn rss_kb() -> u64 {
         .unwrap_or(0)
 }
 
-/// Physical footprint and live malloc bytes (all zones), in bytes. macOS compresses idle pages
-/// under memory pressure, so RSS alone can under-report; the footprint counts compressed pages and
-/// the heap figure says whether growth is live allocations or allocator retention.
+/// Physical footprint and bytes in use in the system malloc zones, in bytes. macOS compresses idle
+/// pages under memory pressure, so RSS alone can under-report; the footprint counts compressed
+/// pages. Rust allocations go to mimalloc, so the zones hold what C/C++ code allocates (the
+/// GoogleSQL shim).
 #[cfg(target_os = "macos")]
-fn footprint_and_heap() -> (u64, u64) {
+fn footprint_and_malloc() -> (u64, u64) {
     #[repr(C)]
     #[derive(Default)]
     struct MallocStats {
@@ -169,7 +240,7 @@ fn footprint_and_heap() -> (u64, u64) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn footprint_and_heap() -> (u64, u64) {
+fn footprint_and_malloc() -> (u64, u64) {
     (0, 0)
 }
 
@@ -457,8 +528,8 @@ impl Client {
     }
 }
 
-/// (elapsed s, RSS MB, footprint MB, heap MB).
-type Mem = (f64, f64, f64, f64);
+/// (elapsed s, RSS MB, footprint MB, Rust heap MB, system malloc MB).
+type Mem = (f64, f64, f64, f64, f64);
 type MemField = fn(&Mem) -> f64;
 
 /// Least-squares slope of `(seconds, MB)` points, in MB per hour.
@@ -585,7 +656,8 @@ async fn main() -> Result<(), BoxErr> {
         "elapsed_s",
         "rss_mb",
         "footprint_mb",
-        "heap_mb",
+        "rust_heap_mb",
+        "malloc_mb",
         "ops",
         "errors",
         "conformance_passes",
@@ -615,16 +687,18 @@ async fn main() -> Result<(), BoxErr> {
         tick.tick().await;
         let el = start.elapsed().as_secs_f64();
         let mb = rss_kb() as f64 / 1024.0;
-        let (fp, heap) = footprint_and_heap();
-        let (fp, heap) = (fp as f64 / 1048576.0, heap as f64 / 1048576.0);
-        rss.push((el, mb, fp, heap));
+        let (fp, malloc) = footprint_and_malloc();
+        let mib = |b: u64| b as f64 / 1048576.0;
+        let (fp, mi, malloc) = (mib(fp), mib(rust_heap()), mib(malloc));
+        rss.push((el, mb, fp, mi, malloc));
         let mut samples = window.take();
         let ops: usize = samples.values().map(|v| v.len()).sum();
         let mut row = vec![
             format!("{el:.0}"),
             format!("{mb:.1}"),
             format!("{fp:.1}"),
-            format!("{heap:.1}"),
+            format!("{mi:.1}"),
+            format!("{malloc:.1}"),
             ops.to_string(),
             window.errors.load(Ordering::Relaxed).to_string(),
             passes.load(Ordering::Relaxed).to_string(),
@@ -653,7 +727,7 @@ async fn main() -> Result<(), BoxErr> {
         writeln!(csv, "{}", row.join(","))?;
         csv.flush()?;
         eprintln!(
-            "soak: {el:>6.0}s rss={mb:>7.1}MB footprint={fp:>7.1}MB heap={heap:>7.1}MB ops={ops} passes={} {}",
+            "soak: {el:>6.0}s rss={mb:>7.1}MB footprint={fp:>7.1}MB rust_heap={mi:>7.1}MB malloc={malloc:>7.1}MB ops={ops} passes={} {}",
             passes.load(Ordering::Relaxed),
             emu.registry_sizes()
                 .iter()
@@ -674,8 +748,12 @@ async fn main() -> Result<(), BoxErr> {
         start.elapsed().as_secs_f64(),
         a.workers
     );
-    let series: [(&str, MemField); 3] =
-        [("rss", |p| p.1), ("footprint", |p| p.2), ("heap", |p| p.3)];
+    let series: [(&str, MemField); 4] = [
+        ("rss", |p| p.1),
+        ("footprint", |p| p.2),
+        ("rust_heap", |p| p.3),
+        ("malloc", |p| p.4),
+    ];
     for (name, f) in series {
         let pts: Vec<(f64, f64)> = rss
             .iter()

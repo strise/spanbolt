@@ -154,6 +154,7 @@ fn validate_column(table: &str, c: &Column, compat: bool) -> R<()> {
             c.name
         )));
     }
+    check_virtual_not_null(table, c)?;
     if c.ty == ColumnType::TokenList && !c.hidden {
         return Err(inv(format!(
             "TOKENLIST column {table}.{} must be HIDDEN.",
@@ -183,6 +184,72 @@ fn on_update_needs_default(column: &str) -> DdlError {
     inv(format!(
         "Column `{column}` with an ON UPDATE expression must have an identical DEFAULT value expression."
     ))
+}
+
+/// Only STORED generated columns can be NOT NULL (emulator 1.5.51 and production).
+fn check_virtual_not_null(table: &str, c: &Column) -> R<()> {
+    if c.not_null && matches!(c.generated, Some(Generated::Expr { stored: false, .. })) {
+        return Err(inv(format!(
+            "Generated column `{table}.{}` that are not marked as STORED cannot be specified as NOT NULL.",
+            c.name
+        )));
+    }
+    Ok(())
+}
+
+/// Rejects generated columns that read each other in a cycle.
+fn check_generated_cycles(t: &Table) -> R<()> {
+    let reads = |c: &Column| -> Vec<usize> {
+        let Some((e, _)) = c.generated.as_ref().and_then(Generated::expr) else {
+            return Vec::new();
+        };
+        let ids = crate::identifiers(e).unwrap_or_default();
+        t.columns
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| o.generated.as_ref().and_then(Generated::expr).is_some())
+            .filter(|(_, o)| ids.iter().any(|w| w.eq_ignore_ascii_case(&o.name)))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let edges: Vec<Vec<usize>> = t.columns.iter().map(reads).collect();
+    // 0 = unvisited, 1 = on the current path, 2 = done.
+    fn visit(
+        c: usize,
+        edges: &[Vec<usize>],
+        mark: &mut [u8],
+        path: &mut Vec<usize>,
+    ) -> Option<Vec<usize>> {
+        match mark[c] {
+            2 => return None,
+            1 => {
+                let at = path.iter().position(|&p| p == c).unwrap_or(0);
+                return Some(path[at..].to_vec());
+            }
+            _ => {}
+        }
+        mark[c] = 1;
+        path.push(c);
+        for &d in &edges[c] {
+            if let Some(cycle) = visit(d, edges, mark, path) {
+                return Some(cycle);
+            }
+        }
+        path.pop();
+        mark[c] = 2;
+        None
+    }
+    let mut mark = vec![0u8; t.columns.len()];
+    for c in 0..t.columns.len() {
+        if let Some(cycle) = visit(c, &edges, &mut mark, &mut Vec::new()) {
+            let names: Vec<&str> = cycle.iter().map(|&i| t.columns[i].name.as_str()).collect();
+            return Err(pre(format!(
+                "Cycle detected while analysing generated column, which include objects ({})",
+                names.join(",")
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn rdp_check(t: &Table, r: &RowDeletionPolicy) -> R<()> {
@@ -476,6 +543,19 @@ impl Schema {
         }
         self.check_new_name(&table.name)?;
         let mut t = table.clone();
+        if !compat {
+            // Production only: the emulator keys rows by a virtual generated column.
+            for k in &t.primary_key {
+                if let Some(c) = t.column(&k.column)
+                    && matches!(c.generated, Some(Generated::Expr { stored: false, .. }))
+                {
+                    return Err(inv(format!(
+                        "Generated column `{}.{}` must be STORED to be part of the primary key.",
+                        t.name, c.name
+                    )));
+                }
+            }
+        }
         for (i, c) in t.columns.iter().enumerate() {
             if t.columns[..i]
                 .iter()
@@ -485,6 +565,7 @@ impl Schema {
             }
             validate_column(&t.name, c, compat)?;
         }
+        check_generated_cycles(&t)?;
         for (i, k) in t.primary_key.iter().enumerate() {
             if t.primary_key[..i]
                 .iter()
@@ -666,6 +747,11 @@ impl Schema {
                     )));
                 }
                 validate_column(&tname, column, compat)?;
+                if column.generated.is_some() {
+                    let mut next = t.clone();
+                    next.columns.push(column.clone());
+                    check_generated_cycles(&next)?;
+                }
                 self.table_mut(&k)?.columns.push(column.clone());
             }
             AlterTable::DropColumn { name } => {
@@ -798,6 +884,18 @@ impl Schema {
                 validate_column(&tname, &new, compat)?;
                 if new.generated.is_none() && old.generated.is_some() {
                     new.generated = old.generated.clone();
+                }
+                check_virtual_not_null(&tname, &new)?;
+                if new.generated.is_some() {
+                    let mut next = t.clone();
+                    if let Some(c) = next
+                        .columns
+                        .iter_mut()
+                        .find(|c| c.name.eq_ignore_ascii_case(&new.name))
+                    {
+                        *c = new.clone();
+                    }
+                    check_generated_cycles(&next)?;
                 }
                 let t = self.table_mut(&k)?;
                 if let Some(c) = t

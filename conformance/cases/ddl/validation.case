@@ -156,6 +156,9 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Index I specifies key column Nope which does not exist in the index's base table.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index I specifies key column Nope which does not exist in the index's base table.
 
 case index_dup_name
 ddl:
@@ -191,6 +194,9 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Index I specifies key column Nope which does not exist in the index's base table.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index I specifies nonexistent stored column Nope.
 
 case drop_missing_table
 ddl:

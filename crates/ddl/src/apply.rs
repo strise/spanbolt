@@ -20,6 +20,127 @@ fn table_not_found(name: &str) -> DdlError {
     DdlError::NotFound(format!("Table not found: {name}"))
 }
 
+/// A kind of named schema object, for the "name not valid" errors.
+#[derive(Clone, Copy)]
+enum Obj {
+    Table,
+    Synonym,
+    Index,
+    SearchIndex,
+    ForeignKey,
+    Check,
+    View,
+    Sequence,
+    ChangeStream,
+    Schema,
+    Model,
+    PropertyGraph,
+}
+
+impl Obj {
+    /// How production (`compat == false`) or the emulator names the kind in errors.
+    fn label(self, compat: bool) -> &'static str {
+        match (self, compat) {
+            (Obj::Table, true) => "Table",
+            (Obj::Table | Obj::Synonym, false) => "table",
+            (Obj::Synonym, true) => "Synonym",
+            (Obj::Index | Obj::SearchIndex, true) => "Index",
+            (Obj::Index, false) => "index",
+            (Obj::SearchIndex, false) => "search index",
+            (Obj::ForeignKey, true) => "Foreign Key",
+            (Obj::ForeignKey, false) => "foreign key",
+            (Obj::Check, true) => "",
+            (Obj::Check, false) => "check constraint",
+            (Obj::View, _) => "VIEW",
+            (Obj::Sequence, _) => "Sequence",
+            (Obj::ChangeStream, true) => "Change Stream",
+            (Obj::ChangeStream, false) => "change stream",
+            (Obj::Schema, true) => "Schema",
+            (Obj::Schema, false) => "schema",
+            (Obj::Model, _) => "Model",
+            (Obj::PropertyGraph, _) => "Property Graph",
+        }
+    }
+}
+
+/// `name` as production prints it in errors: bytes outside printable ASCII as octal escapes.
+fn c_escape(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for b in name.bytes() {
+        if b.is_ascii_graphic() || b == b' ' {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("\\{b:03o}"));
+        }
+    }
+    out
+}
+
+fn name_not_valid(label: &str, name: &str) -> DdlError {
+    let lead = if label.is_empty() {
+        String::new()
+    } else {
+        format!("{label} ")
+    };
+    inv(format!("{lead}name not valid: {name}."))
+}
+
+/// Rejects a name production Spanner doesn't allow for a `kind` object. The emulator doesn't
+/// validate view names.
+fn check_name(kind: Obj, name: &str, compat: bool) -> R<()> {
+    if names::valid_name(name) || (compat && matches!(kind, Obj::View)) {
+        Ok(())
+    } else if compat {
+        Err(name_not_valid(kind.label(true), name))
+    } else {
+        Err(name_not_valid(kind.label(false), &c_escape(name)))
+    }
+}
+
+/// Production allows column names other objects may have (a letter first, then letters, digits
+/// and underscores) and names them with their table; the emulator only rejects a leading
+/// underscore and overlong names.
+fn check_column_name(table: &str, name: &str, compat: bool) -> R<()> {
+    if compat && !names::valid_column_name(name) {
+        Err(inv(format!("Column name not valid: {name}.")))
+    } else if !compat && !names::valid_name(name) {
+        Err(inv(format!(
+            "Column name not valid: {table}.{}.",
+            c_escape(name)
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+/// A foreign key or check constraint name: a valid name without a prefix Spanner reserves.
+fn check_constraint_name(kind: Obj, name: &str, compat: bool) -> R<()> {
+    check_name(kind, name, compat)?;
+    let part = name.rsplit_once('.').map_or(name, |(_, n)| n);
+    for prefix in ["PK_", "CK_IS_NOT_NULL_"] {
+        if part
+            .get(..prefix.len())
+            .is_some_and(|p| p.eq_ignore_ascii_case(prefix))
+        {
+            return Err(inv(format!(
+                "Invalid {} name: {name}. Prefix {prefix} cannot be used.",
+                kind.label(true)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A column named like an existing one ignoring case. Production words a clash that differs only
+/// in case differently from an exact one.
+fn dup_column(table: &str, old: &str, new: &str, compat: bool) -> DdlError {
+    pre(if !compat && old != new {
+        format!("Column names in table {table} differ only in case: {old}, {new}.")
+    } else {
+        format!("Duplicate column name {table}.{new}.")
+    })
+}
+
 fn pre(msg: String) -> DdlError {
     DdlError::Precondition(msg)
 }
@@ -66,6 +187,49 @@ fn not_keyable(ty: &ColumnType) -> bool {
 const MAX_STRING_LEN: u64 = 2_621_440;
 const MAX_BYTES_LEN: u64 = 10_485_760;
 
+/// Production's schema limits (the emulator's `limits.h`).
+const MAX_KEY_COLUMNS: usize = 16;
+const MAX_COLUMNS_PER_TABLE: usize = 1024;
+const MAX_INDEXES_PER_TABLE: usize = 128;
+const MAX_TABLES_PER_DATABASE: usize = 5000;
+const MAX_INDEXES_PER_DATABASE: usize = 2 * MAX_TABLES_PER_DATABASE;
+const MAX_NON_KEY_COLUMNS_SIZE: u64 = 2000 << 20;
+
+/// The size a column counts towards the non-key column limit: its declared maximum (4 bytes per
+/// STRING character), 10 MiB for JSON, TOKENLIST and arrays, nothing for fixed-width types.
+fn declared_size(ty: &ColumnType) -> u64 {
+    match ty {
+        ColumnType::Array(_) | ColumnType::Json | ColumnType::TokenList => MAX_BYTES_LEN,
+        ColumnType::String(n) => 4 * n.unwrap_or(MAX_STRING_LEN),
+        ColumnType::Bytes(n) => n.unwrap_or(MAX_BYTES_LEN),
+        ColumnType::Uuid => 16,
+        _ => 0,
+    }
+}
+
+/// Total declared size of a table's non-key columns.
+fn non_key_size(t: &Table) -> u64 {
+    t.columns
+        .iter()
+        .filter(|c| {
+            !t.primary_key
+                .iter()
+                .any(|k| k.column.eq_ignore_ascii_case(&c.name))
+        })
+        .map(|c| declared_size(&c.ty))
+        .sum()
+}
+
+fn too_many_columns(t: &Table) -> R<()> {
+    if t.columns.len() > MAX_COLUMNS_PER_TABLE {
+        return Err(pre(format!(
+            "Table {} has too many columns; the limit is {MAX_COLUMNS_PER_TABLE}.",
+            t.name
+        )));
+    }
+    Ok(())
+}
+
 fn validate_column(table: &str, c: &Column, compat: bool) -> R<()> {
     fn check_len(table: &str, c: &Column, ty: &ColumnType) -> R<()> {
         let (n, max) = match ty {
@@ -90,6 +254,12 @@ fn validate_column(table: &str, c: &Column, compat: bool) -> R<()> {
         ));
     }
     check_len(table, c, &c.ty)?;
+    if matches!(c.generated, Some(Generated::Identity { .. })) && c.ty != ColumnType::Int64 {
+        return Err(inv(format!(
+            "The type of an identity column {} is invalid. Currently, only INT64 is supported.",
+            c.name
+        )));
+    }
     fn unsupported(ty: &ColumnType) -> Option<&'static str> {
         match ty {
             ColumnType::Struct(_) => Some("STRUCT"),
@@ -203,7 +373,7 @@ fn check_generated_cycles(t: &Table) -> R<()> {
         let Some((e, _)) = c.generated.as_ref().and_then(Generated::expr) else {
             return Vec::new();
         };
-        let ids = crate::identifiers(e).unwrap_or_default();
+        let ids = crate::lexer::column_references(e).unwrap_or_default();
         t.columns
             .iter()
             .enumerate()
@@ -252,8 +422,14 @@ fn check_generated_cycles(t: &Table) -> R<()> {
     Ok(())
 }
 
-fn rdp_check(t: &Table, r: &RowDeletionPolicy) -> R<()> {
-    match t.column(&r.column) {
+/// Production finds the policy's column by its exact spelling, the emulator ignoring case.
+fn rdp_check(t: &Table, r: &RowDeletionPolicy, compat: bool) -> R<()> {
+    let column = if compat {
+        t.column(&r.column)
+    } else {
+        t.column_exact(&r.column)
+    };
+    match column {
         None => Err(inv(format!(
             "Cannot create ROW DELETION POLICY because there is no column named {} in table {}.",
             r.column, t.name
@@ -317,8 +493,22 @@ impl Schema {
         self.table_key(name).and_then(|k| self.tables.get(&k))
     }
 
+    /// The key of the table (or synonym) spelled exactly `name`. Spanner detects duplicate names
+    /// ignoring case, but DDL must refer to an object by its declared spelling.
+    fn table_key_exact(&self, name: &str) -> Option<String> {
+        let k = self.table_key(name)?;
+        let t = &self.tables[&k];
+        (t.name == name || t.synonym.as_deref() == Some(name)).then_some(k)
+    }
+
+    /// The table (or synonym) spelled exactly `name`.
+    fn table_exact(&self, name: &str) -> Option<&Table> {
+        self.table_key_exact(name).and_then(|k| self.tables.get(&k))
+    }
+
     fn need_table(&self, name: &str) -> R<String> {
-        self.table_key(name).ok_or_else(|| table_not_found(name))
+        self.table_key_exact(name)
+            .ok_or_else(|| table_not_found(name))
     }
 
     fn opaque_find(&self, kind: &str, name: &str) -> Option<usize> {
@@ -327,30 +517,47 @@ impl Schema {
             .position(|o| o.kind == kind && o.name.eq_ignore_ascii_case(name))
     }
 
-    /// True if `name` is used by any schema object sharing Spanner's name space.
-    fn name_taken(&self, name: &str) -> bool {
+    /// The declared spelling of the schema object whose name equals `name` ignoring case, among
+    /// the objects sharing Spanner's name space.
+    fn taken_spelling(&self, name: &str) -> Option<&str> {
         let k = key(name);
-        self.tables.contains_key(&k)
-            || self.indexes.contains_key(&k)
-            || self.search_indexes.contains_key(&k)
-            || self.views.contains_key(&k)
-            || self.sequences.contains_key(&k)
-            || self.tables.values().any(|t| {
+        let direct = [
+            self.tables.get(&k).map(|t| t.name.as_str()),
+            self.indexes.get(&k).map(|i| i.name.as_str()),
+            self.search_indexes.get(&k).map(|i| i.name.as_str()),
+            self.views.get(&k).map(|v| v.name.as_str()),
+            self.sequences.get(&k).map(|s| s.name.as_str()),
+        ];
+        if let Some(n) = direct.into_iter().flatten().next() {
+            return Some(n);
+        }
+        let same = |n: &&str| n.eq_ignore_ascii_case(name);
+        self.tables
+            .values()
+            .flat_map(|t| {
                 t.synonym
                     .as_deref()
-                    .is_some_and(|s| s.eq_ignore_ascii_case(name))
-                    || t.foreign_keys
-                        .iter()
-                        .any(|f| f.name.eq_ignore_ascii_case(name))
-                    || t.checks.iter().any(|c| c.name.eq_ignore_ascii_case(name))
+                    .into_iter()
+                    .chain(t.foreign_keys.iter().map(|f| f.name.as_str()))
+                    .chain(t.checks.iter().map(|c| c.name.as_str()))
             })
-            || self.opaque.iter().any(|o| {
-                matches!(
-                    o.kind.as_str(),
-                    "CHANGE STREAM" | "MODEL" | "PROPERTY GRAPH"
-                ) && o.name.eq_ignore_ascii_case(name)
+            .find(same)
+            .or_else(|| {
+                self.opaque
+                    .iter()
+                    .filter(|o| {
+                        matches!(
+                            o.kind.as_str(),
+                            "CHANGE STREAM" | "MODEL" | "PROPERTY GRAPH"
+                        )
+                    })
+                    .map(|o| o.name.as_str())
+                    .find(same)
             })
-            || self.locality_group(name).is_some()
+            .or_else(|| {
+                self.locality_group(name)
+                    .map(|i| self.locality_groups[i].name.as_str())
+            })
     }
 
     fn locality_group(&self, name: &str) -> Option<usize> {
@@ -443,7 +650,7 @@ impl Schema {
                 ))),
             };
         }
-        self.check_new_name(name)?;
+        self.check_new_name(name, compat)?;
         let mut group = group.clone();
         if !compat {
             group.options.retain(|(_, v)| v != "NULL");
@@ -516,9 +723,25 @@ impl Schema {
         Ok(())
     }
 
-    fn check_new_name(&self, name: &str) -> R<()> {
+    /// True if `name` is used by any schema object sharing Spanner's name space.
+    fn name_taken(&self, name: &str) -> bool {
+        self.taken_spelling(name).is_some()
+    }
+
+    /// The duplicate-name error for `name`. Production words a clash that differs only in case
+    /// differently from an exact one.
+    fn dup(&self, name: &str, compat: bool) -> DdlError {
+        match self.taken_spelling(name) {
+            Some(old) if !compat && old != name => DdlError::AlreadyExists(format!(
+                "Schema object names differ only in case: {old}, {name}."
+            )),
+            _ => dup(name),
+        }
+    }
+
+    fn check_new_name(&self, name: &str, compat: bool) -> R<()> {
         if self.name_taken(name) {
-            return Err(dup(name));
+            return Err(self.dup(name, compat));
         }
         if let Some((schema, _)) = name.rsplit_once('.')
             && !self.schemas.contains_key(&key(schema))
@@ -551,27 +774,20 @@ impl Schema {
     }
 
     /// Validates a foreign key declared on `table` (which may be a table being created).
-    fn validate_fk(&self, table: &Table, fk: &ForeignKey) -> R<()> {
-        let referenced = if fk.ref_table.eq_ignore_ascii_case(&table.name) {
+    fn validate_fk(&self, table: &Table, fk: &ForeignKey, compat: bool) -> R<()> {
+        let referenced = if fk.ref_table == table.name {
             table
         } else {
-            self.resolve_table(&fk.ref_table)
+            self.table_exact(&fk.ref_table)
                 .ok_or_else(|| table_not_found(&fk.ref_table))?
         };
-        for c in &fk.columns {
-            if table.column(c).is_none() {
-                return Err(pre(format!(
+        for (t, cols) in [(table, &fk.columns), (referenced, &fk.ref_columns)] {
+            if let Some(c) = cols.iter().find(|c| t.column_exact(c).is_none()) {
+                let msg = format!(
                     "Column `{c}` not found for table `{}` in foreign key `{}`.",
-                    table.name, fk.name
-                )));
-            }
-        }
-        for c in &fk.ref_columns {
-            if referenced.column(c).is_none() {
-                return Err(pre(format!(
-                    "Column `{c}` not found for table `{}` in foreign key `{}`.",
-                    referenced.name, fk.name
-                )));
+                    t.name, fk.name
+                );
+                return Err(if compat { pre(msg) } else { inv(msg) });
             }
         }
         for (t, cols) in [(table, &fk.columns), (referenced, &fk.ref_columns)] {
@@ -639,13 +855,10 @@ impl Schema {
             return Ok(());
         };
         let parent = self
-            .resolve_table(&il.parent)
+            .table_exact(&il.parent)
             .ok_or_else(|| table_not_found(&il.parent))?;
         for (i, pk) in parent.primary_key.iter().enumerate() {
-            let pos = t
-                .primary_key
-                .iter()
-                .position(|c| c.column.eq_ignore_ascii_case(&pk.column));
+            let pos = t.primary_key.iter().position(|c| c.column == pk.column);
             let child_part = match pos {
                 Some(j) if j == i => &t.primary_key[j],
                 Some(j) => {
@@ -705,7 +918,11 @@ impl Schema {
         if if_not_exists && self.table_key(&table.name).is_some() {
             return Ok(());
         }
-        self.check_new_name(&table.name)?;
+        self.check_new_name(&table.name, compat)?;
+        check_name(Obj::Table, &table.name, compat)?;
+        if let Some(s) = &table.synonym {
+            check_name(Obj::Synonym, s, compat)?;
+        }
         let mut t = table.clone();
         if !compat {
             // Production only: the emulator keys rows by a virtual generated column.
@@ -721,12 +938,13 @@ impl Schema {
             }
         }
         for (i, c) in t.columns.iter().enumerate() {
-            if t.columns[..i]
+            if let Some(o) = t.columns[..i]
                 .iter()
-                .any(|o| o.name.eq_ignore_ascii_case(&c.name))
+                .find(|o| o.name.eq_ignore_ascii_case(&c.name))
             {
-                return Err(pre(format!("Duplicate column name {}.{}.", t.name, c.name)));
+                return Err(dup_column(&t.name, &o.name, &c.name, compat));
             }
+            check_column_name(&t.name, &c.name, compat)?;
             validate_column(&t.name, c, compat)?;
         }
         check_generated_cycles(&t)?;
@@ -740,7 +958,7 @@ impl Schema {
                     t.name, k.column
                 )));
             }
-            match t.column(&k.column) {
+            match t.column_exact(&k.column) {
                 None => {
                     // Production Spanner starts this one in lowercase.
                     return Err(pre(format!(
@@ -767,6 +985,27 @@ impl Schema {
                 _ => {}
             }
         }
+        too_many_columns(&t)?;
+        if t.primary_key.len() > MAX_KEY_COLUMNS {
+            return Err(inv(format!(
+                "Table {} has too many keys ({}); the limit is {MAX_KEY_COLUMNS}.",
+                t.name,
+                t.primary_key.len()
+            )));
+        }
+        let size = non_key_size(&t);
+        if size > MAX_NON_KEY_COLUMNS_SIZE {
+            return Err(pre(format!(
+                "Total size of non-key columns in Table {} {size} exceeds the limit of {MAX_NON_KEY_COLUMNS_SIZE}.",
+                t.name
+            )));
+        }
+        if self.tables.len() >= MAX_TABLES_PER_DATABASE {
+            return Err(pre(format!(
+                "Cannot add Table {} : too many tables (limit {MAX_TABLES_PER_DATABASE} per database).",
+                t.name
+            )));
+        }
         self.validate_interleave(&t)?;
         let mut names: Vec<String> = Vec::new();
         for i in 0..t.foreign_keys.len() {
@@ -774,13 +1013,16 @@ impl Schema {
                 t.foreign_keys[i].name = self.generated_name(&t, Some(&t.foreign_keys[i]), &names);
             }
             let fk = &t.foreign_keys[i];
+            if !fk.generated_name {
+                check_constraint_name(Obj::ForeignKey, &fk.name, compat)?;
+            }
             if (!fk.generated_name && self.name_taken(&fk.name))
                 || names.iter().any(|n| n.eq_ignore_ascii_case(&fk.name))
                 || fk.name.eq_ignore_ascii_case(&t.name)
             {
-                return Err(dup(&fk.name));
+                return Err(self.dup(&fk.name, compat));
             }
-            self.validate_fk(&t, fk)?;
+            self.validate_fk(&t, fk, compat)?;
             names.push(fk.name.clone());
         }
         for i in 0..t.checks.len() {
@@ -789,21 +1031,24 @@ impl Schema {
             }
             let c = &t.checks[i];
             check_name_in_default_schema(&c.name)?;
+            if !c.generated_name {
+                check_constraint_name(Obj::Check, &c.name, compat)?;
+            }
             if self.name_taken(&c.name)
                 || names.iter().any(|n| n.eq_ignore_ascii_case(&c.name))
                 || c.name.eq_ignore_ascii_case(&t.name)
             {
-                return Err(dup(&c.name));
+                return Err(self.dup(&c.name, compat));
             }
             names.push(c.name.clone());
         }
         if let Some(r) = &t.row_deletion_policy {
-            rdp_check(&t, r)?;
+            rdp_check(&t, r, compat)?;
         }
         if let Some(s) = &t.synonym
             && (self.name_taken(s) || s.eq_ignore_ascii_case(&t.name))
         {
-            return Err(dup(s));
+            return Err(self.dup(s, compat));
         }
         let k = key(&t.name);
         self.tables.insert(k.clone(), t);
@@ -812,7 +1057,7 @@ impl Schema {
     }
 
     fn drop_table(&mut self, name: &str, if_exists: bool) -> R<()> {
-        let Some(k) = self.table_key(name) else {
+        let Some(k) = self.table_key_exact(name) else {
             return if if_exists {
                 Ok(())
             } else {
@@ -907,25 +1152,39 @@ impl Schema {
                 column,
                 if_not_exists,
             } => {
-                if t.column(&column.name).is_some() {
+                if let Some(old) = t.column(&column.name) {
                     if *if_not_exists {
                         return Ok(());
                     }
-                    return Err(pre(format!(
-                        "Duplicate column name {}.{}.",
-                        tname, column.name
-                    )));
+                    return Err(dup_column(&tname, &old.name, &column.name, compat));
                 }
+                check_column_name(&tname, &column.name, compat)?;
                 validate_column(&tname, column, compat)?;
                 if column.generated.is_some() {
                     let mut next = t.clone();
                     next.columns.push(column.clone());
                     check_generated_cycles(&next)?;
                 }
+                let mut next = t.clone();
+                next.columns.push(column.clone());
+                if !compat && next.columns.len() > MAX_COLUMNS_PER_TABLE {
+                    return Err(pre(format!(
+                        "Cannot add column {} to table {tname} because it would have too many columns; the limit is {MAX_COLUMNS_PER_TABLE}.",
+                        column.name
+                    )));
+                }
+                too_many_columns(&next)?;
+                let size = non_key_size(&next);
+                if size > MAX_NON_KEY_COLUMNS_SIZE {
+                    return Err(pre(format!(
+                        "Cannot add column {}. Total size of non-key columns in table {tname} {size} exceeds the limit of {MAX_NON_KEY_COLUMNS_SIZE}.",
+                        column.name
+                    )));
+                }
                 self.table_mut(&k)?.columns.push(column.clone());
             }
             AlterTable::DropColumn { name } => {
-                let Some(c) = t.column(name) else {
+                let Some(c) = t.column_exact(name) else {
                     return Err(col_not_found(name));
                 };
                 let cname = c.name.clone();
@@ -1014,7 +1273,7 @@ impl Schema {
                 });
             }
             AlterTable::AlterColumn { column } => {
-                let Some(old) = t.column(&column.name) else {
+                let Some(old) = t.column_exact(&column.name) else {
                     return Err(col_not_found(&column.name));
                 };
                 if column.ty != ColumnType::Timestamp
@@ -1079,6 +1338,19 @@ impl Schema {
                     new.allow_commit_timestamp = old.allow_commit_timestamp;
                 }
                 validate_column(&tname, &new, compat)?;
+                let is_key = t
+                    .primary_key
+                    .iter()
+                    .any(|p| p.column.eq_ignore_ascii_case(&new.name));
+                if !is_key && declared_size(&new.ty) > declared_size(&old.ty) {
+                    let size = non_key_size(t) - declared_size(&old.ty) + declared_size(&new.ty);
+                    if size > MAX_NON_KEY_COLUMNS_SIZE {
+                        return Err(pre(format!(
+                            "Cannot increase length of column {}. Total size of non-key columns in table {tname} is {size} which exceeds the limit of {MAX_NON_KEY_COLUMNS_SIZE}.",
+                            new.name
+                        )));
+                    }
+                }
                 if new.generated.is_none() && old.generated.is_some() {
                     new.generated = old.generated.clone();
                 }
@@ -1104,7 +1376,7 @@ impl Schema {
                 }
             }
             AlterTable::SetColumnDefault { name, default } => {
-                let Some(c) = t.column(name) else {
+                let Some(c) = t.column_exact(name) else {
                     return Err(col_not_found(name));
                 };
                 if c.on_update.is_some() {
@@ -1173,7 +1445,13 @@ impl Schema {
                 allow_commit_timestamp,
                 locality_group,
             } => {
-                let Some(c) = t.column(name) else {
+                // The emulator finds the column ignoring case; production by its spelling.
+                let c = if compat {
+                    t.column(name)
+                } else {
+                    t.column_exact(name)
+                };
+                let Some(c) = c else {
                     return Err(col_not_found(name));
                 };
                 let fks: Vec<&str> = t
@@ -1224,9 +1502,11 @@ impl Schema {
                 if fk.generated_name {
                     fk.name = self.generated_name(t, Some(&fk), &[]);
                 } else if self.name_taken(&fk.name) {
-                    return Err(dup(&fk.name));
+                    return Err(self.dup(&fk.name, compat));
+                } else {
+                    check_constraint_name(Obj::ForeignKey, &fk.name, compat)?;
                 }
-                self.validate_fk(t, &fk)?;
+                self.validate_fk(t, &fk, compat)?;
                 self.table_mut(&k)?.foreign_keys.push(fk);
             }
             AlterTable::AddCheck(c) => {
@@ -1234,17 +1514,24 @@ impl Schema {
                 if c.generated_name {
                     c.name = self.generated_name(t, None, &[]);
                 } else if self.name_taken(&c.name) {
-                    return Err(dup(&c.name));
+                    return Err(self.dup(&c.name, compat));
                 }
                 check_name_in_default_schema(&c.name)?;
+                if !c.generated_name {
+                    check_constraint_name(Obj::Check, &c.name, compat)?;
+                }
                 self.table_mut(&k)?.checks.push(c);
             }
             AlterTable::DropConstraint { name } => {
-                let has = t
-                    .foreign_keys
-                    .iter()
-                    .any(|f| f.name.eq_ignore_ascii_case(name))
-                    || t.checks.iter().any(|c| c.name.eq_ignore_ascii_case(name));
+                let same = |n: &str| {
+                    if compat {
+                        n.eq_ignore_ascii_case(name)
+                    } else {
+                        n == name
+                    }
+                };
+                let has = t.foreign_keys.iter().any(|f| same(&f.name))
+                    || t.checks.iter().any(|c| same(&c.name));
                 if !has {
                     return Err(DdlError::NotFound(format!(
                         "{name} is not a constraint in {tname}"
@@ -1277,7 +1564,7 @@ impl Schema {
                         old.column
                     )));
                 }
-                rdp_check(t, r)?;
+                rdp_check(t, r, compat)?;
                 let fks: Vec<&str> = self
                     .fks_referencing(&tname)
                     .filter(|(o, f)| {
@@ -1301,7 +1588,7 @@ impl Schema {
                         "ROW DELETION POLICY does not exist on table {tname}."
                     )));
                 }
-                rdp_check(t, r)?;
+                rdp_check(t, r, compat)?;
                 self.table_mut(&k)?.row_deletion_policy = Some(r.clone());
             }
             AlterTable::DropRowDeletionPolicy => {
@@ -1313,7 +1600,7 @@ impl Schema {
                 self.table_mut(&k)?.row_deletion_policy = None;
             }
             AlterTable::AddSynonym(s) => {
-                self.add_synonym(&k, s)?;
+                self.add_synonym(&k, s, compat)?;
             }
             AlterTable::DropSynonym(s) => {
                 if !t
@@ -1326,7 +1613,7 @@ impl Schema {
                 self.table_mut(&k)?.synonym = None;
             }
             AlterTable::Rename { to } => {
-                self.rename_table(&k, to)?;
+                self.rename_table(&k, to, compat)?;
             }
             AlterTable::RenameWithSynonym { to, synonym } => {
                 if let Some(s) = &t.synonym {
@@ -1335,10 +1622,10 @@ impl Schema {
                     )));
                 }
                 if !synonym.eq_ignore_ascii_case(&tname) && self.name_taken(synonym) {
-                    return Err(dup(synonym));
+                    return Err(self.dup(synonym, compat));
                 }
-                let new_key = self.rename_table(&k, to)?;
-                self.add_synonym(&new_key, synonym)?;
+                let new_key = self.rename_table(&k, to, compat)?;
+                self.add_synonym(&new_key, synonym, compat)?;
             }
         }
         Ok(())
@@ -1348,7 +1635,7 @@ impl Schema {
         self.tables.get_mut(k).ok_or_else(|| table_not_found(k))
     }
 
-    fn add_synonym(&mut self, k: &str, s: &str) -> R<()> {
+    fn add_synonym(&mut self, k: &str, s: &str, compat: bool) -> R<()> {
         let t = &self.tables[k];
         if let Some(old) = &t.synonym {
             return Err(inv(format!(
@@ -1357,22 +1644,24 @@ impl Schema {
             )));
         }
         if self.name_taken(s) {
-            return Err(dup(s));
+            return Err(self.dup(s, compat));
         }
+        check_name(Obj::Synonym, s, compat)?;
         self.table_mut(k)?.synonym = Some(s.to_string());
         Ok(())
     }
 
     /// Renames a table and every reference to it; returns the new key.
-    fn rename_table(&mut self, k: &str, to: &str) -> R<String> {
+    fn rename_table(&mut self, k: &str, to: &str, compat: bool) -> R<String> {
         let old_name = self.tables[k].name.clone();
         let synonym_is_target = self.tables[k]
             .synonym
             .as_deref()
             .is_some_and(|s| s.eq_ignore_ascii_case(to));
         if !synonym_is_target {
-            self.check_new_name(to)?;
+            self.check_new_name(to, compat)?;
         }
+        check_name(Obj::Table, to, compat)?;
         let mut t = self.tables.remove(k).ok_or_else(|| table_not_found(k))?;
         if synonym_is_target {
             t.synonym = None;
@@ -1434,12 +1723,34 @@ impl Schema {
         Ok(new_key)
     }
 
-    fn create_index(&mut self, index: &Index, if_not_exists: bool) -> R<()> {
+    /// Production's index limits: 128 per table and 10,000 per database.
+    fn check_index_counts(&self, index: &str, table: &str) -> R<()> {
+        let on_table = self.indexes_on(table).count()
+            + self
+                .search_indexes
+                .values()
+                .filter(|i| i.table.eq_ignore_ascii_case(table))
+                .count();
+        if on_table >= MAX_INDEXES_PER_TABLE {
+            return Err(pre(format!(
+                "Cannot add index {index} to table {table}: too many indices (limit {MAX_INDEXES_PER_TABLE} per table)."
+            )));
+        }
+        if self.indexes.len() + self.search_indexes.len() >= MAX_INDEXES_PER_DATABASE {
+            return Err(pre(format!(
+                "Cannot add Index {index} : too many indexes (limit {MAX_INDEXES_PER_DATABASE} per database)."
+            )));
+        }
+        Ok(())
+    }
+
+    fn create_index(&mut self, index: &Index, if_not_exists: bool, compat: bool) -> R<()> {
         if if_not_exists && self.indexes.contains_key(&key(&index.name)) {
             return Ok(());
         }
         let tk = self.need_table(&index.table)?;
-        self.check_new_name(&index.name)?;
+        self.check_new_name(&index.name, compat)?;
+        check_name(Obj::Index, &index.name, compat)?;
         let t = &self.tables[&tk];
         let n = &index.name;
         let schema_of = |s: &str| s.rsplit_once('.').map(|(a, _)| a.to_ascii_lowercase());
@@ -1450,12 +1761,13 @@ impl Schema {
             )));
         }
         let missing = |c: &str| {
-            inv(format!(
+            let msg = format!(
                 "Index {n} specifies key column {c} which does not exist in the index's base table."
-            ))
+            );
+            if compat { inv(msg) } else { pre(msg) }
         };
         for (i, kp) in index.key.iter().enumerate() {
-            let Some(c) = t.column(&kp.column) else {
+            let Some(c) = t.column_exact(&kp.column) else {
                 return Err(missing(&kp.column));
             };
             if index.key[..i]
@@ -1476,8 +1788,14 @@ impl Schema {
             }
         }
         for s in &index.storing {
-            let Some(c) = t.column(s) else {
-                return Err(missing(s));
+            let Some(c) = t.column_exact(s) else {
+                return Err(if compat {
+                    missing(s)
+                } else {
+                    pre(format!(
+                        "Index {n} specifies nonexistent stored column {s}."
+                    ))
+                });
             };
             if index.key.iter().any(|k| k.column.eq_ignore_ascii_case(s)) {
                 return Err(inv(format!(
@@ -1546,13 +1864,30 @@ impl Schema {
                 }
             }
         }
+        let keys = index.key.len()
+            + t.primary_key
+                .iter()
+                .filter(|p| {
+                    !index
+                        .key
+                        .iter()
+                        .any(|k| k.column.eq_ignore_ascii_case(&p.column))
+                })
+                .count();
+        if keys > MAX_KEY_COLUMNS {
+            return Err(inv(format!(
+                "Index {n} has too many keys ({keys}); the limit is {MAX_KEY_COLUMNS}."
+            )));
+        }
+        self.check_index_counts(n, &t.name)?;
         self.indexes.insert(key(&index.name), index.clone());
         Ok(())
     }
 
-    fn create_search_index(&mut self, index: &SearchIndex) -> R<()> {
+    fn create_search_index(&mut self, index: &SearchIndex, compat: bool) -> R<()> {
         let tk = self.need_table(&index.table)?;
-        self.check_new_name(&index.name)?;
+        self.check_new_name(&index.name, compat)?;
+        check_name(Obj::SearchIndex, &index.name, compat)?;
         let t = &self.tables[&tk];
         let n = &index.name;
         for c in index
@@ -1561,10 +1896,11 @@ impl Schema {
             .chain(&index.storing)
             .chain(&index.partition_by)
         {
-            if t.column(c).is_none() {
-                return Err(inv(format!(
+            if t.column_exact(c).is_none() {
+                let msg = format!(
                     "Index {n} specifies key column {c} which does not exist in the index's base table."
-                )));
+                );
+                return Err(if compat { inv(msg) } else { pre(msg) });
             }
         }
         for o in &index.order_by {
@@ -1591,6 +1927,7 @@ impl Schema {
                 _ => {}
             }
         }
+        self.check_index_counts(n, &t.name)?;
         self.search_indexes.insert(key(&index.name), index.clone());
         Ok(())
     }
@@ -1662,7 +1999,11 @@ impl Schema {
 
     fn alter_index(&mut self, name: &str, action: &AlterIndex, emulator_compat: bool) -> R<()> {
         let k = key(name);
-        let Some(idx) = self.indexes.get(&k) else {
+        let Some(idx) = self
+            .indexes
+            .get(&k)
+            .filter(|i| emulator_compat || i.name == name)
+        else {
             return Err(DdlError::NotFound(format!("Index not found: {name}")));
         };
         let t = self
@@ -1670,11 +2011,22 @@ impl Schema {
             .ok_or_else(|| table_not_found(&idx.table))?;
         match action {
             AlterIndex::AddStoredColumn(c) => {
-                let Some(col) = t.column(c) else {
-                    return Err(DdlError::NotFound(format!(
-                        "Column not found in table {}: {c}",
-                        t.name
-                    )));
+                let Some(col) = t.column_exact(c) else {
+                    // Production looks the column up by its exact spelling; the emulator finds
+                    // it ignoring case and then fails validating the index.
+                    return Err(if !emulator_compat {
+                        pre(format!(
+                            "Index {} specifies nonexistent stored column {c}.",
+                            idx.name
+                        ))
+                    } else if t.column(c).is_some() {
+                        inv(format!(
+                            "Index {} specifies key column {c} which does not exist in the index's base table.",
+                            idx.name
+                        ))
+                    } else {
+                        DdlError::NotFound(format!("Column not found in table {}: {c}", t.name))
+                    });
                 };
                 let present = idx.storing.iter().any(|s| s.eq_ignore_ascii_case(c))
                     || idx.key.iter().any(|s| s.column.eq_ignore_ascii_case(c))
@@ -1766,7 +2118,8 @@ impl Schema {
                 if if_not_exists && self.opaque_find(kind, name).is_some() {
                     return Ok(());
                 }
-                self.check_new_name(name)?;
+                self.check_new_name(name, compat)?;
+                check_name(Obj::ChangeStream, name, compat)?;
                 let cs = ChangeStream::parse(&ddl)?;
                 self.validate_change_stream(&cs, compat)?;
                 self.opaque.push(OpaqueObject {
@@ -1797,7 +2150,16 @@ impl Schema {
                         return Ok(());
                     }
                 }
-                self.check_new_name(name)?;
+                self.check_new_name(name, compat)?;
+                check_name(
+                    if kind == "MODEL" {
+                        Obj::Model
+                    } else {
+                        Obj::PropertyGraph
+                    },
+                    name,
+                    compat,
+                )?;
                 self.opaque.push(OpaqueObject {
                     kind: kind.to_string(),
                     name: name.to_string(),
@@ -1971,19 +2333,32 @@ impl Schema {
             .collect()
     }
 
+    /// Production resolves tracked tables and columns by their exact spelling and answers
+    /// INVALID_ARGUMENT; the emulator ignores case and answers FAILED_PRECONDITION.
     fn validate_change_stream(&self, cs: &ChangeStream, compat: bool) -> R<()> {
         check_change_stream_options(cs, compat)?;
+        let err = |msg: String| if compat { pre(msg) } else { inv(msg) };
         if let CsTarget::Tables(ts) = &cs.target {
             for (t, cols) in ts {
-                let Some(table) = self.resolve_table(t) else {
-                    return Err(pre(format!(
+                let table = if compat {
+                    self.resolve_table(t)
+                } else {
+                    self.table_exact(t)
+                };
+                let Some(table) = table else {
+                    return Err(err(format!(
                         "Change Stream {} cannot track {t} because either Change Streams do not track database objects of this type, or this Table does not exist.",
                         cs.name
                     )));
                 };
                 for c in cols.iter().flatten() {
-                    if table.column(c).is_none() {
-                        return Err(pre(format!(
+                    let found = if compat {
+                        table.column(c)
+                    } else {
+                        table.column_exact(c)
+                    };
+                    if found.is_none() {
+                        return Err(err(format!(
                             "Change Stream {} cannot track column {c} because it does not exist in Table {}.",
                             cs.name, table.name
                         )));
@@ -2093,9 +2468,13 @@ impl Schema {
                     return if *if_not_exists {
                         Ok(())
                     } else {
-                        Err(dup(name))
+                        Err(self.dup(name, compat))
                     };
                 }
+                if names::reserved_schema_name(name) {
+                    return Err(name_not_valid(Obj::Schema.label(compat), name));
+                }
+                check_name(Obj::Schema, name, compat)?;
                 self.schemas.insert(k.clone(), name.clone());
                 self.push_order(ObjectKind::Schema, k);
             }
@@ -2170,7 +2549,7 @@ impl Schema {
                 action,
                 if_exists,
             } => {
-                if *if_exists && self.resolve_table(table).is_none() {
+                if *if_exists && self.table_exact(table).is_none() {
                     return Ok(());
                 }
                 self.alter_table(table, action, compat)?
@@ -2186,7 +2565,7 @@ impl Schema {
                 let mut next = self.clone();
                 for (from, to) in renames {
                     let k = next.need_table(from)?;
-                    next.rename_table(&k, to)?;
+                    next.rename_table(&k, to, compat)?;
                 }
                 let version = self.version;
                 *self = next;
@@ -2195,14 +2574,18 @@ impl Schema {
             Statement::CreateIndex {
                 index,
                 if_not_exists,
-            } => self.create_index(index, *if_not_exists)?,
+            } => self.create_index(index, *if_not_exists, compat)?,
             Statement::DropIndex { name, if_exists } => {
-                if self.indexes.remove(&key(name)).is_none() && !if_exists {
+                let k = key(name);
+                let exact = self.indexes.get(&k).is_some_and(|i| i.name == *name);
+                if exact {
+                    self.indexes.remove(&k);
+                } else if !if_exists {
                     return Err(DdlError::NotFound(format!("Index not found: {name}")));
                 }
             }
             Statement::AlterIndex { name, action } => self.alter_index(name, action, false)?,
-            Statement::CreateSearchIndex { index } => self.create_search_index(index)?,
+            Statement::CreateSearchIndex { index } => self.create_search_index(index, compat)?,
             Statement::AlterSearchIndex { name, action } => {
                 self.alter_search_index(name, action)?
             }
@@ -2219,7 +2602,8 @@ impl Schema {
                 if *if_not_exists && self.sequences.contains_key(&k) {
                     return Ok(());
                 }
-                self.check_new_name(&sequence.name)?;
+                self.check_new_name(&sequence.name, compat)?;
+                check_name(Obj::Sequence, &sequence.name, compat)?;
                 let has_kind = sequence
                     .options
                     .iter()
@@ -2244,7 +2628,13 @@ impl Schema {
             }
             Statement::DropSequence { name, if_exists } => {
                 let k = key(name);
-                if self.sequences.remove(&k).is_none() {
+                // Production drops a sequence only by its declared spelling, and names it
+                // alone when it doesn't.
+                let exact = self.sequences.get(&k).is_some_and(|q| q.name == *name);
+                if !compat && !exact && !*if_exists && self.sequences.contains_key(&k) {
+                    return Err(DdlError::NotFound(name.clone()));
+                }
+                if !(exact || compat) || self.sequences.remove(&k).is_none() {
                     if *if_exists {
                         return Ok(());
                     }
@@ -2256,18 +2646,26 @@ impl Schema {
                 let k = key(&view.name);
                 if self.views.contains_key(&k) {
                     if !or_replace {
-                        return Err(dup(&view.name));
+                        return Err(self.dup(&view.name, compat));
                     }
                     self.views.insert(k, view.clone());
                 } else {
-                    self.check_new_name(&view.name)?;
+                    self.check_new_name(&view.name, compat)?;
+                    check_name(Obj::View, &view.name, compat)?;
                     self.views.insert(k.clone(), view.clone());
                     self.push_order(ObjectKind::View, k);
                 }
             }
             Statement::DropView { name, if_exists } => {
                 let k = key(name);
-                let Some(view) = self.views.remove(&k) else {
+                // The emulator drops a view only by its declared spelling; production ignores case.
+                let exact = self.views.get(&k).is_some_and(|v| v.name == *name);
+                let view = if compat && !exact {
+                    None
+                } else {
+                    self.views.remove(&k)
+                };
+                let Some(view) = view else {
                     if *if_exists {
                         return Ok(());
                     }
@@ -2326,7 +2724,7 @@ impl Schema {
         let mut out = Vec::new();
         match stmt {
             Statement::AlterTable { table, action, .. } => {
-                let Some(t) = self.resolve_table(table) else {
+                let Some(t) = self.table_exact(table) else {
                     return out;
                 };
                 match action {
@@ -2345,7 +2743,7 @@ impl Schema {
                         });
                     }
                     AlterTable::AlterColumn { column } => {
-                        let Some(old) = t.column(&column.name) else {
+                        let Some(old) = t.column_exact(&column.name) else {
                             return out;
                         };
                         if column.not_null && !old.not_null {

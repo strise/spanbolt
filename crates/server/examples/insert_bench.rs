@@ -174,6 +174,7 @@ fn phases(db: &Database, ids: &mut Uuids, explicit: bool) -> Result<Phases, BoxE
         reads: &reads,
         catalog: &state.catalog,
         mutations: &muts,
+        dml_ops: 0,
     })?;
     p.commit = t.elapsed();
     Ok(p)

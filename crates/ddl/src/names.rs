@@ -4,6 +4,48 @@
 /// Longest schema identifier; generated names are truncated to fit.
 pub const MAX_IDENTIFIER: usize = 128;
 
+/// Production's rule for a schema object name (the emulator's `ValidateSchemaName`): the part
+/// after any `schema.` prefix starts with an ASCII letter, has only ASCII letters, digits and
+/// underscores, and is at most 128 characters.
+pub fn valid_name(name: &str) -> bool {
+    let part = name.rsplit_once('.').map_or(name, |(_, n)| n);
+    part.len() <= MAX_IDENTIFIER
+        && part.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// Production's rule for a column name: at most 128 characters, not starting with `_`.
+pub fn valid_column_name(name: &str) -> bool {
+    name.len() <= MAX_IDENTIFIER && !name.starts_with('_')
+}
+
+/// Schema names reserved by Spanner (the emulator's `ReservedSchemaNames`), compared ignoring case;
+/// `spanner_` and `pg_` prefixes are reserved too.
+pub fn reserved_schema_name(name: &str) -> bool {
+    const RESERVED: [&str; 17] = [
+        "INFORMATION_SCHEMA",
+        "safe",
+        "aead",
+        "kll_quantiles",
+        "keys",
+        "hll_count",
+        "net",
+        "ml",
+        "SPANNER_PLACEMENT",
+        "SPANNER_SYS",
+        "pg_information_schema",
+        "pg_catalog",
+        "pg",
+        "public",
+        "DEFINITION_SCHEMA",
+        "default",
+        "spanner",
+    ];
+    RESERVED.iter().any(|r| r.eq_ignore_ascii_case(name))
+        || name.starts_with("spanner_")
+        || name.starts_with("pg_")
+}
+
 /// The emulator's `MakeFingerprint`: Fingerprint64 of a seeded signature, as 16 hex digits.
 pub fn make_fingerprint(signature: &str) -> String {
     let text = format!("2695C62E33338E4B_{signature}");

@@ -153,6 +153,9 @@ pub struct CommitInput<'a> {
     /// The catalog the mutations were resolved against.
     pub catalog: &'a Arc<Catalog>,
     pub mutations: &'a [Mutation],
+    /// How many leading `mutations` re-apply the transaction's DML, which counted towards the
+    /// mutation limit statement by statement.
+    pub dml_ops: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -368,9 +371,17 @@ impl Database {
         };
         let ts = self.clock.next_commit_ts();
         let mut w = Writer::new(&latest.state, ts).with_now(self.clock.now());
-        for m in input.mutations {
+        let (dml, rest) = input
+            .mutations
+            .split_at(input.dml_ops.min(input.mutations.len()));
+        for m in dml {
             w.apply(m)?;
         }
+        let before_rest = w.mutation_count();
+        for m in rest {
+            w.apply(m)?;
+        }
+        w.check_mutation_limit(before_rest)?;
         let mutation_count = w.mutation_count();
         let (state, written) = w.finish()?;
         if let Some(start) = since {

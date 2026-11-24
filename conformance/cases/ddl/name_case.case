@@ -1,0 +1,322 @@
+# DDL refers to tables, columns and indexes by their declared spelling; duplicate detection
+# ignores case. Production and the emulator (since 1.5.58) reject a wrong-case reference.
+tags: ddl
+schema:
+  CREATE TABLE Account (
+    AccountId INT64 NOT NULL,
+    Name STRING(MAX),
+    Created TIMESTAMP,
+  ) PRIMARY KEY (AccountId);
+  CREATE INDEX AccountByName ON Account(Name)
+
+case alter_table_wrong_case
+ddl:
+  ALTER TABLE ACCOUNT ADD COLUMN Extra INT64
+expect:
+  error: NOT_FOUND
+  message: Table not found: ACCOUNT
+expect@spanner:
+  same
+
+case drop_table_wrong_case
+ddl:
+  DROP INDEX AccountByName
+ddl:
+  DROP TABLE account
+expect:
+  error: NOT_FOUND
+  message: Table not found: account
+expect@spanner:
+  same
+
+case drop_column_wrong_case
+ddl:
+  ALTER TABLE Account DROP COLUMN created
+expect:
+  error: NOT_FOUND
+  message: Column not found in table Account: created
+expect@spanner:
+  same
+
+case alter_column_wrong_case
+ddl:
+  ALTER TABLE Account ALTER COLUMN name STRING(100)
+expect:
+  error: NOT_FOUND
+  message: Column not found in table Account: name
+expect@spanner:
+  same
+
+case set_default_wrong_case
+ddl:
+  ALTER TABLE Account ALTER COLUMN created SET DEFAULT (CURRENT_TIMESTAMP())
+expect:
+  error: NOT_FOUND
+  message: Column not found in table Account: created
+expect@spanner:
+  same
+
+case set_options_wrong_case
+ddl:
+  ALTER TABLE Account ALTER COLUMN created SET OPTIONS (allow_commit_timestamp = true)
+expect:
+  ok
+expect@spanner:
+  error: NOT_FOUND
+  message: Column not found in table Account: created
+
+case add_column_differs_in_case
+ddl:
+  ALTER TABLE Account ADD COLUMN NAME STRING(MAX)
+expect:
+  error: FAILED_PRECONDITION
+  message: Duplicate column name Account.NAME.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Column names in table Account differ only in case: Name, NAME.
+
+case create_table_differs_in_case
+ddl:
+  CREATE TABLE ACCOUNT (K INT64) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Duplicate name in schema: ACCOUNT.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Schema object names differ only in case: Account, ACCOUNT.
+
+case duplicate_column_differs_in_case
+ddl:
+  CREATE TABLE T (K INT64, k INT64) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Duplicate column name T.k.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Column names in table T differ only in case: K, k.
+
+case primary_key_wrong_case
+ddl:
+  CREATE TABLE T (K INT64) PRIMARY KEY (k)
+expect:
+  error: FAILED_PRECONDITION
+  message: Table T references nonexistent key column k.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: table T references nonexistent key column k.
+
+case index_on_wrong_case_table
+ddl:
+  CREATE INDEX I ON account(Name)
+expect:
+  error: NOT_FOUND
+  message: Table not found: account
+expect@spanner:
+  same
+
+case index_on_wrong_case_column
+ddl:
+  CREATE INDEX I ON Account(name)
+expect:
+  error: INVALID_ARGUMENT
+  message: Index I specifies key column name which does not exist in the index's base table.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index I specifies key column name which does not exist in the index's base table.
+
+case index_storing_wrong_case
+ddl:
+  CREATE INDEX I ON Account(Created) STORING (name)
+expect:
+  error: INVALID_ARGUMENT
+  message: Index I specifies key column name which does not exist in the index's base table.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index I specifies nonexistent stored column name.
+
+case index_differs_in_case
+ddl:
+  CREATE INDEX ACCOUNTBYNAME ON Account(Created)
+expect:
+  error: FAILED_PRECONDITION
+  message: Duplicate name in schema: ACCOUNTBYNAME.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Schema object names differ only in case: AccountByName, ACCOUNTBYNAME.
+
+case drop_index_wrong_case
+ddl:
+  DROP INDEX accountbyname
+expect:
+  error: NOT_FOUND
+  message: Index not found: accountbyname
+expect@spanner:
+  same
+
+case alter_index_wrong_case
+ddl:
+  ALTER INDEX accountbyname ADD STORED COLUMN Created
+expect:
+  ok
+expect@spanner:
+  error: NOT_FOUND
+  message: Index not found: accountbyname
+
+case alter_index_stored_column_wrong_case
+ddl:
+  ALTER INDEX AccountByName ADD STORED COLUMN created
+expect:
+  error: INVALID_ARGUMENT
+  message: Index AccountByName specifies key column created which does not exist in the index's base table.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index AccountByName specifies nonexistent stored column created.
+
+case interleave_wrong_case
+ddl:
+  CREATE TABLE Child (AccountId INT64 NOT NULL, C INT64) PRIMARY KEY (AccountId, C), INTERLEAVE IN PARENT account
+expect:
+  error: NOT_FOUND
+  message: Table not found: account
+expect@spanner:
+  same
+
+case interleave_key_wrong_case
+ddl:
+  CREATE TABLE Child (accountid INT64 NOT NULL, C INT64) PRIMARY KEY (accountid, C), INTERLEAVE IN PARENT Account
+expect:
+  error: FAILED_PRECONDITION
+  message: Table Child does not reference parent key column AccountId.
+expect@spanner:
+  same
+
+case foreign_key_wrong_case_table
+ddl:
+  CREATE TABLE T (K INT64, A INT64, CONSTRAINT FK FOREIGN KEY (A) REFERENCES account (AccountId)) PRIMARY KEY (K)
+expect:
+  error: NOT_FOUND
+  message: Table not found: account
+expect@spanner:
+  same
+
+case foreign_key_wrong_case_column
+ddl:
+  CREATE TABLE T (K INT64, A INT64, CONSTRAINT FK FOREIGN KEY (A) REFERENCES Account (accountid)) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Column `accountid` not found for table `Account` in foreign key `FK`.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column `accountid` not found for table `Account` in foreign key `FK`.
+
+case foreign_key_wrong_case_own_column
+ddl:
+  CREATE TABLE T (K INT64, A INT64, CONSTRAINT FK FOREIGN KEY (a) REFERENCES Account (AccountId)) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Column `a` not found for table `T` in foreign key `FK`.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column `a` not found for table `T` in foreign key `FK`.
+
+case drop_constraint_wrong_case
+ddl:
+  ALTER TABLE Account ADD CONSTRAINT NameSet CHECK (Name IS NOT NULL)
+ddl:
+  ALTER TABLE Account DROP CONSTRAINT nameset
+expect:
+  ok
+expect@spanner:
+  error: NOT_FOUND
+  message: nameset is not a constraint in Account
+
+case row_deletion_policy_wrong_case
+ddl:
+  ALTER TABLE Account ADD ROW DELETION POLICY (OLDER_THAN(created, INTERVAL 1 DAY))
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot create ROW DELETION POLICY because there is no column named created in table Account.
+
+case change_stream_wrong_case_table
+ddl:
+  CREATE CHANGE STREAM S FOR account
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Change Stream S cannot track account because either Change Streams do not track database objects of this type, or this Table does not exist.
+
+case change_stream_wrong_case_column
+ddl:
+  CREATE CHANGE STREAM S FOR Account(name)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Change Stream S cannot track column name because it does not exist in Table Account.
+
+case drop_view_wrong_case
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
+ddl:
+  DROP VIEW v
+expect:
+  error: NOT_FOUND
+  message: View not found: v
+expect@spanner:
+  ok
+
+case view_body_ignores_case
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.accountid FROM ACCOUNT AS a
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: ACCOUNT [at 1:63]
+
+case rename_table_wrong_case
+ddl:
+  ALTER TABLE account RENAME TO Accounts
+expect:
+  error: NOT_FOUND
+  message: Table not found: account
+expect@spanner:
+  same
+
+case check_expression_ignores_case
+ddl:
+  ALTER TABLE Account ADD CONSTRAINT NameSet CHECK (name IS NOT NULL)
+expect:
+  ok
+
+case generated_expression_ignores_case
+ddl:
+  ALTER TABLE Account ADD COLUMN Upper STRING(MAX) AS (UPPER(name)) STORED
+expect:
+  ok
+
+case create_search_index_wrong_case
+ddl:
+  ALTER TABLE Account ADD COLUMN Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Name)) HIDDEN
+ddl:
+  CREATE SEARCH INDEX S ON Account(tokens)
+expect:
+  error: INVALID_ARGUMENT
+  message: Index S specifies key column tokens which does not exist in the index's base table.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index S specifies key column tokens which does not exist in the index's base table.
+
+case drop_sequence_wrong_case
+ddl:
+  CREATE SEQUENCE Seq OPTIONS (sequence_kind = 'bit_reversed_positive')
+ddl:
+  DROP SEQUENCE seq
+expect:
+  ok
+expect@spanner:
+  error: NOT_FOUND
+  message: seq

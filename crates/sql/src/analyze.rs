@@ -2,6 +2,7 @@
 
 use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
 use googlesql_sys::proto::{AnyResolvedStatementProto, ResolvedQueryStmtProto};
+use prost::Message;
 use spanbolt_storage::{Code, Error, Result};
 
 use crate::catalog::SqlCatalog;
@@ -36,10 +37,16 @@ pub(crate) fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
     Error::new(code, e.message)
 }
 
+/// Analyses one statement and checks it against Spanner's query size limits.
 pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolvedStatementProto> {
-    cat.gsql
-        .analyze(sql, params)
-        .map_err(|e| unsupported(cat, map_error(e)))
+    crate::limits::check_query_string(sql)?;
+    let bytes = cat
+        .gsql
+        .analyze_raw(sql, params)
+        .map_err(|e| unsupported(cat, map_error(e)))?;
+    crate::limits::check(&bytes, cat.emulator_compat)?;
+    AnyResolvedStatementProto::decode(bytes.as_slice())
+        .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
 }
 
 /// Spanner SQL the catalog doesn't register, so the analyser reports it as missing: UNIMPLEMENTED

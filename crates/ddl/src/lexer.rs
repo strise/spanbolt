@@ -92,6 +92,14 @@ pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, DdlError> {
             continue;
         }
         if c == b'`' {
+            // Spanner's DDL lexer has no quoted identifier starting with a digit.
+            if b.get(i + 1).is_some_and(u8::is_ascii_digit) {
+                return Err(syntax(
+                    src,
+                    i,
+                    "Encountered an unknown character ('`'). while parsing: identifier",
+                ));
+            }
             let mut j = i + 1;
             let mut name = String::new();
             loop {
@@ -410,6 +418,24 @@ pub fn identifiers(sql: &str) -> Option<Vec<String>> {
     )
 }
 
+/// The identifiers `sql` may use as column names: [`identifiers`] without function names (an
+/// unquoted identifier before `(`), so a call to `UPPER` doesn't read a column `Upper`.
+pub(crate) fn column_references(sql: &str) -> Option<Vec<String>> {
+    let toks = tokenize(sql).ok()?;
+    let mut out = Vec::new();
+    let mut it = toks.into_iter().peekable();
+    while let Some(t) = it.next() {
+        match t.tok {
+            Tok::Ident(w) if !matches!(it.peek().map(|n| &n.tok), Some(Tok::Sym("("))) => {
+                out.push(w)
+            }
+            Tok::QuotedIdent(w) => out.push(w),
+            _ => {}
+        }
+    }
+    Some(out)
+}
+
 pub fn is_reserved(word: &str) -> bool {
     RESERVED.iter().any(|k| k.eq_ignore_ascii_case(word))
 }
@@ -423,6 +449,10 @@ mod tests {
         assert_eq!(
             identifiers("CONCAT(Src, 'Note', b'Tag', r\"K\") -- Other\n || `Mid`").unwrap(),
             ["CONCAT", "Src", "Mid"]
+        );
+        assert_eq!(
+            column_references("CONCAT(Src, UPPER (`Mid`))").unwrap(),
+            ["Src", "Mid"]
         );
         assert_eq!(identifiers("'unterminated"), None);
     }

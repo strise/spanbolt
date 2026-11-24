@@ -147,6 +147,11 @@ impl Table {
             .iter()
             .find(|c| c.name.eq_ignore_ascii_case(name))
     }
+
+    /// The column spelled exactly `name`: DDL refers to columns by their declared spelling.
+    pub fn column_exact(&self, name: &str) -> Option<&Column> {
+        self.columns.iter().find(|c| c.name == name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

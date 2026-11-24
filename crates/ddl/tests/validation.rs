@@ -1,4 +1,5 @@
-//! Negative cases; expected texts were taken from emulator 1.5.59.
+//! Negative cases; expected texts were taken from emulator 1.5.59, or from Cloud Spanner where
+//! production mode (`Schema::apply`) follows it.
 
 use spanbolt_ddl::{
     DataCheck, DdlError, Schema, parse_statement, parse_statement_emulator_compat, print_statement,
@@ -56,7 +57,7 @@ fn rejects_like_the_emulator() {
         (
             "CREATE TABLE p (id INT64 NOT NULL) PRIMARY KEY (id)",
             Dup,
-            "Duplicate name in schema: p.",
+            "Schema object names differ only in case: P, p.",
         ),
         (
             "CREATE TABLE D (id INT64 NOT NULL, id STRING(MAX)) PRIMARY KEY (id)",
@@ -116,7 +117,7 @@ fn rejects_like_the_emulator() {
         ),
         (
             "CREATE TABLE D (id INT64 NOT NULL, x INT64, CONSTRAINT fk FOREIGN KEY (y) REFERENCES P (id)) PRIMARY KEY (id)",
-            Pre,
+            Inv,
             "Column `y` not found for table `D` in foreign key `fk`.",
         ),
         (
@@ -167,7 +168,7 @@ fn rejects_like_the_emulator() {
         ("CREATE INDEX pi2 ON Nope(ts)", Nf, "Table not found: Nope"),
         (
             "CREATE INDEX pi2 ON P(nope)",
-            Inv,
+            Pre,
             "Index pi2 specifies key column nope which does not exist in the index's base table.",
         ),
         (
@@ -342,12 +343,12 @@ fn rejects_like_the_emulator() {
         ("DROP SEQUENCE nope", Nf, "Sequence not found: nope"),
         (
             "CREATE CHANGE STREAM cs2 FOR nope",
-            Pre,
+            Inv,
             "Change Stream cs2 cannot track nope because either Change Streams do not track database objects of this type, or this Table does not exist.",
         ),
         (
             "CREATE CHANGE STREAM cs2 FOR G(nope)",
-            Pre,
+            Inv,
             "Change Stream cs2 cannot track column nope because it does not exist in Table G.",
         ),
         (
@@ -952,4 +953,53 @@ fn locality_group_errors_follow_the_mode() {
     let sql = "ALTER LOCALITY GROUP default SET OPTIONS (storage = 'hdd')";
     assert!(parse_statement(sql).is_err());
     assert!(parse_statement_emulator_compat(sql).is_ok());
+}
+
+/// Production's per-database object counts (5000 tables, 10000 indexes), which a conformance case
+/// can't reach cheaply. The schema is filled directly: applying thousands of statements one by one
+/// would make the test slow.
+#[test]
+fn database_object_count_limits() {
+    let table = |name: &str| {
+        let Ok(st) = parse_statement(&format!(
+            "CREATE TABLE {name} (K INT64 NOT NULL, V INT64) PRIMARY KEY (K)"
+        )) else {
+            panic!("parse")
+        };
+        let spanbolt_ddl::Statement::CreateTable { table, .. } = st else {
+            panic!("not a table")
+        };
+        table
+    };
+    let mut s = Schema::default();
+    for i in 0..4999 {
+        let t = table(&format!("T{i}"));
+        s.tables.insert(t.name.to_ascii_lowercase(), t);
+    }
+    let create = |s: &mut Schema, sql: &str| s.apply(&parse_statement(sql).unwrap());
+    create(&mut s, "CREATE TABLE Last (K INT64) PRIMARY KEY (K)").unwrap();
+    let err = create(&mut s, "CREATE TABLE OneTooMany (K INT64) PRIMARY KEY (K)").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Cannot add Table OneTooMany : too many tables (limit 5000 per database)."
+    );
+
+    let index = |name: &str, table: &str| {
+        let Ok(spanbolt_ddl::Statement::CreateIndex { index, .. }) =
+            parse_statement(&format!("CREATE INDEX {name} ON {table}(V)"))
+        else {
+            panic!("not an index")
+        };
+        index
+    };
+    for i in 0..9999 {
+        let ix = index(&format!("I{i}"), &format!("T{}", i / 100));
+        s.indexes.insert(ix.name.to_ascii_lowercase(), ix);
+    }
+    create(&mut s, "CREATE INDEX LastIndex ON T200(V)").unwrap();
+    let err = create(&mut s, "CREATE INDEX OneTooMany ON T201(V)").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Cannot add Index OneTooMany : too many indexes (limit 10000 per database)."
+    );
 }

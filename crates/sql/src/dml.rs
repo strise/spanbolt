@@ -905,6 +905,7 @@ pub fn execute(
                             commit_ts_cells: kept_cells,
                         }],
                         &check,
+                        !partitioned,
                     )?;
                 }
             } else {
@@ -926,7 +927,7 @@ pub fn execute(
                         commit_ts_cells: cells,
                     });
                 }
-                rw.apply_dml_checked(muts, &check)?;
+                rw.apply_dml_checked(muts, &check, !partitioned)?;
             }
         }
         Kind::Update { scan, sets } => {
@@ -969,6 +970,7 @@ pub fn execute(
                         commit_ts_cells: ts_cells,
                     }],
                     &check,
+                    !partitioned,
                 )?;
             }
         }
@@ -983,6 +985,7 @@ pub fn execute(
                         keys: KeySet::keys(keys),
                     }],
                     &check,
+                    !partitioned,
                 )?;
             }
             affected = olds.into_iter().map(|o| (o, "DELETE")).collect();

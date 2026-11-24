@@ -1399,7 +1399,7 @@ mod tests {
         let t =
             tokens::tokenize_ngrams(&[s("Ærø"), Value::Int64(2), Value::Int64(2)], false).unwrap();
         let Value::TokenList(ref b) = t else { panic!() };
-        let toks: Vec<&[u8]> = tokens::decode(&b).unwrap();
+        let toks: Vec<&[u8]> = tokens::decode(b).unwrap();
         assert_eq!(toks[1..], ["Ær".as_bytes(), "rø".as_bytes()]);
         let search = |q: &str| search_ngrams(&[t.clone(), s(q)], false).unwrap();
         assert_eq!(search("Ærø"), Value::Bool(true));

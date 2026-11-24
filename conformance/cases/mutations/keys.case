@@ -71,6 +71,9 @@ insert Nullable cols=K,V:
 expect:
   error: ALREADY_EXISTS
   message: Table Nullable: Row {Int64(NULL)} already exists.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Row [<null>] in table Nullable already exists
 
 case null_key_point_read
 insert Nullable cols=K,V:
@@ -127,3 +130,6 @@ delete Descending:
 expect:
   error: FAILED_PRECONDITION
   message: Wrong number of key parts for Descending. Expected 2 key parts, found 1 key parts. Supplied key: values { string_value: "1" }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for Descending. Expected: 2. Got: ["1"]

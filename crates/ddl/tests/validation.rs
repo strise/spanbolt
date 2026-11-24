@@ -66,7 +66,8 @@ fn rejects_like_the_emulator() {
         (
             "CREATE TABLE D (id INT64 NOT NULL) PRIMARY KEY (nope)",
             Pre,
-            "Table D references nonexistent key column nope.",
+            // Production's lowercase; `--emulator-compat` says `Table D`.
+            "table D references nonexistent key column nope.",
         ),
         (
             "CREATE TABLE D (id INT64 NOT NULL) PRIMARY KEY (id, id)",

@@ -298,7 +298,7 @@ async fn ddl_commit_and_reads() {
         dup.map(|e| (e.code(), e.message().to_string())),
         Some((
             Code::AlreadyExists,
-            "Table Accounts: Row {Int64(1)} already exists.".into()
+            "Row [1] in table Accounts already exists".into()
         ))
     );
 

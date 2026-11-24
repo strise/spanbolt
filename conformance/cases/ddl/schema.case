@@ -167,6 +167,11 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Table T references nonexistent key column Nope.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: table T references nonexistent key column Nope.
 get_ddl
 expect:
   statements:
+expect@spanner:
+  same

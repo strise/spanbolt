@@ -580,6 +580,29 @@ fn prod_messages_follow_production_spanner() {
         err.message,
         "Unique index violation on index SingersByEmail at index key [m@x,1]. It conflicts with row [1] in table Singers."
     );
+    // A duplicate primary key: against a committed row, and against one this commit wrote.
+    let insert = |id: &str| {
+        write(
+            &st,
+            WriteKind::Insert,
+            "Singers",
+            &["SingerId"],
+            vec![row(vec![s(id)])],
+        )
+    };
+    let err = apply(&st, &[insert("1")])
+        .err()
+        .unwrap_or_else(|| panic!("expected duplicate"));
+    assert_eq!(err.code, Code::AlreadyExists);
+    assert_eq!(err.message, "Row [1] in table Singers already exists");
+    let err = apply(&st, &[insert("7"), insert("7")])
+        .err()
+        .unwrap_or_else(|| panic!("expected duplicate"));
+    assert_eq!(err.code, Code::InvalidArgument);
+    assert_eq!(
+        err.message,
+        "Row [7] in Singers was already inserted in this transaction."
+    );
     // Derived states keep the flag.
     let next = apply(&st, &[]).unwrap_or_else(|e| panic!("{e}"));
     assert!(next.prod_messages);

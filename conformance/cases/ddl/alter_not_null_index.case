@@ -1,0 +1,51 @@
+tags: ddl oracle
+# `expect:` is recorded from the emulator 1.5.59; `expect@spanner:` from real Spanner (spanbolt #40).
+
+# GoogleCloudPlatform/cloud-spanner-emulator#373: changing NOT NULL on a column in a non-unique index,
+# as a key column and as a STORING column. Each step touches its own column, so a step that one
+# oracle accepts doesn't change what the next step sees.
+case alter_not_null_on_indexed_column
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    A INT64 NOT NULL,
+    B INT64,
+    C INT64 NOT NULL,
+    D INT64,
+    E INT64 NOT NULL,
+  ) PRIMARY KEY (Id);
+  CREATE INDEX TByAB ON T(A, B);
+  CREATE INDEX TStoring ON T(Id) STORING (C, D);
+  CREATE NULL_FILTERED INDEX TByE ON T(E)
+ddl:
+  ALTER TABLE T ALTER COLUMN A INT64
+expect:
+  error: FAILED_PRECONDITION
+  message: Changing NOT NULL constraints on column A is not allowed because it affects index TByAB.
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN B INT64 NOT NULL
+expect:
+  error: FAILED_PRECONDITION
+  message: Changing NOT NULL constraints on column B is not allowed because it affects index TByAB.
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN C INT64
+expect:
+  ok
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN D INT64 NOT NULL
+expect:
+  ok
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN E INT64
+expect:
+  ok
+expect@spanner:
+  same

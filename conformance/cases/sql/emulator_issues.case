@@ -1,0 +1,213 @@
+# Open issues on the official emulator where its answer and production's may differ (spanbolt #40).
+# One case per upstream issue, with several steps each, so recording from Cloud Spanner needs one
+# database per issue. `expect:` is recorded from the emulator; `expect@spanner:` from real Spanner.
+tags: sql oracle
+schema:
+  CREATE TABLE Items (
+    Id INT64 NOT NULL,
+    Grp STRING(16),
+    Val INT64,
+  ) PRIMARY KEY (Id);
+  CREATE INDEX ItemsByGrp ON Items(Grp)
+insert Items cols=Id,Grp,Val:
+  [1, "a", 10]
+  [2, "a", 20]
+  [3, "b", 5]
+  [4, null, 7]
+
+# GoogleCloudPlatform/cloud-spanner-emulator#292 and #204: production rejects a query whose output
+# can be a NULL ARRAY<STRUCT>, and accepts it once COALESCE/IFNULL makes it non-null.
+case null_array_of_struct
+query:
+  WITH grps AS (SELECT * FROM UNNEST([10, 20, 30]) AS group_id), nums AS (SELECT * FROM UNNEST(ARRAY<STRUCT<id INT64, group_id INT64, name STRING>>[(1, 10, 'foo'), (2, 20, 'bar'), (11, 10, 'baz')])) SELECT group_id, (SELECT ARRAY_AGG(STRUCT(id, name) ORDER BY id) FROM nums WHERE nums.group_id = grps.group_id) AS a FROM grps ORDER BY group_id
+expect:
+  columns: group_id INT64, a ARRAY<STRUCT<id INT64, name STRING>>
+  ["10",[["1","foo"],["11","baz"]]]
+  ["20",[["2","bar"]]]
+  ["30",null]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<id INT64, name STRING>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  WITH grps AS (SELECT * FROM UNNEST([10, 20, 30]) AS group_id), nums AS (SELECT * FROM UNNEST(ARRAY<STRUCT<id INT64, group_id INT64, name STRING>>[(1, 10, 'foo'), (2, 20, 'bar'), (11, 10, 'baz')])) SELECT group_id, (SELECT COALESCE(ARRAY_AGG(STRUCT(id, name) ORDER BY id), []) FROM nums WHERE nums.group_id = grps.group_id) AS a FROM grps ORDER BY group_id
+expect:
+  columns: group_id INT64, a ARRAY<STRUCT<id INT64, name STRING>>
+  ["10",[["1","foo"],["11","baz"]]]
+  ["20",[["2","bar"]]]
+  ["30",[]]
+expect@spanner:
+  same
+query:
+  SELECT g.Grp, (SELECT ARRAY_AGG(STRUCT(i.Id AS Id, i.Val AS Val) ORDER BY i.Id) FROM Items i WHERE i.Grp = g.Grp) AS a FROM (SELECT DISTINCT Grp FROM Items WHERE Grp IS NOT NULL) g ORDER BY g.Grp
+expect:
+  columns: Grp STRING, a ARRAY<STRUCT<Id INT64, Val INT64>>
+  ["a",[["1","10"],["2","20"]]]
+  ["b",[["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<Id INT64, Val INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  SELECT g.Grp, IFNULL((SELECT ARRAY_AGG(STRUCT(i.Id AS Id, i.Val AS Val) ORDER BY i.Id) FROM Items i WHERE i.Grp = g.Grp), []) AS a FROM (SELECT DISTINCT Grp FROM Items WHERE Grp IS NOT NULL) g ORDER BY g.Grp
+expect:
+  columns: Grp STRING, a ARRAY<STRUCT<Id INT64, Val INT64>>
+  ["a",[["1","10"],["2","20"]]]
+  ["b",[["3","5"]]]
+expect@spanner:
+  same
+query:
+  SELECT ARRAY_AGG(STRUCT(Id, Val)) AS a FROM Items WHERE Id > 100
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>
+  [null]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<Id INT64, Val INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  SELECT Id, CASE WHEN Val > 8 THEN [STRUCT(Id AS Id, Val AS Val)] ELSE NULL END AS a FROM Items ORDER BY Id
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+query:
+  SELECT Id, CASE WHEN Val > 8 THEN [STRUCT(Id AS Id, Val AS Val)] ELSE [] END AS a FROM Items ORDER BY Id
+expect:
+  columns: Id INT64, a ARRAY<STRUCT<Id INT64, Val INT64>>
+  ["1",[["1","10"]]]
+  ["2",[["2","20"]]]
+  ["3",[]]
+  ["4",[]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+query:
+  SELECT Id, ARRAY(SELECT AS STRUCT i.Id, i.Val FROM Items i WHERE i.Grp = o.Grp ORDER BY i.Id) AS a FROM Items o ORDER BY Id
+expect:
+  columns: Id INT64, a ARRAY<STRUCT<Id INT64, Val INT64>>
+  ["1",[["1","10"],["2","20"]]]
+  ["2",[["1","10"],["2","20"]]]
+  ["3",[["3","5"]]]
+  ["4",[]]
+expect@spanner:
+  same
+query:
+  SELECT Id, IF(Val > 8, ARRAY(SELECT AS STRUCT i.Id, i.Val FROM Items i WHERE i.Id = o.Id), NULL) AS a FROM Items o ORDER BY Id
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<Id INT64, Val INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  SELECT Id FROM Items WHERE ARRAY_LENGTH(IF(Val > 8, [STRUCT(Id AS Id)], NULL)) > 0 ORDER BY Id
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+query:
+  SELECT Id, CAST(NULL AS ARRAY<STRUCT<x INT64>>) AS a FROM Items ORDER BY Id
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<x INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  SELECT [STRUCT(1 AS x, 'y' AS y)] AS a
+expect:
+  columns: a ARRAY<STRUCT<x INT64, y STRING>>
+  [[["1","y"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+
+# GoogleCloudPlatform/cloud-spanner-emulator#276: WITH inside a subquery (EF Core's FromSqlRaw wraps
+# a CTE query in a FROM subquery).
+case with_in_subquery
+query:
+  SELECT * FROM (WITH big AS (SELECT Id, Val FROM Items WHERE Val > 6) SELECT Id FROM big) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: WITH is not supported on subqueries in this language version [at 1:16]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Items WHERE Id IN (WITH small AS (SELECT Id FROM Items WHERE Val < 8) SELECT Id FROM small) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: WITH is not supported on subqueries in this language version [at 1:35]
+expect@spanner:
+  same
+query:
+  SELECT (WITH m AS (SELECT MAX(Val) AS v FROM Items) SELECT v FROM m) AS mx
+expect:
+  error: INVALID_ARGUMENT
+  message: WITH is not supported on subqueries in this language version [at 1:9]
+expect@spanner:
+  same
+
+# GoogleCloudPlatform/cloud-spanner-emulator#213: pipe syntax.
+case pipe_syntax
+query:
+  FROM Items |> WHERE Val > 6 |> SELECT Id |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+query:
+  SELECT Id, Val FROM Items |> WHERE Grp = 'a' |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Pipe query syntax not supported [at 1:27]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Grp [at 1:36]
+query:
+  FROM Items |> AGGREGATE COUNT(*) AS n GROUP BY Grp |> ORDER BY Grp
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Grp STRING, n INT64
+  [null,"1"]
+  ["a","2"]
+  ["b","1"]
+
+# GoogleCloudPlatform/cloud-spanner-emulator#214: FORCE_INDEX=PRIMARY_KEY (undocumented).
+case force_index_primary_key
+query:
+  SELECT Id FROM Items@{FORCE_INDEX=PRIMARY_KEY} WHERE Grp = 'a' ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: The table does not have a secondary index called PRIMARY_KEY
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+query:
+  SELECT Id FROM Items@{FORCE_INDEX=primary_key} WHERE Grp = 'a' ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: The table does not have a secondary index called primary_key
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+query:
+  SELECT a.Id, b.Id FROM Items a JOIN Items@{FORCE_INDEX=PRIMARY_KEY} b ON b.Id = a.Id + 1 ORDER BY a.Id
+expect:
+  error: INVALID_ARGUMENT
+  message: The table does not have a secondary index called PRIMARY_KEY
+expect@spanner:
+  columns: Id INT64, Id INT64
+  ["1","2"]
+  ["2","3"]
+  ["3","4"]

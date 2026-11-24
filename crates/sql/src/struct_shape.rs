@@ -104,7 +104,7 @@ fn has_struct(t: &TypeProto) -> bool {
     }
 }
 
-fn is_struct_array(t: &TypeProto) -> bool {
+pub(crate) fn is_struct_array(t: &TypeProto) -> bool {
     kind(t) == Some(TypeKind::TypeArray)
         && element_type(t).and_then(kind) == Some(TypeKind::TypeStruct)
 }

@@ -345,6 +345,8 @@ read Acct cols=Id bound=exact_staleness:1h:
 expect:
   error: FAILED_PRECONDITION
   message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: Id INT64
 
 case exact_staleness_zero
 read Acct cols=Id bound=exact_staleness:0s:

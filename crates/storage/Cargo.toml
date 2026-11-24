@@ -8,6 +8,10 @@ repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
+rust-version.workspace = true
+documentation = "https://docs.rs/spanbolt-storage"
+readme = "README.md"
+include = ["src/**", "README.md", "LICENSE", "NOTICE"]
 
 [dependencies]
 spanbolt-ddl.workspace = true

@@ -90,17 +90,26 @@ Suites that take the image name from a property instead can tag it under the emu
 
 ### Cargo
 
-spanbolt is a Rust workspace. The SQL engine links a C++ shim around GoogleSQL
-(`native/googlesql`), built with Bazel. See `docs/building.md` for getting the shim.
+```sh
+cargo install spanbolt
+spanbolt --host-port 127.0.0.1:9010 --rest-port 9020
+```
+
+The SQL engine links GoogleSQL's analyser through a native library, which the build downloads
+(pinned by SHA-256, needs `curl` and `tar`) for macOS arm64 and Linux arm64/x86_64 (glibc 2.38+,
+e.g. Ubuntu 24.04, Debian 13). The binary loads it from that download cache
+(`~/.cache/spanbolt/prebuilt`): run `cargo install spanbolt --force` again if you clear the cache.
+On other platforms use the image, or build the library from source (`docs/building.md`).
+
+From a checkout:
 
 ```sh
-source scripts/googlesql-env.sh            # points the build at the shim
-cargo build --release -p spanbolt-server --features googlesql
+cargo build --release -p spanbolt          # downloads the GoogleSQL shim the first time
 ./target/release/spanbolt --host-port 127.0.0.1:9010 --rest-port 9020
 ```
 
-Without the `googlesql` feature, `cargo build` and `cargo test` work with no native library; every
-SQL call then returns `UNIMPLEMENTED`.
+`cargo build` and `cargo test` in the workspace leave the SQL engine out and need no native
+library. `docs/building.md` covers the shim and building it with Bazel.
 
 Useful flags: `--snapshot <file>` loads a snapshot at startup, `spanbolt snapshot <path>` asks a
 running server to write one, and `--emulator-compat` follows the emulator instead of production.
@@ -128,7 +137,8 @@ crates/txn            transactions and MVCC versions
 crates/ddl            DDL parser, schema model, GetDatabaseDdl printer
 crates/sql            planner, executor, functions, full-text search, INFORMATION_SCHEMA
 crates/googlesql-sys  Rust bindings to the GoogleSQL shim
-crates/server         gRPC and REST server, the `spanbolt` binary
+crates/server         gRPC and REST server (library)
+crates/spanbolt       the `spanbolt` binary (SQL engine on)
 crates/conformance    the conformance harness
 native/googlesql      the C++ shim around GoogleSQL
 ```

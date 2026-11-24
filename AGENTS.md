@@ -10,17 +10,23 @@ docs/building.md cover setup.
   modes. `GATE_EXTRA='<command>'` adds a project-specific check at the end.
 - Commits: conventional format `type(scope): description`.
 - Never run destructive git (reset, checkout --, restore, stash, clean).
-- Native dependency: `googlesql-sys` (the GoogleSQL analyser shim) and `spanbolt-sql` (the SQL
-  engine) are outside `default-members`, so `cargo test`/`cargo build` work without the native
-  library. The server takes the engine behind the cargo feature `googlesql` (off by default; without
-  it every SQL RPC is UNIMPLEMENTED). No Bazel needed: `googlesql-sys/build.rs` downloads the
+- Native dependency: `googlesql-sys` (the GoogleSQL analyser shim), `spanbolt-sql` (the SQL
+  engine) and `spanbolt` (the binary, `crates/spanbolt`) are outside `default-members`, so
+  `cargo test`/`cargo build` work without the native library. `spanbolt-server` (the library) takes
+  the engine behind the cargo feature `googlesql` (off by default; without it every SQL RPC is
+  UNIMPLEMENTED); the `spanbolt` package turns it on by default, so `cargo install spanbolt` gets SQL. No Bazel needed: `googlesql-sys/build.rs` downloads the
   prebuilt shim pinned in `native/googlesql-shim.env` (`SPANBOLT_SHIM_URL` points it at a local
   mirror). `source scripts/googlesql-env.sh` first to use a locally built shim instead. Then e.g.
   `cargo test --release -p spanbolt-sql`,
-  `cargo build --release -p spanbolt-server --features googlesql` (the release binary),
+  `cargo build --release -p spanbolt` (the release binary),
   `cargo clippy --workspace --all-targets --features spanbolt-server/googlesql -- -D warnings`.
   The binary finds `libgooglesql_shim` through its rpath (the build directory, then the
-  executable's directory: ship the library next to `spanbolt`). It needs zoneinfo for
+  executable's directory: ship the library next to `spanbolt`, then the download cache, for
+  `cargo install`).
+- Publishing: every crate but `spanbolt-conformance` goes to crates.io, in lockstep at the workspace
+  version (`.github/workflows/crates.yml`, `docs/releasing.md`). Internal deps in
+  `[workspace.dependencies]` carry `version = "=X.Y.Z"`; a published crate builds without
+  `native/` (googlesql-sys reads its `googlesql-shim.env` symlink, stored as a file). It needs zoneinfo for
   America/Los_Angeles, Spanner's default time zone (install tzdata in images).
 - Changing the shim (`native/googlesql/shim`): `cd native/googlesql && bazelisk build //:libgooglesql_shim.so`
   (seconds with a warm disk cache). Other worktrees use it once it is packaged and unpacked into
@@ -40,6 +46,6 @@ docs/building.md cover setup.
 - Threads (`crates/server/src/offload.rs`): every gRPC and REST call runs its handler on tokio's blocking pool, because handlers do engine work synchronously; on the runtime workers a few long queries would stall every other call and the HTTP/2 handshake of new connections. Check with `--example connect_storm -- HOST:PORT` (40 new clients connecting while 24 others run long queries).
 - Streaming (`crates/server/src/stream.rs`, `wire.rs`): `PartialWriter` encodes values into wire bytes as rows arrive; `wire::SpannerRouter` serves ExecuteStreamingSql/StreamingRead with a pass-through codec and hands every other Spanner method to the generated server.
 - Full-text search (`crates/sql/src/search`): a port of the emulator's tokenizers, rquery parser and evaluators (TOKENLISTs are emulator-format token lists). A `SEARCH` conjunct over a TOKENIZE_FULLTEXT column in a search index scans candidate rows from an inverted index cached per table version and updated from the row map's diff.
-- Conformance: start spanbolt (`cargo run --release -p spanbolt-server --features googlesql -- --host-port 127.0.0.1:19220`), then `cargo run --release -p spanbolt-conformance -- check --target 127.0.0.1:19220`; recording from the official emulator is in `crates/conformance/README.md`. Never edit recorded
+- Conformance: start spanbolt (`cargo run --release -p spanbolt -- --host-port 127.0.0.1:19220`), then `cargo run --release -p spanbolt-conformance -- check --target 127.0.0.1:19220`; recording from the official emulator is in `crates/conformance/README.md`. Never edit recorded
   expectations in `conformance/cases` to make spanbolt pass: add cases, recorded from the official
   emulator or from Cloud Spanner.

@@ -5,10 +5,13 @@
 //!    under `external/googlesql+`), or `GOOGLESQL_PREFIX` (a `bin/` + `src/` layout, such as an
 //!    unpacked prebuilt archive). `GOOGLESQL_SRC_DIR` overrides the googlesql source protos.
 //! 2. A local Bazel build in `native/googlesql` (`bazel-bin`).
-//! 3. The prebuilt archive pinned in `native/googlesql-shim.env`: from the download cache
+//! 3. The prebuilt archive pinned in `native/googlesql-shim.env` (`googlesql-shim.env` here is a
+//!    symlink to it, stored as a file in the published crate): from the download cache
 //!    (`SPANBOLT_CACHE_DIR`, default `$XDG_CACHE_HOME/spanbolt` or `~/.cache/spanbolt`), else
 //!    downloaded from `SPANBOLT_SHIM_URL` (default: the GitHub release; `file://` works) and
 //!    checked against its SHA-256.
+//!
+//! On docs.rs (`DOCS_RS`, no network) nothing is linked and the resolved-AST module is a stub.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -35,11 +38,47 @@ struct Shim {
     bin: PathBuf,
     /// googlesql's source tree (hand-written protos). Unused when `bin` has `resolved_ast.fds`.
     src: Option<PathBuf>,
+    /// For a downloaded shim: a directory in the cache holding the library under the name the
+    /// linker records (`libgooglesql_shim.dylib` on macOS), so a binary whose build directory is
+    /// gone (`cargo install`) still finds it.
+    cache_lib: Option<PathBuf>,
 }
+
+/// googlesql.rs on docs.rs: the real types are generated from the shim's descriptor set.
+const DOCS_RS_STUB: &str = "\
+/// The resolved AST of one statement. On docs.rs this is a stub: the real types are generated \
+/// from the native shim's `resolved_ast.proto` at build time.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AnyResolvedStatementProto {}
+";
+
+/// The targets with a prebuilt shim, as (os, arch, platform name in the archive, target triple).
+const PREBUILT: &[(&str, &str, &str, &str)] = &[
+    ("macos", "aarch64", "darwin-arm64", "aarch64-apple-darwin"),
+    (
+        "linux",
+        "aarch64",
+        "linux-arm64",
+        "aarch64-unknown-linux-gnu",
+    ),
+    (
+        "linux",
+        "x86_64",
+        "linux-x86_64",
+        "x86_64-unknown-linux-gnu",
+    ),
+];
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let native = manifest.join("../../native/googlesql");
+    let pins = manifest.join("googlesql-shim.env");
+    let out = PathBuf::from(env::var("OUT_DIR").expect("out dir"));
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    if env::var_os("DOCS_RS").is_some() {
+        fs::write(out.join("googlesql.rs"), DOCS_RS_STUB).expect("write stub");
+        return;
+    }
     for var in [
         "GOOGLESQL_SHIM_DIR",
         "GOOGLESQL_SRC_DIR",
@@ -51,14 +90,10 @@ fn main() {
     ] {
         println!("cargo:rerun-if-env-changed={var}");
     }
-    println!(
-        "cargo:rerun-if-changed={}",
-        native.join("../googlesql-shim.env").display()
-    );
+    println!("cargo:rerun-if-changed={}", pins.display());
 
-    let shim = resolve_shim(&native);
+    let shim = resolve_shim(&native, &pins);
     let bin = &shim.bin;
-    let out = PathBuf::from(env::var("OUT_DIR").expect("out dir"));
 
     let lib_src = bin.join("libgooglesql_shim.so");
     let lib_name = if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
@@ -75,6 +110,10 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", out.display());
     // Dependents add this directory to their binaries' rpath (DEP_GOOGLESQL_SHIM_LIB_DIR).
     println!("cargo:lib_dir={}", out.display());
+    // And this one, which outlives the build directory (DEP_GOOGLESQL_SHIM_CACHE_LIB_DIR).
+    if let Some(dir) = &shim.cache_lib {
+        println!("cargo:cache_lib_dir={}", dir.display());
+    }
 
     let fds_prebuilt = bin.join("resolved_ast.fds");
     let bytes = if fds_prebuilt.is_file() {
@@ -127,7 +166,7 @@ fn run_protoc(shim: &Shim, native: &Path, out: &Path) -> Vec<u8> {
     fs::read(&fds_path).expect("read descriptor set")
 }
 
-fn resolve_shim(native: &Path) -> Shim {
+fn resolve_shim(native: &Path, pins: &Path) -> Shim {
     let canon = |p: PathBuf, what: &str| {
         fs::canonicalize(&p).unwrap_or_else(|e| panic!("{what}={}: {e}", p.display()))
     };
@@ -137,6 +176,7 @@ fn resolve_shim(native: &Path) -> Shim {
             bin: canon(dir.into(), "GOOGLESQL_SHIM_DIR"),
             src: src_dir
                 .or_else(|| env::var_os("GOOGLESQL_PREFIX").map(|p| PathBuf::from(p).join("src"))),
+            cache_lib: None,
         };
     }
     if let Some(prefix) = env::var_os("GOOGLESQL_PREFIX") {
@@ -144,6 +184,7 @@ fn resolve_shim(native: &Path) -> Shim {
         return Shim {
             bin: prefix.join("bin"),
             src: Some(src_dir.unwrap_or_else(|| prefix.join("src"))),
+            cache_lib: None,
         };
     }
     let bazel_bin = native.join("bazel-bin");
@@ -151,9 +192,32 @@ fn resolve_shim(native: &Path) -> Shim {
         return Shim {
             bin: canon(bazel_bin, "bazel-bin"),
             src: src_dir,
+            cache_lib: None,
         };
     }
-    let prefix = prebuilt(native).unwrap_or_else(|e| {
+    if !native.join("shim").is_dir() {
+        // A published crate: no Bazel sources, so the prebuilt archive or a given prefix.
+        let prefix = prebuilt(native, pins).unwrap_or_else(|e| {
+            panic!(
+                "\n\nNo GoogleSQL shim: {e}\n\n\
+                 spanbolt's SQL engine links a native library, prebuilt for {} (Linux: glibc 2.38+).\n\
+                 Options:\n\
+                 - on another target, run the container image (ghcr.io/strise/spanbolt), or build the\n\
+                 \x20 shim from a git checkout with Bazel and set GOOGLESQL_PREFIX to it\n\
+                 \x20 (https://github.com/strise/spanbolt/blob/main/docs/building.md);\n\
+                 - behind a proxy or offline, point SPANBOLT_SHIM_URL at a directory or URL holding the\n\
+                 \x20 pinned archive (file:// works);\n\
+                 - `cargo install spanbolt --no-default-features` builds the server without SQL.\n",
+                PREBUILT
+                    .iter()
+                    .map(|t| t.3)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        });
+        return prebuilt_shim(prefix);
+    }
+    let prefix = prebuilt(native, pins).unwrap_or_else(|e| {
         panic!(
             "\n\nNo GoogleSQL shim: {e}\n\n\
              Options (docs/building.md):\n\
@@ -164,15 +228,36 @@ fn resolve_shim(native: &Path) -> Shim {
              - or set GOOGLESQL_PREFIX (bin/ + src/) or GOOGLESQL_SHIM_DIR to an existing build.\n"
         )
     });
+    prebuilt_shim(prefix)
+}
+
+/// An unpacked archive in the cache, plus `lib/` holding the library under its install name.
+fn prebuilt_shim(prefix: PathBuf) -> Shim {
+    let name = if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        "libgooglesql_shim.dylib"
+    } else {
+        "libgooglesql_shim.so"
+    };
+    let lib = prefix.join("lib");
+    let link = lib.join(name);
+    if !link.is_file() {
+        // A relative symlink (no second 40 MB copy); racing builds create the same one.
+        let _ = fs::create_dir_all(&lib);
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink("../bin/libgooglesql_shim.so", &link);
+        #[cfg(not(unix))]
+        let _ = fs::copy(prefix.join("bin/libgooglesql_shim.so"), &link);
+    }
     Shim {
         bin: prefix.join("bin"),
         src: Some(prefix.join("src")),
+        cache_lib: link.is_file().then_some(lib),
     }
 }
 
 /// The pinned prebuilt archive, unpacked in the download cache (downloading it if needed).
-fn prebuilt(native: &Path) -> Result<PathBuf, String> {
-    let pins = read_pins(&native.join("../googlesql-shim.env"))?;
+fn prebuilt(native: &Path, pins: &Path) -> Result<PathBuf, String> {
+    let pins = read_pins(pins)?;
     let pin = |k: &str| pins.get(k).filter(|v| !v.is_empty()).cloned();
     let gsql = pin("GOOGLESQL_VERSION").ok_or("googlesql-shim.env has no GOOGLESQL_VERSION")?;
     let shim_version = pin("SHIM_VERSION").ok_or("googlesql-shim.env has no SHIM_VERSION")?;
@@ -181,9 +266,14 @@ fn prebuilt(native: &Path) -> Result<PathBuf, String> {
         format!("no prebuilt shim pinned for {platform} in native/googlesql-shim.env")
     })?;
 
-    // A prebuilt archive is only right for the sources it was built from.
+    // A prebuilt archive is only right for the sources it was built from. A published crate has
+    // no sources to compare: the release checks the pin first (scripts/package-shim.sh --check).
     let want_src = pin("SHIM_SOURCE_SHA256").unwrap_or_default();
-    let have_src = source_hash(native)?;
+    let have_src = if native.join("shim").is_dir() {
+        source_hash(native)?
+    } else {
+        want_src.clone()
+    };
     if want_src != have_src && env::var_os("SPANBOLT_SHIM_ALLOW_STALE").is_none() {
         return Err(format!(
             "the shim sources in native/googlesql changed since the pinned archive was built \
@@ -236,12 +326,16 @@ fn read_pins(path: &Path) -> Result<BTreeMap<String, String>, String> {
 fn platform() -> Result<String, String> {
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-    match (os.as_str(), arch.as_str()) {
-        ("macos", "aarch64") => Ok("darwin-arm64".into()),
-        ("linux", "aarch64") => Ok("linux-arm64".into()),
-        ("linux", "x86_64") => Ok("linux-x86_64".into()),
-        _ => Err(format!("no prebuilt shim for {os}/{arch}")),
-    }
+    PREBUILT
+        .iter()
+        .find(|t| t.0 == os && t.1 == arch)
+        .map(|t| t.2.to_string())
+        .ok_or_else(|| {
+            format!(
+                "no prebuilt shim for {}",
+                env::var("TARGET").unwrap_or_default()
+            )
+        })
 }
 
 fn cache_dir() -> Result<PathBuf, String> {

@@ -8,14 +8,18 @@ repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
+rust-version.workspace = true
+documentation = "https://github.com/strise/spanbolt/blob/main/DESIGN.md"
+readme = "README.md"
 links = "spanbolt_sql"
+include = ["build.rs", "src/**", "README.md", "LICENSE", "NOTICE"]
 
 [dependencies]
 spanbolt-ddl.workspace = true
 spanbolt-proto.workspace = true
 spanbolt-storage.workspace = true
 spanbolt-txn.workspace = true
-googlesql-sys = { path = "../googlesql-sys" }
+googlesql-sys.workspace = true
 base64.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"

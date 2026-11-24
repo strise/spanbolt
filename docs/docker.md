@@ -18,7 +18,7 @@ Stages:
 | `shim` | `libgooglesql_shim.so` and the googlesql protos, built with Bazel + clang 18 on Ubuntu 24.04 (`SHIM=bazel`), or the pinned archive (`SHIM=prebuilt`) | layer cache (rebuilt only when `native/googlesql/` changes); `--mount=type=cache,id=spanbolt-bazel-<arch>` for Bazel |
 | `shim-licenses`, `shim-fds` | `SHIM=bazel` only: the native license texts (`bazel fetch` of the six repositories, about a minute) and `bin/resolved_ast.fds` (protoc 31.1), which a prebuilt archive already carries | layer cache |
 | `cargo-about` | `cargo install cargo-about` (version `CARGO_ABOUT_VERSION`) | layer cache |
-| `build` | `cargo build --release -p spanbolt-server --features googlesql` (rust:1.91-trixie, no protoc), then `strip`, then the license texts into `licenses/` (`cargo about generate --frozen`) | registry, git and `target/` cache mounts |
+| `build` | `cargo build --release -p spanbolt` (rust:1.91-trixie, no protoc), then `strip`, then the license texts into `licenses/` (`cargo about generate --frozen`) | registry, git and `target/` cache mounts |
 | `runtime` | `gcr.io/distroless/cc-debian13:nonroot` (glibc, libstdc++, tzdata; no shell) with `spanbolt` and the shim in `/opt/spanbolt`, user `nonroot` (65532), writable `/data` | |
 
 Build args: `BAZEL_JOBS` (default 2), `PROTOC_VERSION` (`SHIM=bazel` only), `CARGO_ABOUT_VERSION`, `RUST_IMAGE`, `RUNTIME_IMAGE`.

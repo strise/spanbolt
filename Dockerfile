@@ -133,7 +133,7 @@ RUN --mount=type=cache,id=spanbolt-cargo-registry,target=/usr/local/cargo/regist
     --mount=type=cache,id=spanbolt-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=spanbolt-target-${TARGETARCH},target=/src/target,sharing=locked \
     find crates -type f -exec touch {} + \
-    && cargo build --release --locked -p spanbolt-server --features googlesql \
+    && cargo build --release --locked -p spanbolt \
     && mkdir -p /dist \
     && cp target/release/spanbolt /dist/ \
     && cp /opt/googlesql/bin/libgooglesql_shim.so /dist/ \

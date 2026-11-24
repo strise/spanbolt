@@ -1395,6 +1395,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "spanbolt"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "mimalloc",
+ "spanbolt-proto",
+ "spanbolt-server",
+ "spanbolt-sql",
+ "spanbolt-storage",
+ "tokio",
+]
+
+[[package]]
 name = "spanbolt-conformance"
 version = "0.2.0"
 dependencies = [

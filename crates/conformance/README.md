@@ -13,7 +13,7 @@ cargo run --release -p spanbolt-conformance -- record --target 127.0.0.1:19210
 docker rm -f sb-conf-oracle
 
 # 2. Start spanbolt and check it against the recorded expectations.
-cargo run --release -p spanbolt-server -- --host-port 127.0.0.1:19220 &
+cargo run --release -p spanbolt -- --host-port 127.0.0.1:19220 &
 cargo run --release -p spanbolt-conformance -- check --target 127.0.0.1:19220 \
   --junit target/conformance/junit.xml --json target/conformance/summary.json
 

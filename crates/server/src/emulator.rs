@@ -451,12 +451,39 @@ impl Emulator {
         page.finish()
     }
 
+    /// Like the emulator: deleting a session that does not exist (never did, already deleted or
+    /// expired) succeeds, and a multiplexed session cannot be deleted (it goes with its database).
     pub fn delete_session(&self, name: &str) -> Result<(), Status> {
-        self.sessions
-            .remove(name)
-            .ok_or_else(|| resource_not_found("Session", "google.spanner.v1.Session", name))?;
-        self.txns.retain(|_, t| t.session != name);
+        crate::names::validate_session_name(name)?;
+        if self
+            .sessions
+            .remove_if(name, |_, s| !s.multiplexed)
+            .is_some()
+        {
+            self.txns.retain(|_, t| t.session != name);
+        } else if self.sessions.contains_key(name) {
+            return Err(Status::invalid_argument(
+                "Multiplexed sessions may not be deleted.",
+            ));
+        }
         Ok(())
+    }
+
+    /// `Session.approximate_last_use_time`: the Spanner clock's now, less how long ago an RPC
+    /// last named the session (the idle clock that expires it, so millisecond resolution), never
+    /// before its creation. GetSession reports its own call, as the emulator does.
+    pub fn last_use_time(&self, s: &Session) -> Timestamp {
+        let age_ms = self
+            .idle
+            .now()
+            .saturating_sub(s.last_used.load(Ordering::Relaxed));
+        let age_us = i64::try_from(age_ms.saturating_mul(1000)).unwrap_or(i64::MAX);
+        let used = self.clock.now().as_micros().saturating_sub(age_us);
+        if used <= s.create_time.as_micros() {
+            s.create_time
+        } else {
+            Timestamp::from_micros(used)
+        }
     }
 
     /// Drops every session whose name starts with `prefix`, and their transactions.

@@ -533,6 +533,8 @@ struct Ctx<'a> {
     timestamps: HashMap<String, Timestamp>,
     /// Operation names saved by `ddl op=NAME`.
     ops: HashMap<String, String>,
+    /// Session names saved by `create_session session=NAME`.
+    named_sessions: HashMap<String, String>,
 }
 
 fn rw_options() -> pb::TransactionOptions {
@@ -609,6 +611,7 @@ impl<'a> Ctx<'a> {
             txns: HashMap::new(),
             timestamps: HashMap::new(),
             ops: HashMap::new(),
+            named_sessions: HashMap::new(),
         })
     }
 
@@ -677,7 +680,10 @@ impl<'a> Ctx<'a> {
                 Ok((txn.session.clone(), Selector::Id(txn.id.clone()), txn.seqno))
             }
             None => Ok((
-                self.session.clone(),
+                match step.opts.get("session") {
+                    Some(label) => self.named_session(label)?,
+                    None => self.session.clone(),
+                },
                 Selector::SingleUse(ro_options(self.bound(step)?)),
                 0,
             )),
@@ -957,6 +963,10 @@ impl<'a> Ctx<'a> {
                     ..Default::default()
                 })),
             Verb::ListSessions => self.list_sessions(step).await,
+            Verb::CreateSession => self.create_named_session(step).await,
+            Verb::GetSession => self.get_session(step).await,
+            Verb::SessionLastUse => self.session_last_use(step).await,
+            Verb::DeleteSession => self.delete_session(step).await,
             Verb::GetOperation => self.get_operation(step).await,
             Verb::ListDatabaseOperations => self.list_saved_operations(false).await,
             Verb::ListOperations => self.list_saved_operations(true).await,
@@ -1058,6 +1068,133 @@ impl<'a> Ctx<'a> {
             counts: Some(vec![found]),
             ..Default::default()
         }))
+    }
+
+    fn named_session(&self, label: &str) -> Result<String, String> {
+        self.named_sessions
+            .get(label)
+            .cloned()
+            .ok_or_else(|| format!("unknown session `{label}`"))
+    }
+
+    /// Sleeps for the step's `wait=DURATION`, if any.
+    async fn wait(step: &Step) -> Result<(), String> {
+        if let Some(w) = step.opts.get("wait") {
+            let d = parse_duration(w)?;
+            let d = Duration::new(d.seconds.max(0) as u64, d.nanos.max(0) as u32);
+            tokio::time::sleep(d).await;
+        }
+        Ok(())
+    }
+
+    /// A saved session's name in an error message becomes `<session>`, the database's `<db>`.
+    fn session_status(&self, s: Status, saved: Option<&str>) -> Status {
+        let mut msg = s.message().to_string();
+        if let Some(name) = saved {
+            msg = msg.replace(name, "<session>");
+        }
+        Status::new(s.code(), msg.replace(&self.db, "<db>"))
+    }
+
+    /// `create_session session=NAME [multiplexed]`: CreateSession, saving the name under NAME.
+    async fn create_named_session(
+        &mut self,
+        step: &Step,
+    ) -> Result<Result<Observation, Status>, String> {
+        let label = step.opts["session"].clone();
+        let req = pb::CreateSessionRequest {
+            database: self.db.clone(),
+            session: Some(pb::Session {
+                multiplexed: step.has_flag("multiplexed"),
+                ..Default::default()
+            }),
+        };
+        Ok(match self.t.spanner().create_session(req).await {
+            Ok(r) => {
+                let name = r.into_inner().name;
+                self.sessions.push(name.clone());
+                self.named_sessions.insert(label, name);
+                Ok(Observation::default())
+            }
+            Err(s) => Err(s),
+        })
+    }
+
+    /// `counts: [1]` when the session's `approximate_last_use_time` is at least half a second
+    /// after its `create_time` (it has moved with use), else `[0]`. A coarse comparison: the
+    /// targets report these times at different resolutions.
+    fn last_use_observation(s: &pb::Session) -> Observation {
+        let micros = |t: &Option<prost_types::Timestamp>| {
+            t.as_ref()
+                .map_or(0, |t| t.seconds * 1_000_000 + i64::from(t.nanos) / 1000)
+        };
+        let advanced = micros(&s.approximate_last_use_time) - micros(&s.create_time) >= 500_000;
+        Observation {
+            counts: Some(vec![i64::from(advanced)]),
+            ..Default::default()
+        }
+    }
+
+    /// `get_session session=NAME [wait=DURATION]`: GetSession (itself a use of the session),
+    /// observed as in `last_use_observation`.
+    async fn get_session(&mut self, step: &Step) -> Result<Result<Observation, Status>, String> {
+        let name = self.named_session(&step.opts["session"])?;
+        Self::wait(step).await?;
+        let req = pb::GetSessionRequest { name: name.clone() };
+        Ok(match self.t.spanner().get_session(req).await {
+            Ok(r) => Ok(Self::last_use_observation(&r.into_inner())),
+            Err(s) => Err(self.session_status(s, Some(&name))),
+        })
+    }
+
+    /// `session_last_use session=NAME [wait=DURATION]`: finds the session in ListSessions (which
+    /// does not count as a use) and observes it as in `last_use_observation`; `counts: [-1]` when
+    /// it is not listed.
+    async fn session_last_use(
+        &mut self,
+        step: &Step,
+    ) -> Result<Result<Observation, Status>, String> {
+        let name = self.named_session(&step.opts["session"])?;
+        Self::wait(step).await?;
+        let mut page_token = String::new();
+        for _ in 0..1000 {
+            let req = pb::ListSessionsRequest {
+                database: self.db.clone(),
+                page_size: 0,
+                page_token: page_token.clone(),
+                filter: String::new(),
+            };
+            let resp = match self.t.spanner().list_sessions(req).await {
+                Ok(r) => r.into_inner(),
+                Err(s) => return Ok(Err(s)),
+            };
+            if let Some(s) = resp.sessions.iter().find(|s| s.name == name) {
+                return Ok(Ok(Self::last_use_observation(s)));
+            }
+            if resp.next_page_token.is_empty() {
+                break;
+            }
+            page_token = resp.next_page_token;
+        }
+        Ok(Ok(Observation {
+            counts: Some(vec![-1]),
+            ..Default::default()
+        }))
+    }
+
+    /// `delete_session session=NAME` (a saved session) or `delete_session name=TEXT` (a literal
+    /// name in which `<db>` stands for the case database).
+    async fn delete_session(&mut self, step: &Step) -> Result<Result<Observation, Status>, String> {
+        let (name, saved) = match (step.opts.get("session"), step.opts.get("name")) {
+            (Some(label), _) => (self.named_session(label)?, true),
+            (None, Some(text)) => (text.replace("<db>", &self.db), false),
+            (None, None) => return Err("`delete_session` needs session= or name=".into()),
+        };
+        let req = pb::DeleteSessionRequest { name: name.clone() };
+        Ok(match self.t.spanner().delete_session(req).await {
+            Ok(_) => Ok(Observation::default()),
+            Err(s) => Err(self.session_status(s, saved.then_some(name.as_str()))),
+        })
     }
 
     /// Creates `create=K` sessions, then pages through ListSessions with `page_size=N`; observes

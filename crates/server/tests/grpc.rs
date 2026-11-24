@@ -1013,3 +1013,127 @@ async fn sessions_go_with_their_database_and_instance() {
     assert_eq!(registry_size(&env, "sessions"), 0);
     assert_session_not_found(get_session(&env, &in_instance).await, &in_instance);
 }
+
+async fn create_multiplexed(env: &Env, db: &str) -> String {
+    env.spanner()
+        .create_session(pb::CreateSessionRequest {
+            database: db.into(),
+            session: Some(pb::Session {
+                multiplexed: true,
+                ..Default::default()
+            }),
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner()
+        .name
+}
+
+/// DeleteSession as on emulator 1.5.59 (`conformance/cases/api/sessions.case`): a session that
+/// does not exist deletes fine, a multiplexed one cannot be deleted, a malformed name is
+/// INVALID_ARGUMENT.
+#[tokio::test]
+async fn delete_session_matches_the_emulator() {
+    let env = setup().await;
+    let mut sp = env.spanner();
+    let mut delete = async |name: &str| {
+        sp.delete_session(pb::DeleteSessionRequest { name: name.into() })
+            .await
+            .map(|_| ())
+    };
+
+    let s = env.session(DB).await;
+    delete(&s).await.unwrap_or_else(|e| panic!("{e}"));
+    delete(&s).await.unwrap_or_else(|e| panic!("{e}"));
+    delete(&format!("{DB}/sessions/nosuchsession"))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_session_not_found(get_session(&env, &s).await, &s);
+
+    let mux = create_multiplexed(&env, DB).await;
+    let err = delete(&mux).await.expect_err("multiplexed delete");
+    assert_eq!(err.code(), Code::InvalidArgument);
+    assert_eq!(err.message(), "Multiplexed sessions may not be deleted.");
+    get_session(&env, &mux)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    let err = delete(&format!("{DB}/sessions"))
+        .await
+        .expect_err("bad name");
+    assert_eq!(err.code(), Code::InvalidArgument);
+    assert_eq!(err.message(), "Invalid session uri: sessions");
+    let err = get_session(&env, "projects/p/instances/inst/sessions/a")
+        .await
+        .expect_err("bad name");
+    assert_eq!(err.code(), Code::InvalidArgument);
+    assert_eq!(err.message(), "Invalid database uri: sessions/a");
+}
+
+/// `approximate_last_use_time` is the last RPC that named the session (the same clock that
+/// expires it), never earlier than `create_time`. ListSessions is not a use; GetSession is, and
+/// reports itself.
+#[tokio::test]
+async fn approximate_last_use_time_moves_with_use() {
+    const MIN: std::time::Duration = std::time::Duration::from_secs(60);
+    let env = setup().await;
+    let emu = &env.server.emulator;
+    let t0 = spanbolt_storage::Timestamp::from_micros(1_700_000_000_000_000);
+    let at = |mins: i64| {
+        Some(
+            spanbolt_storage::Timestamp::from_micros(t0.as_micros() + mins * 60_000_000).to_proto(),
+        )
+    };
+    // Both clocks move together, as they do without a pinned Spanner clock.
+    let pass = |mins: u64, to: i64| {
+        emu.idle.advance(mins as u32 * MIN);
+        emu.clock.set(Some(spanbolt_storage::Timestamp::from_micros(
+            t0.as_micros() + to * 60_000_000,
+        )));
+    };
+    emu.clock.set(Some(t0));
+    let s = env.session(DB).await;
+    let mut sp = env.spanner();
+    let listed = async |sp: &mut SpannerClient<Channel>| {
+        sp.list_sessions(pb::ListSessionsRequest {
+            database: DB.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner()
+        .sessions
+        .into_iter()
+        .find(|x| x.name == s)
+        .unwrap_or_else(|| panic!("{s} not listed"))
+    };
+
+    pass(10, 10);
+    let l = listed(&mut sp).await;
+    assert_eq!(l.create_time, at(0));
+    assert_eq!(l.approximate_last_use_time, at(0));
+
+    sp.begin_transaction(pb::BeginTransactionRequest {
+        session: s.clone(),
+        options: Some(pb::TransactionOptions {
+            mode: Some(pb::transaction_options::Mode::ReadOnly(Default::default())),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+    pass(5, 15);
+    assert_eq!(listed(&mut sp).await.approximate_last_use_time, at(10));
+
+    let got = get_session(&env, &s)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(got.create_time, at(0));
+    assert_eq!(got.approximate_last_use_time, at(15));
+    assert_eq!(listed(&mut sp).await.approximate_last_use_time, at(15));
+
+    // A Spanner clock pinned behind the idle clock never reports a use before creation.
+    emu.idle.advance(30 * MIN);
+    assert_eq!(listed(&mut sp).await.approximate_last_use_time, at(0));
+}

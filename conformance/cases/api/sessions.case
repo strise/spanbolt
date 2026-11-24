@@ -1,0 +1,88 @@
+# Session RPCs: DeleteSession on unknown, multiplexed and malformed names, and
+# approximate_last_use_time. `get_session` / `session_last_use` observe `counts: [1]` when the
+# session's last use is at least 0.5 s after its creation; `wait=` sleeps before the call.
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+
+case delete_session_twice
+create_session session=s
+delete_session session=s
+expect:
+  ok
+delete_session session=s
+expect:
+  ok
+get_session session=s
+expect:
+  error: NOT_FOUND
+  message: Session not found: <session>
+
+case delete_session_never_created
+delete_session name=<db>/sessions/nosuchsession
+expect:
+  ok
+
+case delete_session_multiplexed
+create_session session=m multiplexed
+delete_session session=m
+expect:
+  error: INVALID_ARGUMENT
+  message: Multiplexed sessions may not be deleted.
+get_session session=m
+expect:
+  counts: [0]
+
+case delete_session_malformed_names
+delete_session name=<db>/sessions/
+expect:
+  ok
+delete_session name=<db>/sessions
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid session uri: sessions
+delete_session name=<db>/sessions/a/b
+expect:
+  ok
+delete_session name=<db>/session/a
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid session uri: session/a
+delete_session name=projects/p/instances/i/sessions/a
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid database uri: sessions/a
+
+case last_use_untouched
+create_session session=s
+session_last_use session=s wait=1s
+expect:
+  counts: [0]
+
+case last_use_advances_with_a_query
+create_session session=s
+session_last_use session=s wait=1s
+expect:
+  counts: [0]
+query session=s:
+  SELECT 1
+expect:
+  columns: INT64
+  ["1"]
+session_last_use session=s
+expect:
+  counts: [1]
+
+case last_use_is_the_get_session_call
+create_session session=s
+get_session session=s wait=1s
+expect:
+  counts: [1]
+session_last_use session=s
+expect:
+  counts: [1]
+
+case last_use_multiplexed
+create_session session=m multiplexed
+get_session session=m wait=1s
+expect:
+  counts: [1]

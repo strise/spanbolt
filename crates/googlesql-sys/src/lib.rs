@@ -12,6 +12,11 @@ pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/googlesql.rs"));
 }
 
+/// The serialized `FileDescriptorSet` of `resolved_ast.proto` and its imports, for code that walks
+/// a serialized resolved AST without decoding it into the prost types. Empty on docs.rs.
+pub const RESOLVED_AST_DESCRIPTORS: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/resolved_ast.fds"));
+
 #[repr(C)]
 struct Buf {
     data: *mut u8,

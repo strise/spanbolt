@@ -21,6 +21,7 @@ mod func_time;
 mod graph;
 mod graph_exec;
 mod info_schema;
+mod limits;
 mod literal;
 mod ops;
 pub mod plan;

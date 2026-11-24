@@ -77,6 +77,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=DOCS_RS");
     if env::var_os("DOCS_RS").is_some() {
         fs::write(out.join("googlesql.rs"), DOCS_RS_STUB).expect("write stub");
+        fs::write(out.join("resolved_ast.fds"), b"").expect("write stub descriptors");
         return;
     }
     for var in [
@@ -122,6 +123,8 @@ fn main() {
     } else {
         run_protoc(&shim, &native, &out)
     };
+    // Kept for walking a serialized resolved AST generically (`RESOLVED_AST_DESCRIPTORS`).
+    fs::write(out.join("resolved_ast.fds"), &bytes).expect("write resolved_ast.fds");
     let mut fds = <prost_types::FileDescriptorSet as prost::Message>::decode(bytes.as_slice())
         .expect("decode fds");
     // prost-build 0.14 rejects `edition = "2023"` files (protobuf's own descriptor.proto and a few

@@ -31557,9 +31557,37 @@
       ]
     },
     {
-      "detail": "line 19: UNIMPLEMENTED: Property graph element tables over views (ActivePerson) is not supported by spanbolt yet.",
+      "detail": null,
+      "name": "sql/graph/optional_match_ordered",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/quantified_path_ordered",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": "line 32:\n  rows (ordered): expected 2, got 2\n    - [\"p2\"]\n    + [\"p1\"]\n    - [\"p1\"]\n    + [\"p2\"]",
       "name": "sql/graph_views/property_graph_over_views",
-      "status": "unimplemented",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph_views/property_graph_over_views_paths",
+      "status": "pass",
       "tags": [
         "sql",
         "graph",

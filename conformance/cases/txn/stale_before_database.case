@@ -1,0 +1,131 @@
+# Stale reads from before the database was created. Cloud Spanner answers them with the creation
+# schema and no rows, however stale (while the database is younger than its retention period);
+# the emulator fails those past the retention period. The schema then still counts: a table added
+# later is not found.
+tags: txn
+schema:
+  CREATE TABLE Acct (
+    Id INT64 NOT NULL,
+    Balance INT64 NOT NULL,
+  ) PRIMARY KEY (Id)
+insert Acct cols=Id,Balance:
+  [1, 100]
+  [2, 50]
+
+case read_2h
+read Acct cols=Id bound=exact_staleness:2h:
+  all
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: Id INT64
+
+case query_2h
+query bound=exact_staleness:2h:
+  SELECT COUNT(*) FROM Acct
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: INT64
+  ["0"]
+
+case read_30s
+read Acct cols=Id bound=exact_staleness:30s:
+  all
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case query_30s
+query bound=exact_staleness:30s:
+  SELECT Id FROM Acct
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case read_200h
+read Acct cols=Id bound=exact_staleness:200h:
+  all
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: Id INT64
+
+case ro_txn_2h
+begin txn=ro ro bound=exact_staleness:2h
+read Acct cols=Id txn=ro:
+  all
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: Id INT64
+query txn=ro:
+  SELECT Id FROM Acct
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: Id INT64
+
+case ro_txn_30s
+begin txn=ro ro bound=exact_staleness:30s
+read Acct cols=Id txn=ro:
+  all
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case table_added_later_2h
+ddl:
+  CREATE TABLE Later (K INT64) PRIMARY KEY (K)
+read Later cols=K bound=exact_staleness:2h:
+  all
+expect:
+  error: NOT_FOUND
+  message: Table not found: Later
+expect@spanner:
+  same
+query bound=exact_staleness:2h:
+  SELECT K FROM Later
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: Later [at 1:15]
+expect@spanner:
+  same
+
+case table_added_later_30s
+ddl:
+  CREATE TABLE Later (K INT64) PRIMARY KEY (K)
+read Later cols=K bound=exact_staleness:30s:
+  all
+expect:
+  error: NOT_FOUND
+  message: Table not found: Later
+expect@spanner:
+  same
+
+case missing_table_2h
+read Nope cols=K bound=exact_staleness:2h:
+  all
+expect:
+  error: NOT_FOUND
+  message: Table not found: Nope
+expect@spanner:
+  same
+
+case max_staleness_2h
+read Acct cols=Id bound=max_staleness:2h:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+expect@spanner:
+  same

@@ -306,6 +306,66 @@ fn mvcc_snapshots_and_stale_reads() {
     assert!(matches!(stale, Err(e) if e.code == spanbolt_storage::Code::FailedPrecondition));
 }
 
+fn prod_db() -> Arc<Database> {
+    let db = db();
+    let mut state = (*db.latest().state).clone();
+    state.prod_messages = true;
+    Arc::new(Database::new(Arc::new(Clock::default()), state))
+}
+
+fn rows_at(db: &Database, bound: TimestampBound) -> Result<usize, spanbolt_storage::Error> {
+    let version = db.snapshot(bound)?;
+    let t = version
+        .state
+        .catalog
+        .table_id("T")
+        .unwrap_or_else(|| panic!("no T"));
+    Ok(version.state.rows(t).len())
+}
+
+#[test]
+fn stale_read_before_creation_is_empty_in_default_mode() {
+    let db = prod_db();
+    commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v")]).unwrap_or_else(|e| panic!("{e}"));
+    let two_hours = TimestampBound::ExactStaleness(Duration::from_secs(7200));
+    assert_eq!(rows_at(&db, two_hours).ok(), Some(0));
+    let thirty_s = TimestampBound::ExactStaleness(Duration::from_secs(30));
+    assert_eq!(rows_at(&db, thirty_s).ok(), Some(0));
+    let ro = OpenReadOnlyTxn::begin(db.clone(), two_hours).unwrap_or_else(|e| panic!("{e}"));
+    ro.reader().unwrap_or_else(|e| panic!("{e}"));
+    // Once the database is older than its retention, a read that far back fails again.
+    let created = db.latest().ts;
+    db.clock().set(Some(Timestamp::from_micros(
+        created.as_micros() + 3_700_000_000,
+    )));
+    let old = TimestampBound::ExactStaleness(Duration::from_secs(7200));
+    assert!(matches!(rows_at(&db, old), Err(e) if e.code == Code::FailedPrecondition));
+    assert!(ro.reader().is_err());
+}
+
+#[test]
+fn stale_read_before_creation_past_retention_fails_in_emulator_mode() {
+    let db = db();
+    let within = TimestampBound::ExactStaleness(Duration::from_secs(30));
+    assert_eq!(rows_at(&db, within).ok(), Some(0));
+    let past = TimestampBound::ExactStaleness(Duration::from_secs(7200));
+    assert!(matches!(rows_at(&db, past), Err(e) if e.code == Code::FailedPrecondition));
+}
+
+#[test]
+fn clone_is_empty_before_it_was_created() {
+    let db = db();
+    commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "seed")])
+        .unwrap_or_else(|e| panic!("{e}"));
+    let before = db.clock().now();
+    let clone = db.clone_database();
+    assert_eq!(
+        rows_at(&clone, TimestampBound::ReadTimestamp(before)).ok(),
+        Some(0)
+    );
+    assert_eq!(rows_at(&clone, TimestampBound::Strong).ok(), Some(1));
+}
+
 #[test]
 fn clone_is_isolated_from_source() {
     let db = db();
@@ -420,8 +480,8 @@ fn history_keeps_a_bounded_number_of_schemas() {
     let db = db();
     let first = commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v1")])
         .unwrap_or_else(|e| panic!("{e}"));
-    let first_schema = Arc::downgrade(&db.latest().state.schema);
     let mut changes = Vec::new();
+    let mut first_change = None;
     for i in 0..40 {
         let ts = db
             .update_schema(|s| {
@@ -432,9 +492,13 @@ fn history_keeps_a_bounded_number_of_schemas() {
             })
             .unwrap_or_else(|e| panic!("{e}"));
         changes.push(ts);
+        if i == 0 {
+            first_change = Some(Arc::downgrade(&db.latest().state.schema));
+        }
     }
-    // Every schema change holds a whole schema; old ones go once enough newer ones exist.
-    assert_eq!(first_schema.strong_count(), 0);
+    // Every schema change holds a whole schema; old ones go once enough newer ones exist. (The
+    // creation schema stays, for reads before the database was created.)
+    assert_eq!(first_change.map(|s| s.strong_count()), Some(0));
     let gc = db.snapshot(TimestampBound::ReadTimestamp(first));
     assert!(matches!(gc, Err(e) if e.code == Code::FailedPrecondition));
     let recent = db

@@ -31,8 +31,9 @@ pub struct DbState {
     pub catalog: Arc<Catalog>,
     pub tables: Vector<RowMap>,
     pub indexes: Vector<RowMap>,
-    /// Constraint violations use production Spanner's message texts instead of the emulator's.
-    /// Derived states (commits, schema changes) inherit it.
+    /// Follow production Spanner where it differs from the emulator (default mode): constraint
+    /// violations use its message texts, and a stale read before the database was created gets
+    /// an empty result. Derived states (commits, schema changes) inherit it.
     pub prod_messages: bool,
 }
 
@@ -117,6 +118,17 @@ impl DbState {
             catalog: Arc::new(catalog),
             prod_messages: false,
         })
+    }
+
+    /// The same schema with every table and index empty: the database as it was created.
+    pub fn without_rows(&self) -> DbState {
+        DbState {
+            tables: (0..self.tables.len()).map(|_| RowMap::new()).collect(),
+            indexes: (0..self.indexes.len()).map(|_| RowMap::new()).collect(),
+            schema: self.schema.clone(),
+            catalog: self.catalog.clone(),
+            prod_messages: self.prod_messages,
+        }
     }
 
     pub fn rows(&self, t: TableId) -> &RowMap {

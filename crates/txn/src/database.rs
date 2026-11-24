@@ -168,6 +168,9 @@ pub struct Database {
     latest: ArcSwap<Version>,
     history: RwLock<History>,
     history_truncated: AtomicBool,
+    /// The database as created (its schema then, no rows), at its creation timestamp: what a
+    /// read before that timestamp sees. Kept apart from the history, which prunes it.
+    created: Arc<Version>,
     commit: Mutex<CommitLog>,
     abort_next: AtomicU32,
     dropped: AtomicBool,
@@ -208,26 +211,38 @@ fn schema_change_aborted(ts: Timestamp, ddl: Option<&str>) -> Error {
     Error::aborted(msg)
 }
 
+/// `version`'s schema with no rows, at `ts`.
+fn empty_at(version: &Version, ts: Timestamp) -> Arc<Version> {
+    Arc::new(Version {
+        ts,
+        state: Arc::new(version.state.without_rows()),
+    })
+}
+
 impl Database {
     pub fn new(clock: Arc<Clock>, state: DbState) -> Database {
         let ts = clock.next_commit_ts();
-        Database::at_version(
-            clock,
-            Arc::new(Version {
-                ts,
-                state: Arc::new(state),
-            }),
-        )
+        let version = Arc::new(Version {
+            ts,
+            state: Arc::new(state),
+        });
+        Database::with_created(clock, version.clone(), version)
     }
 
-    /// A database whose only version is `version` (snapshot load, clone).
+    /// A database whose only version is `version` (snapshot load), created empty just before it.
     pub fn at_version(clock: Arc<Clock>, version: Arc<Version>) -> Database {
+        let created = empty_at(&version, version.ts);
+        Database::with_created(clock, version, created)
+    }
+
+    fn with_created(clock: Arc<Clock>, version: Arc<Version>, created: Arc<Version>) -> Database {
         clock.observe(version.ts);
         Database {
             clock,
             latest: ArcSwap::new(version.clone()),
             history: RwLock::new(History::new(version)),
             history_truncated: AtomicBool::new(false),
+            created,
             commit: Mutex::new(CommitLog::default()),
             abort_next: AtomicU32::new(0),
             dropped: AtomicBool::new(false),
@@ -242,9 +257,12 @@ impl Database {
         self.latest.load_full()
     }
 
-    /// Copy-on-write clone: shares the latest state, O(1).
+    /// Copy-on-write clone: shares the latest state, O(1). It is created now: a read before
+    /// that sees its tables empty.
     pub fn clone_database(&self) -> Database {
-        Database::at_version(self.clock.clone(), self.latest())
+        let latest = self.latest();
+        let created = empty_at(&latest, self.clock.now().max(latest.ts));
+        Database::with_created(self.clock.clone(), latest, created)
     }
 
     pub fn mark_dropped(&self) {
@@ -297,10 +315,18 @@ impl Database {
 
     /// Fails once `ts` is `version_retention_period` or more in the past, as Spanner and the
     /// emulator do for stale reads and for every read in an older read-only transaction.
+    ///
+    /// Production Spanner (default mode) answers a read from before the database was created
+    /// with an empty result instead, however stale, while the database is younger than its
+    /// retention period. Past that it fails like any other stale read here; recording that would
+    /// take a database older than an hour.
     pub fn check_retention(&self, ts: Timestamp) -> Result<()> {
         let retention = self.version_retention();
         let horizon = self.clock.now().as_nanos() - retention.as_nanos() as i128;
-        if ts.as_nanos() <= horizon {
+        let before_young_db = self.created.state.prod_messages
+            && ts < self.created.ts
+            && self.created.ts.as_nanos() > horizon;
+        if ts.as_nanos() <= horizon && !before_young_db {
             return Err(Error::failed_precondition(format!(
                 "Read-only transaction timestamp {} has exceeded the maximum timestamp staleness",
                 ts.format_offset()
@@ -316,6 +342,9 @@ impl Database {
 
     /// The version a read at `ts` sees, without the retention check (the caller made it).
     pub(crate) fn find_version(&self, ts: Timestamp) -> Result<Arc<Version>> {
+        if ts < self.created.ts {
+            return Ok(self.created.clone());
+        }
         let latest = self.latest();
         if ts >= latest.ts {
             // Pin `ts` in the past for every later commit, under the commit lock so no commit with

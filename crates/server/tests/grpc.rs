@@ -914,6 +914,61 @@ async fn idle_sessions_expire() {
     assert_session_not_found(get_session(&env, &mux).await, &mux);
 }
 
+/// One ListSessions page of `DB`: the session names and the next page token.
+async fn list_page(env: &Env, page_size: i32, page_token: String) -> (Vec<String>, String) {
+    let r = env
+        .spanner()
+        .list_sessions(pb::ListSessionsRequest {
+            database: DB.into(),
+            page_size,
+            page_token,
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    (
+        r.sessions.into_iter().map(|s| s.name).collect(),
+        r.next_page_token,
+    )
+}
+
+/// ListSessions pages skip expired sessions that the sweeper hasn't dropped yet: they are not
+/// listed and don't take a place on a page.
+#[tokio::test]
+async fn list_sessions_pages_skip_expired() {
+    const MIN: std::time::Duration = std::time::Duration::from_secs(60);
+    let env = setup().await;
+    let mut sessions = Vec::new();
+    for _ in 0..6 {
+        sessions.push(env.session(DB).await);
+    }
+    env.server.emulator.idle.advance(59 * MIN);
+    let mut live: Vec<String> = sessions.iter().skip(1).step_by(2).cloned().collect();
+    for s in &live {
+        get_session(&env, s).await.unwrap_or_else(|e| panic!("{e}"));
+    }
+    env.server.emulator.idle.advance(2 * MIN);
+    assert_eq!(registry_size(&env, "sessions"), 6);
+    live.sort();
+
+    // All three live sessions fit a page of 3, with no next page.
+    assert_eq!(
+        list_page(&env, 3, String::new()).await,
+        (live.clone(), String::new())
+    );
+    // Pages of 2: the live sessions in name order, the token naming the next live one.
+    let (first, next) = list_page(&env, 2, String::new()).await;
+    assert_eq!(
+        (first.as_slice(), next.as_str()),
+        (&live[..2], live[2].as_str())
+    );
+    assert_eq!(
+        list_page(&env, 2, next).await,
+        (live[2..].to_vec(), String::new())
+    );
+}
+
 /// DeleteSession, DropDatabase and DeleteInstance remove sessions from the registry, and the
 /// sessions answer "Session not found" afterwards, as on the emulator.
 #[tokio::test]

@@ -15,6 +15,7 @@ use spanbolt_txn::{Clock, Database, ReadOnlyTxn, ReadWriteTxn, Version};
 use tonic::Status;
 
 use crate::names;
+use crate::page::Pager;
 use crate::sql::{SqlEngine, default_engine};
 use crate::status::{resource_not_found, to_status};
 
@@ -426,16 +427,28 @@ impl Emulator {
         Ok(s)
     }
 
-    pub fn sessions_of(&self, database: &str) -> Vec<Arc<Session>> {
+    /// One page of a database's regular, unexpired sessions in name order, and the next page token
+    /// ([`Pager`]). One pass over the registry, keeping only the page.
+    pub fn sessions_page(
+        &self,
+        database: &str,
+        page_size: i32,
+        page_token: &str,
+    ) -> (Vec<Arc<Session>>, String) {
         let now = self.idle.now();
-        let mut v: Vec<Arc<Session>> = self
-            .sessions
-            .iter()
-            .filter(|s| s.database == database && !s.multiplexed && !s.expired(now))
-            .map(|s| s.clone())
-            .collect();
-        v.sort_by(|a, b| a.name.cmp(&b.name));
-        v
+        let prefix = format!("{database}/sessions/");
+        let mut page = Pager::new(|s: &Arc<Session>| s.name.as_str(), page_size, page_token);
+        for s in self.sessions.iter() {
+            // The key is the name: check it before touching the session.
+            if s.key().starts_with(&prefix)
+                && page.wants(s.key())
+                && !s.multiplexed
+                && !s.expired(now)
+            {
+                page.push(s.value().clone());
+            }
+        }
+        page.finish()
     }
 
     pub fn delete_session(&self, name: &str) -> Result<(), Status> {

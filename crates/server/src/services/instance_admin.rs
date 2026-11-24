@@ -125,7 +125,7 @@ impl InstanceAdmin for InstanceAdminService {
     ) -> Result<Response<ia::ListInstancesResponse>, Status> {
         let req = req.get_ref();
         let project = names::project_from_parent(&req.parent)?;
-        let all = self
+        let all: Vec<_> = self
             .emu
             .instances_in(project)
             .iter()

@@ -9,7 +9,6 @@ use tonic::{Request, Response, Status};
 
 use crate::convert::{self, spanner_type};
 use crate::emulator::{DatabaseEntry, Emulator, Session, TxnKind};
-use crate::page::page;
 use crate::sql::{RowSink, SqlTxn};
 use crate::status::{to_status, unimplemented};
 use crate::stream::{self, PartialWriter, ResultStream, ResumeToken};
@@ -610,18 +609,10 @@ impl Spanner for SpannerService {
     ) -> Result<Response<pb::ListSessionsResponse>, Status> {
         let req = req.get_ref();
         self.emu.database(&req.database)?;
-        let all = self
-            .emu
-            .sessions_of(&req.database)
-            .iter()
-            .map(|s| session_proto(s))
-            .collect();
-        let (sessions, next_page_token) = page(
-            all,
-            |s: &pb::Session| &s.name,
-            req.page_size,
-            &req.page_token,
-        );
+        let (sessions, next_page_token) =
+            self.emu
+                .sessions_page(&req.database, req.page_size, &req.page_token);
+        let sessions = sessions.iter().map(|s| session_proto(s)).collect();
         Ok(Response::new(pb::ListSessionsResponse {
             sessions,
             next_page_token,

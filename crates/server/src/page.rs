@@ -9,25 +9,80 @@
 pub const MAX_PAGE_SIZE: usize = 1000;
 
 /// Returns one page of `items` and the token for the next page (empty on the last page).
+/// `items` may come in any order ([`Pager`]).
 pub fn page<T>(
-    mut items: Vec<T>,
+    items: impl IntoIterator<Item = T>,
     name: impl Fn(&T) -> &str,
     page_size: i32,
     page_token: &str,
 ) -> (Vec<T>, String) {
-    let size = match usize::try_from(page_size) {
-        Ok(n) if (1..=MAX_PAGE_SIZE).contains(&n) => n,
-        _ => MAX_PAGE_SIZE,
-    };
-    items.sort_by(|a, b| name(a).cmp(name(b)));
-    let start = items.partition_point(|i| name(i) < page_token);
-    let mut rest = items.split_off(start);
-    let next = rest
-        .get(size)
-        .map(|i| name(i).to_string())
-        .unwrap_or_default();
-    rest.truncate(size);
-    (rest, next)
+    let mut p = Pager::new(name, page_size, page_token);
+    for item in items {
+        p.push(item);
+    }
+    p.finish()
+}
+
+/// Collects one page from items in any order, keeping only the page and the item after it: a
+/// sorted buffer of at most `page_size + 1` items. A page of a large unsorted collection (sessions
+/// in a hash map) then costs one pass over it and no copy of it, and [`Pager::wants`] lets the
+/// caller skip building an item that would not be kept. An item in ascending or random order is
+/// rejected or inserted in O(log page_size); only descending order makes every insert shift the
+/// buffer.
+pub struct Pager<'t, T, F> {
+    name: F,
+    token: &'t str,
+    size: usize,
+    keep: Vec<T>,
+}
+
+impl<'t, T, F: Fn(&T) -> &str> Pager<'t, T, F> {
+    pub fn new(name: F, page_size: i32, page_token: &'t str) -> Self {
+        let size = match usize::try_from(page_size) {
+            Ok(n) if (1..=MAX_PAGE_SIZE).contains(&n) => n,
+            _ => MAX_PAGE_SIZE,
+        };
+        Pager {
+            name,
+            token: page_token,
+            size,
+            keep: Vec::new(),
+        }
+    }
+
+    /// Whether an item named `name` would be kept, given the items pushed so far.
+    pub fn wants(&self, name: &str) -> bool {
+        name >= self.token
+            && (self.keep.len() <= self.size
+                || self
+                    .keep
+                    .last()
+                    .is_some_and(|last| name < (self.name)(last)))
+    }
+
+    pub fn push(&mut self, item: T) {
+        let n = (self.name)(&item);
+        if !self.wants(n) {
+            return;
+        }
+        let full = self.keep.len() > self.size;
+        let at = self.keep.partition_point(|k| (self.name)(k) < n);
+        if full {
+            self.keep.pop();
+        }
+        self.keep.insert(at, item);
+    }
+
+    /// The page in name order and the next page token.
+    pub fn finish(mut self) -> (Vec<T>, String) {
+        let next = self
+            .keep
+            .get(self.size)
+            .map(|i| (self.name)(i).to_string())
+            .unwrap_or_default();
+        self.keep.truncate(self.size);
+        (self.keep, next)
+    }
 }
 
 #[cfg(test)]
@@ -77,5 +132,31 @@ mod tests {
         all.remove(3); // item003 was the token
         let (items, _) = page(all, |s| s.as_str(), 10, "item0003");
         assert_eq!(items, vec!["item0004", "item0005"]);
+    }
+
+    #[test]
+    fn any_input_order_pages_in_name_order() {
+        let all = names(57);
+        // Ascending, descending and a scrambled order (7 is coprime with 57).
+        let orders = [
+            all.clone(),
+            all.iter().rev().cloned().collect(),
+            (0..57)
+                .map(|i| all[(i * 7) % 57].clone())
+                .collect::<Vec<_>>(),
+        ];
+        for input in orders {
+            let mut seen = Vec::new();
+            let mut token = String::new();
+            loop {
+                let (items, next) = page(input.clone(), |s| s.as_str(), 10, &token);
+                seen.extend(items);
+                if next.is_empty() {
+                    break;
+                }
+                token = next;
+            }
+            assert_eq!(seen, all);
+        }
     }
 }

@@ -32,7 +32,7 @@ docs/building.md cover setup.
   follows production Spanner: FORCE_INDEX on a NULL_FILTERED index needs `IS NOT NULL` filters on the
   indexed columns; `--emulator-compat` honours `spanner_emulator.disable_query_null_filtered_index_check`.
 - Benchmarks: `cargo run --release -p spanbolt-server --features googlesql --example sql_bench`
-  (tonic, in process), `--example search_bench` (SEARCH over 10k rows with and without a search index), `-p spanbolt-sql --example ddl_bench` (`DDL=<schema dump>`: DDL apply and first SQL after a DDL, replaying a large schema migration) and `python3 scripts/sql_bench.py HOST:PORT` (Python client, any endpoint).
+  (tonic, in process), `--example search_bench` (SEARCH over 10k rows with and without a search index), `--example session_bench` (heap per session, BatchCreateSessions and ListSessions over 1M sessions; no SQL engine needed), `-p spanbolt-sql --example ddl_bench` (`DDL=<schema dump>`: DDL apply and first SQL after a DDL, replaying a large schema migration) and `python3 scripts/sql_bench.py HOST:PORT` (Python client, any endpoint).
   Soak: `--example soak -- --duration 3600` (conformance in a loop plus creates/clones/drops and a
   mixed workload; CSV of RSS, footprint, live heap, p50/p99 and cache sizes), summarised by
   `python3 scripts/soak_report.py CSV --svg out.svg`. On macOS judge memory by `heap_mb` and

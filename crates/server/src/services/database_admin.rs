@@ -205,7 +205,7 @@ impl DatabaseAdmin for DatabaseAdminService {
     ) -> Result<Response<da::ListDatabasesResponse>, Status> {
         let req = req.get_ref();
         let inst = self.emu.instance(&req.parent)?;
-        let all = inst
+        let all: Vec<_> = inst
             .databases
             .read()
             .values()

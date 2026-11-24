@@ -54,8 +54,11 @@ suite and the conformance cases exercise.
   `WHERE`/`FILTER`, `RETURN`, `NEXT`, `FOR`, `OPTIONAL MATCH`, bounded quantified paths and
   `LABELS`. Path variables, `ANY`/`SHORTEST` search, `SIMPLE` paths and graph elements in results
   or `TO_JSON` are not supported.
+- PostgreSQL-dialect databases are not supported: `CreateDatabase` with
+  `database_dialect = POSTGRESQL` returns `UNIMPLEMENTED`, so PGAdapter doesn't work. The
+  emulator has had them since 1.5.12.
 - Not supported: `APPROX_*` distance functions with `options`, backups, IAM policies, the
-  emulator's own command-line flags, change stream reads (`READ_<stream>`), sequence values
+  emulator's own command-line flags (see below for what to use instead), change stream reads (`READ_<stream>`), sequence values
   (`GET_NEXT_SEQUENCE_VALUE`; sequences themselves are stored), `ListDatabaseRoles`, and these
   DDL statements: proto bundles, queues, placements, user-defined functions, vector indexes and
   expression index keys.
@@ -126,6 +129,35 @@ service or CI job can connect without creating them first:
 docker run --rm -p 9010:9010 -e SPANBOLT_DATABASES=projects/test/instances/test/databases/app \
   ghcr.io/strise/spanbolt:0.2
 ```
+
+## Coming from the emulator
+
+spanbolt doesn't take the emulator's flags. What each one maps to:
+
+| Emulator (`gateway_main` / `emulator_main`) | spanbolt |
+|---|---|
+| `--hostname`, `--grpc_port`, `--host_port` | `--host-port HOST:PORT` (default `0.0.0.0:9010`) |
+| `--http_port` | `--rest-port PORT` (off unless set; the image sets 9020) |
+| `--disable_query_null_filtered_index_check` | `--emulator-compat`, which also honours the `spanner_emulator.disable_query_null_filtered_index_check` hint. Without it a `NULL_FILTERED` index needs `IS NOT NULL` filters on its columns, as in production. |
+| `--enable_fault_injection`, `--abort_current_transaction_probability` | `Control.InjectAbort`: the next `n` commits fail with `ABORTED`, deterministically instead of at random. |
+| `--log_requests` | `SPANBOLT_TIMING=<path>`: one JSON line per call with its timing (not the messages). |
+| `--override_max_databases_per_instance`, `MAX_DATABASES_PER_INSTANCE` | Not needed: spanbolt has no limit. |
+| `--override_change_stream_partition_token_alive_seconds`, `--enable_change_stream_churning` | Not needed: change streams are stored but can't be read. |
+| `--copy_emulator_stdout`, `--copy_emulator_stderr` | Not needed: one process, logs go to stderr. |
+
+`--emulator-compat` is more than the null-filtered check: it follows the emulator wherever it and
+production disagree and we have recorded both (error messages, full-text search details,
+INFORMATION_SCHEMA views). Use it if your tests assert on the emulator's exact answers.
+
+### Row order
+
+A table or index scan without `ORDER BY` returns rows in key order, because tables and indexes are
+ordered maps and nothing shuffles them (joins and aggregates make no such promise). That is what production does in practice for
+simple scans, so tests that wrongly depend on it pass on spanbolt and on Spanner alike. The
+emulator shuffles unordered results on purpose to flush those tests out
+(GoogleCloudPlatform/cloud-spanner-emulator#14). We decided to keep key order: following
+production matters more here, and the order is not a promise either way. Use `ORDER BY` when the
+order matters.
 
 ## How we check correctness
 

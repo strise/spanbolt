@@ -1059,7 +1059,7 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         Ok(v)
     };
     let width = int(4, 160, "max_snippet_width")? as usize;
-    int(5, 3, "max_snippets")?;
+    let max_snippets = int(5, 3, "max_snippets")? as usize;
     // The text the snippet is cut from, and each character's index in the source.
     let mut text = String::with_capacity(target.len());
     let mut source: Vec<usize> = Vec::with_capacity(target.len());
@@ -1120,34 +1120,46 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
             .map(|m| (char_at[m.start()], char_at[m.end()]))
             .collect();
     }
-    let (mut begin, mut end) = (0, chars.len());
-    if end >= width {
-        match width_cut(&chars, matches.first().copied(), width) {
-            Some(span) => (begin, end) = span,
-            None => return Ok(Value::Json(Arc::from("{\"snippets\":[]}"))),
-        }
-    }
-    while end > begin && !alnum(end - 1) {
-        end -= 1;
-    }
-    let snip: String = chars[begin..end].iter().collect();
-    let highlights: Vec<String> = matches
-        .iter()
-        .filter(|(s, e)| *s >= begin && *e <= end)
-        .map(|(s, e)| format!("{{\"begin\":{},\"end\":{}}}", s - begin + 1, e - begin + 1))
-        .collect();
-    let source_begin = source.get(begin).map_or(1, |i| i + 1);
-    // Prod ends the snippet at the source position of the next character, so a joined token
-    // at the end of the text ends where its letters, counted from its first, end.
-    let source_end = if end > begin {
-        source.get(end).map_or(source[end - 1] + 2, |s| s + 1)
+    let spans = if chars.len() < width {
+        vec![(0, chars.len())]
     } else {
-        source_begin
+        // The first match of each distinct term.
+        let mut seen: HashSet<String> = HashSet::new();
+        let firsts: Vec<(usize, usize)> = matches
+            .iter()
+            .filter(|(b, e)| seen.insert(chars[*b..*e].iter().collect::<String>().to_lowercase()))
+            .copied()
+            .collect();
+        snippet_spans(&chars, &firsts, width, max_snippets)
     };
-    let snip = serde_json::to_string(&snip).map_err(|e| Error::internal(e.to_string()))?;
+    let mut snippets = Vec::with_capacity(spans.len());
+    for (begin, mut end) in spans {
+        while end > begin && !alnum(end - 1) {
+            end -= 1;
+        }
+        let snip: String = chars[begin..end].iter().collect();
+        let highlights: Vec<String> = matches
+            .iter()
+            .filter(|(s, e)| *s >= begin && *e <= end)
+            .map(|(s, e)| format!("{{\"begin\":{},\"end\":{}}}", s - begin + 1, e - begin + 1))
+            .collect();
+        let source_begin = source.get(begin).map_or(1, |i| i + 1);
+        // Prod ends the snippet at the source position of the next character, so a joined token
+        // at the end of the text ends where its letters, counted from its first, end.
+        let source_end = if end > begin {
+            source.get(end).map_or(source[end - 1] + 2, |s| s + 1)
+        } else {
+            source_begin
+        };
+        let snip = serde_json::to_string(&snip).map_err(|e| Error::internal(e.to_string()))?;
+        snippets.push(format!(
+            "{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}",
+            highlights.join(",")
+        ));
+    }
     Ok(Value::Json(Arc::from(format!(
-        "{{\"snippets\":[{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}]}}",
-        highlights.join(",")
+        "{{\"snippets\":[{}]}}",
+        snippets.join(",")
     ))))
 }
 
@@ -1176,18 +1188,24 @@ fn without_negated(query: &str) -> String {
     out
 }
 
-/// The character span of a snippet cut from text wider than `width`. Cloud Spanner keeps words
-/// on both sides of the first match (of the first word without one): this grows the snippet a
-/// word at a time, left then right, while it stays within `width - 2` characters, and stops
-/// growing a side at the first word that doesn't fit. `None` when the match alone doesn't fit
-/// (prod returns no snippet). Fitted to recordings (`snippet_whitespace.case`,
-/// `snippet_width.case`): prod's rule isn't public, and near the end of the text it keeps more
-/// than this does.
-fn width_cut(
+/// The character spans of the snippets cut from text wider than `width`, given the first match
+/// of each distinct query term (in text order). Fitted to recordings (`snippet_whitespace.case`,
+/// `snippet_width.case`, `snippet_terms.case`); prod's rule isn't public.
+///
+/// One snippet keeps words on both sides of the matches (of the first word without one): it grows
+/// a word at a time, left then right, while it stays within `width - 2` characters, and stops
+/// growing a side at the first word that doesn't fit. When the matches don't fit in one snippet,
+/// prod returns one per term, up to `max_snippets`: terms next to each other stay together, and
+/// `k` snippets grow side by side within `width - k - 1` characters in all, dropping the last
+/// term until they fit. A repeated term never gets a second snippet. No snippet when the first
+/// match alone doesn't fit. Near the end of the text prod keeps more than this does, and it
+/// sometimes picks a different term or split.
+fn snippet_spans(
     chars: &[char],
-    first_match: Option<(usize, usize)>,
+    firsts: &[(usize, usize)],
     width: usize,
-) -> Option<(usize, usize)> {
+    max_snippets: usize,
+) -> Vec<(usize, usize)> {
     let mut words: Vec<(usize, usize)> = Vec::new();
     let mut start = None;
     for (i, c) in chars.iter().enumerate() {
@@ -1203,29 +1221,72 @@ fn width_cut(
     if let Some(s) = start {
         words.push((s, chars.len()));
     }
-    let limit = width.saturating_sub(2);
-    let (mut begin, mut end) = first_match.or_else(|| words.first().copied())?;
-    if end - begin > limit {
+    let (Some(&first), Some(&last)) = (firsts.first(), firsts.last()) else {
+        return words
+            .first()
+            .and_then(|&w| grow_snippets(&words, vec![w], width.saturating_sub(2)))
+            .unwrap_or_default();
+    };
+    if let Some(one) = grow_snippets(&words, vec![(first.0, last.1)], width.saturating_sub(2)) {
+        return one;
+    }
+    // Terms with no word between them stay in one snippet.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    for &(b, e) in firsts {
+        match groups.last_mut() {
+            Some(g) if !words.iter().any(|w| w.0 >= g.1 && w.1 <= b) => g.1 = e,
+            _ => groups.push((b, e)),
+        }
+    }
+    (1..=groups.len().min(max_snippets))
+        .rev()
+        .find_map(|k| grow_snippets(&words, groups[..k].to_vec(), width.saturating_sub(k + 1)))
+        .unwrap_or_default()
+}
+
+/// Grows `spans` a word at a time, each left then right in turn, while their total length stays
+/// within `limit` and they don't run into each other. `None` when they don't fit to begin with.
+fn grow_snippets(
+    words: &[(usize, usize)],
+    mut spans: Vec<(usize, usize)>,
+    limit: usize,
+) -> Option<Vec<(usize, usize)>> {
+    let mut total: usize = spans.iter().map(|(b, e)| e - b).sum();
+    if total > limit {
         return None;
     }
-    let (mut left, mut right) = (true, true);
-    while left || right {
-        if left {
-            // The last word that ends at or before `begin`.
-            match words.partition_point(|w| w.1 <= begin).checked_sub(1) {
-                Some(i) if end - words[i].0 <= limit => begin = words[i].0,
-                _ => left = false,
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for i in 0..spans.len() {
+            let (b, e) = spans[i];
+            let floor = if i == 0 { 0 } else { spans[i - 1].1 };
+            // The last word that ends at or before `b`, after the previous snippet.
+            if let Some(w) = words
+                .partition_point(|w| w.1 <= b)
+                .checked_sub(1)
+                .map(|j| words[j])
+                && w.0 >= floor
+                && total + (b - w.0) <= limit
+            {
+                total += b - w.0;
+                spans[i].0 = w.0;
+                grew = true;
             }
-        }
-        if right {
-            // The first word that starts at or after `end`.
-            match words.get(words.partition_point(|w| w.0 < end)) {
-                Some(w) if w.1 - begin <= limit => end = w.1,
-                _ => right = false,
+            let (b, e) = (spans[i].0, e);
+            let ceil = spans.get(i + 1).map_or(usize::MAX, |s| s.0);
+            // The first word that starts at or after `e`, before the next snippet.
+            if let Some(&w) = words.get(words.partition_point(|w| w.0 < e))
+                && w.1 <= ceil
+                && total + (w.1 - e) <= limit
+            {
+                total += w.1 - e;
+                spans[i] = (b, w.1);
+                grew = true;
             }
         }
     }
-    Some((begin, end))
+    Some(spans)
 }
 
 /// `text` trimmed, with each run of whitespace replaced by one space, and the source index of

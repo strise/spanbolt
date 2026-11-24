@@ -22,8 +22,8 @@
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
 //! Not followed yet: SCORE with `enhance_query => true`; SNIPPET's cut to `max_snippet_width`
-//! (approximated, `eval::width_cut`) and its one snippet per match when the matches are far
-//! apart; DEBUG_TOKENLIST (UNIMPLEMENTED: prod's token lists keep values and positions that
+//! and its split into one snippet per term when the terms don't fit together (both approximated,
+//! `eval::snippet_spans`); DEBUG_TOKENLIST (UNIMPLEMENTED: prod's token lists keep values and positions that
 //! spanbolt's don't).
 
 mod eval;

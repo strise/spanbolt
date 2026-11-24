@@ -5,6 +5,14 @@ use std::time::Instant;
 use clap::{Args, Parser, Subcommand};
 use spanbolt_server::Emulator;
 
+/// mimalloc instead of the system allocator. glibc's malloc slows down as the heap grows under
+/// spanbolt's pattern (many small allocations from the blocking pool's threads, MVCC versions kept
+/// alive): a 10,000-row insert commit doubled in time between 10k and 1M rows in the table, with
+/// most of the growth in work that never touches the table (decoding, DEFAULT evaluation).
+/// `--example insert_bench` measures it.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 /// A fast drop-in replacement for the Cloud Spanner emulator.
 #[derive(Parser)]
 #[command(name = "spanbolt", version, args_conflicts_with_subcommands = true)]

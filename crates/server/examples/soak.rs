@@ -23,8 +23,12 @@
 //!   `GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS(_FOR_RW,_PARTITIONED_OPS)=true`, and runs a
 //!   read-write transaction with its precommit token, a partitioned DML and a PartitionQuery on it
 //!   (the emulator crashed on these: #260, #273). Regular sessions are deleted; multiplexed ones
-//!   can't be and stay until they idle out, so watch the `sessions` and `txns` columns.
-//!   `--churn-pause-ms` (default 20) spaces the clients out: each leaves a socket in TIME_WAIT.
+//!   can't be and stay until they idle out (28 days), and their read-only and partitioned DML
+//!   transactions, which clients never close, stay until the hour-long transaction sweep. Each
+//!   read-only one pins the database version it read, so the heap grows for the first hour (about
+//!   130 KB per multiplexed client in docs/soak/2026-11-24-10m-churn.csv). Off by default
+//!   (`--churn 0`) so that growth doesn't hide other leaks; `--churn-pause-ms` (default 20)
+//!   spaces the clients out: each leaves a socket in TIME_WAIT.
 //!
 //! Runs on the `spanbolt` binary's allocator (mimalloc, src/main.rs). Memory columns: `rss_mb`,
 //! `footprint_mb` (macOS physical footprint, counts compressed pages), `rust_heap_mb` (live bytes
@@ -156,7 +160,7 @@ fn args() -> Result<Args, BoxErr> {
         sample: Duration::from_secs(10),
         warmup: Duration::from_secs(300),
         workers: 4,
-        churn: 2,
+        churn: 0,
         churn_pause: Duration::from_millis(20),
         out: ".mcp-output/soak.csv".into(),
         conformance: Some("target/release/spanbolt-conformance".into()),

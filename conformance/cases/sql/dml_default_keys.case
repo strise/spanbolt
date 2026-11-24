@@ -1,0 +1,87 @@
+tags: sql dml
+# INSERT statements that leave a key column to its volatile DEFAULT (GENERATE_UUID()): THEN RETURN
+# reads back the rows by the key they were stored under (found by drizzle-spanner's integration tests).
+schema:
+  CREATE TABLE U (
+    Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
+    Source STRING(MAX) NOT NULL,
+  ) PRIMARY KEY (Id);
+  CREATE TABLE G (
+    Src STRING(MAX) NOT NULL,
+    K STRING(MAX) NOT NULL AS (UPPER(Src)) STORED,
+  ) PRIMARY KEY (K);
+  CREATE TABLE V (
+    Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
+    Note STRING(MAX) DEFAULT ('fresh'),
+    N INT64,
+  ) PRIMARY KEY (Id);
+  CREATE TABLE R (
+    Src STRING(MAX) NOT NULL,
+    Tag STRING(36) DEFAULT (GENERATE_UUID()),
+    K STRING(MAX) NOT NULL AS (CONCAT(Tag, '-', Src)) STORED,
+  ) PRIMARY KEY (K)
+
+case dml_insert_default_key_then_return
+dml:
+  INSERT INTO U (Source) VALUES ('a'), ('b') THEN RETURN Source, LENGTH(Id) AS len
+expect:
+  count: 2
+  columns: Source STRING, len INT64
+  ["a","36"]
+  ["b","36"]
+query:
+  SELECT COUNT(*) AS n, COUNT(DISTINCT Id) AS ids FROM U
+expect:
+  columns: n INT64, ids INT64
+  ["2","2"]
+
+case dml_insert_explicit_default_key_then_return
+dml:
+  INSERT INTO U (Id, Source) VALUES (DEFAULT, 'c') THEN RETURN Source, LENGTH(Id) AS len
+expect:
+  count: 1
+  columns: Source STRING, len INT64
+  ["c","36"]
+
+case dml_insert_select_default_key_then_return
+dml:
+  INSERT INTO U (Source) SELECT 'x' UNION ALL SELECT 'y' THEN RETURN Source
+expect:
+  count: 2
+  columns: Source STRING
+  ["x"]
+  ["y"]
+
+case dml_insert_generated_key_then_return
+dml:
+  INSERT INTO G (Src) VALUES ('a'), ('b') THEN RETURN K, Src
+expect:
+  count: 2
+  columns: K STRING, Src STRING
+  ["A","a"]
+  ["B","b"]
+
+case dml_insert_or_update_keeps_omitted_columns
+dml:
+  INSERT INTO V (Id, Note, N) VALUES ('x', 'kept', 1)
+expect:
+  count: 1
+dml:
+  INSERT OR UPDATE INTO V (Id, N) VALUES ('x', 2) THEN RETURN Id, Note, N
+expect:
+  count: 1
+  columns: Id STRING, Note STRING, N INT64
+  ["x","kept","2"]
+
+case dml_insert_key_from_volatile_column_then_return
+dml:
+  INSERT INTO R (Src) VALUES ('a') THEN RETURN Src, LENGTH(K) AS len, K = CONCAT(Tag, '-', Src) AS consistent
+expect:
+  count: 1
+  columns: Src STRING, len INT64, consistent BOOL
+  ["a","38",true]
+query:
+  SELECT COUNT(*) AS n FROM R WHERE K = CONCAT(Tag, '-', Src)
+expect:
+  columns: n INT64
+  ["1"]

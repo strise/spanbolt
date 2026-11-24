@@ -385,6 +385,51 @@ fn pk_debug(tm: &TableMeta, key: &[Value]) -> String {
     format!("({{{}}})", parts.join(", "))
 }
 
+/// An INSERT's columns and rows with the values of key columns it leaves to a DEFAULT or an
+/// identity: an absent key column is appended, and a key column written as `DEFAULT` gets its value.
+/// The key checks and THEN RETURN need the stored key, and the write must store this same value
+/// (`GENERATE_UUID()` differs on every call).
+fn fill_key_defaults(
+    tm: &TableMeta,
+    columns: &[usize],
+    mut rows: Vec<Vec<Value>>,
+    defaults: &mut Vec<(usize, usize)>,
+) -> Result<(Vec<usize>, Vec<Vec<Value>>)> {
+    let fillable = |c: usize| tm.columns[c].default.is_some() || tm.columns[c].identity;
+    let absent: Vec<usize> = tm
+        .pk
+        .iter()
+        .copied()
+        .filter(|&k| fillable(k) && !columns.contains(&k))
+        .collect();
+    let is_key_default =
+        |&(_, i): &(usize, usize)| tm.pk.contains(&columns[i]) && fillable(columns[i]);
+    if absent.is_empty() && !defaults.iter().any(is_key_default) {
+        return Ok((columns.to_vec(), rows));
+    }
+    for (r, row) in rows.iter_mut().enumerate() {
+        let defaulted: Vec<usize> = defaults
+            .iter()
+            .filter(|d| d.0 == r && is_key_default(d))
+            .map(|&(_, i)| i)
+            .collect();
+        let mut full = vec![Value::Null; tm.columns.len()];
+        for (i, &c) in columns.iter().enumerate() {
+            if !defaulted.contains(&i) {
+                full[c] = row[i].clone();
+            }
+        }
+        let missing = |c: usize| absent.contains(&c) || defaulted.iter().any(|&i| columns[i] == c);
+        spanbolt_storage::expr::fill_missing(tm, &mut full, &missing)?;
+        for &i in &defaulted {
+            row[i] = full[columns[i]].clone();
+        }
+        row.extend(absent.iter().map(|&c| full[c].clone()));
+    }
+    defaults.retain(|d| !is_key_default(d));
+    Ok(([columns, &absent].concat(), rows))
+}
+
 pub fn execute(
     cat: &SqlCatalog,
     d: &DmlPlan,
@@ -464,6 +509,8 @@ pub fn execute(
                     }
                 }
             }
+            let (columns_with_key, rows) = fill_key_defaults(&tm, columns, rows, &mut defaults)?;
+            let columns = &columns_with_key;
             let key_pos: Vec<Option<usize>> = tm
                 .pk
                 .iter()

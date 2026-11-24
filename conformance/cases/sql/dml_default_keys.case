@@ -1,0 +1,39 @@
+tags: sql dml
+# INSERT statements that leave a key column to its volatile DEFAULT (GENERATE_UUID()): THEN RETURN
+# reads back the rows by the key they were stored under (found by drizzle-spanner's integration tests).
+schema:
+  CREATE TABLE U (
+    Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
+    Source STRING(MAX) NOT NULL,
+  ) PRIMARY KEY (Id)
+
+case dml_insert_default_key_then_return
+dml:
+  INSERT INTO U (Source) VALUES ('a'), ('b') THEN RETURN Source, LENGTH(Id) AS len
+expect:
+  count: 2
+  columns: Source STRING, len INT64
+  ["a","36"]
+  ["b","36"]
+query:
+  SELECT COUNT(*) AS n, COUNT(DISTINCT Id) AS ids FROM U
+expect:
+  columns: n INT64, ids INT64
+  ["2","2"]
+
+case dml_insert_explicit_default_key_then_return
+dml:
+  INSERT INTO U (Id, Source) VALUES (DEFAULT, 'c') THEN RETURN Source, LENGTH(Id) AS len
+expect:
+  count: 1
+  columns: Source STRING, len INT64
+  ["c","36"]
+
+case dml_insert_select_default_key_then_return
+dml:
+  INSERT INTO U (Source) SELECT 'x' UNION ALL SELECT 'y' THEN RETURN Source
+expect:
+  count: 2
+  columns: Source STRING
+  ["x"]
+  ["y"]

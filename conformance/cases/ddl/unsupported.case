@@ -1,0 +1,191 @@
+# Spanner DDL and SQL spanbolt doesn't model. Spanbolt answers UNIMPLEMENTED (the check skips the
+# case), never a syntax error or a different answer; DDL Spanner doesn't have stays a syntax error.
+tags: ddl
+schema:
+  CREATE TABLE A (
+    K INT64 NOT NULL,
+    D JSON,
+    E ARRAY<FLOAT32>(vector_length=>2),
+  ) PRIMARY KEY (K)
+
+case create_proto_bundle
+ddl:
+  CREATE PROTO BUNDLE (foo.Bar)
+expect:
+  error: INVALID_ARGUMENT
+  message: Contents of proto_descriptor_file cannot be empty
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found in proto descriptors. foo.Bar. Did you miss including the proto file in your protoc command?
+
+case alter_proto_bundle
+ddl:
+  ALTER PROTO BUNDLE INSERT (foo.Bar)
+expect:
+  error: FAILED_PRECONDITION
+  message: Proto bundle does not yet exist; cannot alter it
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Proto bundle does not yet exist; cannot alter it
+
+case create_queue
+ddl:
+  CREATE QUEUE Q (Id INT64, Payload BYTES(MAX) NOT NULL) PRIMARY KEY (Id)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE QUEUE Q (\n  Id INT64,\n  Payload BYTES(MAX) NOT NULL,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case create_placement
+ddl:
+  CREATE PLACEMENT p OPTIONS (instance_partition = 'p1')
+expect@spanner:
+  error: NOT_FOUND
+  message: Instance partition not found: projects/strise-stage/instances/mito-api/instancePartitions/p1
+get_ddl
+expect:
+  statements:
+  "CREATE PLACEMENT p OPTIONS ( instance_partition = 'p1' )"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+
+case expression_index
+ddl:
+  CREATE INDEX AByCity ON A((JSON_VALUE(D, '$.city')))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n  _ExpressionIndex_AByCity_0 STRING(MAX) AS (JSON_VALUE(D, '$.city')) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByCity ON A()"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByCity ON A((JSON_VALUE(D, '$.city')))"
+
+case create_function
+ddl:
+  CREATE SCHEMA s;
+  CREATE FUNCTION s.AddOne(x INT64) RETURNS INT64 SQL SECURITY INVOKER AS (x + 1)
+get_ddl
+expect:
+  statements:
+  "CREATE SCHEMA s"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE FUNCTION s.AddOne(x INT64) RETURNS INT64 SQL SECURITY INVOKER AS (x + 1)"
+expect@spanner:
+  statements:
+  "CREATE SCHEMA s"
+  "CREATE FUNCTION s.AddOne(`x` INT64) RETURNS INT64 SQL SECURITY INVOKER AS (\n  x + 1\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+
+case create_vector_index
+ddl:
+  CREATE VECTOR INDEX AByE ON A(E) WHERE E IS NOT NULL OPTIONS (distance_type = 'COSINE')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE VECTOR INDEX AByE ON A(E) WHERE E IS NOT NULL OPTIONS ( distance_type = 'COSINE' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE VECTOR INDEX AByE ON A(E) WHERE E IS NOT NULL OPTIONS (\n  distance_type = 'COSINE'\n)"
+
+case drop_vector_index
+ddl:
+  DROP VECTOR INDEX AByE
+expect:
+  error: NOT_FOUND
+  message: Index not found: AByE
+expect@spanner:
+  same
+
+case unknown_create
+ddl:
+  CREATE WIDGET W
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE WIDGET W : Syntax error on line 1, column 8: Encountered 'WIDGET' while parsing: create_statement
+expect@spanner:
+  same
+
+case unknown_alter
+ddl:
+  ALTER WIDGET W SET OPTIONS (a = 1)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER WIDGET W SET OPTIONS (a = 1) : Syntax error on line 1, column 7: Encountered 'WIDGET' while parsing: alter_statement
+expect@spanner:
+  same
+
+case unknown_drop
+ddl:
+  DROP WIDGET W
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: DROP WIDGET W : Syntax error on line 1, column 6: Encountered 'WIDGET' while parsing: drop_statement
+expect@spanner:
+  same
+
+case read_change_stream
+ddl:
+  CREATE CHANGE STREAM S FOR ALL
+query:
+  SELECT ChangeRecord FROM READ_S(start_timestamp => TIMESTAMP '2026-01-01T00:00:00Z', end_timestamp => NULL, partition_token => NULL, heartbeat_milliseconds => 10000)
+expect:
+  error: INVALID_ARGUMENT
+  message: Change stream queries are not supported for the ExecuteSql API. Change stream queries must be strong reads executed via single use transactions using the ExecuteStreamingSql API.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Change stream queries are not supported for the ExecuteSql API. Change stream queries must be strong reads executed via single use transactions using the ExecuteStreamingSql API
+
+case read_missing_change_stream
+query:
+  SELECT ChangeRecord FROM READ_Nope(start_timestamp => TIMESTAMP '2026-01-01T00:00:00Z', end_timestamp => NULL, partition_token => NULL, heartbeat_milliseconds => 10000)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table-valued function not found: READ_Nope [at 1:26]
+expect@spanner:
+  same
+
+case sequence_next_value
+ddl:
+  CREATE SEQUENCE Seq OPTIONS (sequence_kind = 'bit_reversed_positive')
+begin txn=t
+query txn=t:
+  SELECT GET_NEXT_SEQUENCE_VALUE(SEQUENCE Seq) > 0
+expect:
+  columns: BOOL
+  [true]
+expect@spanner:
+  same
+
+case sequence_internal_state
+ddl:
+  CREATE SEQUENCE Seq OPTIONS (sequence_kind = 'bit_reversed_positive')
+query:
+  SELECT GET_INTERNAL_SEQUENCE_STATE(SEQUENCE Seq)
+expect:
+  columns: INT64
+  [null]
+expect@spanner:
+  same
+
+case sequence_default
+ddl:
+  CREATE SEQUENCE Seq OPTIONS (sequence_kind = 'bit_reversed_positive');
+  CREATE TABLE X (Id INT64 DEFAULT (GET_NEXT_SEQUENCE_VALUE(SEQUENCE Seq)), V INT64) PRIMARY KEY (Id)
+insert X cols=V:
+  [1]
+query:
+  SELECT COUNT(*) FROM X WHERE Id > 0
+expect:
+  columns: INT64
+  ["1"]
+expect@spanner:
+  same

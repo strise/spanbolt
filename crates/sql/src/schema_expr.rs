@@ -176,6 +176,7 @@ impl ExprEvaluator for SchemaExprs {
         };
         let stmt = match crate::analyze::statement(&self.cat, &sql, &row_param(table)) {
             Ok(s) => s,
+            Err(e) if e.code == spanbolt_storage::Code::Unimplemented => return Err(e),
             Err(e) => return Err(wrap(&e.message)),
         };
         // PENDING_COMMIT_TIMESTAMP() analyses anywhere; as a DEFAULT it must be the whole value.

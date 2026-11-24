@@ -9,8 +9,9 @@
 //! ```
 //!
 //! Workload, all at once:
-//! - the conformance suite in a loop (`target/release/spanbolt-conformance check`, a subprocess
-//!   against this server: thousands of database creates, DDL and drops per pass);
+//! - the conformance suite in a loop (`target/release/spanbolt-conformance check --oracle spanner`,
+//!   a subprocess against this strict server, as gate.sh's prod mode: thousands of database
+//!   creates, DDL and drops per pass);
 //! - `--workers` cycles of: create a database, seed it, run point/index/SEARCH queries, DML and
 //!   mutations (including distinct SQL texts), clone a seeded template, work on the clone, drop
 //!   both;
@@ -584,7 +585,15 @@ async fn main() -> Result<(), BoxErr> {
         tasks.push(tokio::task::spawn_blocking(move || {
             while !stop.load(Ordering::Relaxed) {
                 let out = Command::new(&bin)
-                    .args(["check", "--target", &addr.to_string()])
+                    // Against Cloud Spanner's expectations, as gate.sh's prod mode does: the
+                    // server is strict, so a failure is a regression, not an emulator difference.
+                    .args([
+                        "check",
+                        "--oracle",
+                        "spanner",
+                        "--target",
+                        &addr.to_string(),
+                    ])
                     .output();
                 match out {
                     Ok(o) => {

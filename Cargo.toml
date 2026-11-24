@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# googlesql-sys needs the Bazel-built native library (native/googlesql); build it explicitly with -p.
+# googlesql-sys, spanbolt-sql and spanbolt (the binary, SQL engine on) need the GoogleSQL shim
+# (native/googlesql, docs/building.md); build them explicitly with -p.
 default-members = ["crates/proto", "crates/storage", "crates/txn", "crates/ddl", "crates/server", "crates/conformance"]
 
 [workspace.package]
@@ -12,17 +13,25 @@ repository = "https://github.com/strise/spanbolt"
 homepage = "https://strise.github.io/spanbolt/"
 keywords = ["spanner", "emulator", "googlesql", "testing", "grpc"]
 categories = ["database", "development-tools::testing", "emulators"]
+rust-version = "1.91"
 
 [workspace.dependencies]
-spanbolt-ddl = { path = "crates/ddl" }
-spanbolt-proto = { path = "crates/proto" }
-spanbolt-storage = { path = "crates/storage" }
-spanbolt-txn = { path = "crates/txn" }
+# Internal crates: `version` is what the published crates depend on (keep it equal to the
+# workspace version; docs/releasing.md).
+googlesql-sys = { path = "crates/googlesql-sys", version = "=0.2.0" }
+spanbolt-ddl = { path = "crates/ddl", version = "=0.2.0" }
+spanbolt-proto = { path = "crates/proto", version = "=0.2.0" }
+spanbolt-server = { path = "crates/server", version = "=0.2.0" }
+spanbolt-sql = { path = "crates/sql", version = "=0.2.0" }
+spanbolt-storage = { path = "crates/storage", version = "=0.2.0" }
+spanbolt-txn = { path = "crates/txn", version = "=0.2.0" }
 arc-swap = "1.9"
 base64 = "0.23"
 clap = { version = "4.6", features = ["derive", "env"] }
 dashmap = "6"
 imbl = "7"
+# The binary's allocator (crates/spanbolt). v2: on single-row commits v3 was ~0.5µs slower than glibc.
+mimalloc = { version = "0.1", default-features = false, features = ["v2"] }
 parking_lot = "0.12"
 prost = "0.14"
 prost-types = "0.14"

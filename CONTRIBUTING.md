@@ -34,7 +34,7 @@ don't build it yourself: the first build with the engine downloads the prebuilt 
 x86_64/arm64 (glibc 2.38+).
 
 ```sh
-cargo build --release -p spanbolt-server --features googlesql   # the real server
+cargo build --release -p spanbolt   # the real server
 cargo test --release -p spanbolt-sql
 ```
 
@@ -63,7 +63,7 @@ docker run -d --name sb-conf-oracle -p 19210:9010 gcr.io/cloud-spanner-emulator/
 cargo run --release -p spanbolt-conformance -- record --target 127.0.0.1:19210 --filter <case>
 docker rm -f sb-conf-oracle
 
-cargo run --release -p spanbolt-server --features googlesql -- --host-port 127.0.0.1:19220 &
+cargo run --release -p spanbolt -- --host-port 127.0.0.1:19220 &
 cargo run --release -p spanbolt-conformance -- check --target 127.0.0.1:19220
 ```
 

@@ -1,0 +1,35 @@
+[package]
+name = "spanbolt"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "A fast drop-in replacement for the Google Cloud Spanner emulator, for tests and CI."
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://github.com/strise/spanbolt#readme"
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+readme = "../../README.md"
+include = ["build.rs", "src/**", "LICENSE", "NOTICE"]
+
+[[bin]]
+name = "spanbolt"
+path = "src/main.rs"
+
+[dependencies]
+spanbolt-proto.workspace = true
+spanbolt-server.workspace = true
+spanbolt-storage.workspace = true
+# Only for its links metadata (build.rs): where the GoogleSQL shim lives.
+spanbolt-sql = { workspace = true, optional = true }
+clap.workspace = true
+mimalloc.workspace = true
+tokio.workspace = true
+
+[features]
+# On by default: `cargo install spanbolt` gets the SQL engine. Needs the GoogleSQL shim, which
+# googlesql-sys downloads for the supported targets (docs/building.md). Without it every SQL call
+# returns UNIMPLEMENTED.
+default = ["googlesql"]
+googlesql = ["spanbolt-server/googlesql", "dep:spanbolt-sql"]

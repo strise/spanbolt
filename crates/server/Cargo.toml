@@ -3,29 +3,26 @@ name = "spanbolt-server"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
-description = "spanbolt: a fast drop-in replacement for the Google Cloud Spanner emulator, for tests and CI."
+description = "The spanbolt Spanner emulator as a library: gRPC services, REST gateway and streaming. The binary is the `spanbolt` crate."
 repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
-readme = "../../README.md"
-
-[[bin]]
-name = "spanbolt"
-path = "src/main.rs"
+rust-version.workspace = true
+documentation = "https://docs.rs/spanbolt-server"
+readme = "README.md"
+include = ["build.rs", "src/**", "README.md", "LICENSE", "NOTICE"]
 
 [dependencies]
 spanbolt-ddl.workspace = true
 spanbolt-proto.workspace = true
 spanbolt-storage.workspace = true
 spanbolt-txn.workspace = true
-spanbolt-sql = { path = "../sql", optional = true }
+spanbolt-sql = { workspace = true, optional = true }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 clap.workspace = true
 dashmap.workspace = true
 http-body = "1"
-# The binary's allocator (src/main.rs). v2: on single-row commits v3 was ~0.5µs slower than glibc.
-mimalloc = { version = "0.1", default-features = false, features = ["v2"] }
 parking_lot.workspace = true
 prost.workspace = true
 prost-types.workspace = true
@@ -42,6 +39,7 @@ googlesql = ["dep:spanbolt-sql"]
 
 [dev-dependencies]
 spanbolt-storage.workspace = true
+mimalloc.workspace = true
 h2 = "0.4"
 http = "1"
 

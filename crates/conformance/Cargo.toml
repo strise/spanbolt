@@ -5,6 +5,8 @@ version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+# Test harness for this repository (reads conformance/cases); not published.
+publish = false
 description = "Differential conformance harness: record expectations from the official emulator, check any Spanner gRPC endpoint against them."
 
 [[bin]]

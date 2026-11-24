@@ -305,10 +305,9 @@ var spanner = new SpannerEmulatorContainer(image);</pre>
 <pre class="block">docker run -d -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2
 export SPANNER_EMULATOR_HOST=localhost:9010
 <span class="c"># Java, Go, Python, Node, JDBC, Liquibase, Beam: unchanged</span></pre>
-      <h4>From source</h4>
-<pre class="block">git clone https://github.com/strise/spanbolt && cd spanbolt
-cargo build --release -p spanbolt-server --features googlesql
-./target/release/spanbolt --host-port 127.0.0.1:9010 --rest-port 9020</pre>
+      <h4>Cargo (macOS arm64, Linux)</h4>
+<pre class="block">cargo install spanbolt
+spanbolt --host-port 127.0.0.1:9010 --rest-port 9020</pre>
     </div>
     <div>
       <h4>Tested with</h4>

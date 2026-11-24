@@ -23,7 +23,7 @@ run() {  # run <label> <host:port>
 }
 
 source scripts/googlesql-env.sh
-cargo build -q --release -p spanbolt-server --features googlesql || exit 1
+cargo build -q --release -p spanbolt || exit 1
 port=$((20000 + RANDOM % 20000))
 ./target/release/spanbolt --host-port "127.0.0.1:$port" > "$out/spanbolt-server.log" 2>&1 &
 srv=$!

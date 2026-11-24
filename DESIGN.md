@@ -91,7 +91,8 @@ crates/storage   values, key encoding, tables, MVCC states, snapshot files
 crates/txn       transaction manager
 crates/ddl       DDL parser, schema model, DDL printer
 crates/sql       SQL planning + execution
-crates/server    tonic services + binary `spanbolt`
+crates/server    tonic services, REST gateway (library)
+crates/spanbolt  binary `spanbolt`: spanbolt-server with the SQL engine (published as `spanbolt`)
 native/googlesql C++ shim around GoogleSQL exposing a C ABI
 fixtures/        schema fixtures
 ```

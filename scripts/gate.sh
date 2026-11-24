@@ -21,7 +21,7 @@ source scripts/googlesql-env.sh
 step "fmt";    check cargo fmt --all --check
 step "clippy"; check cargo clippy -q --all-targets -- -D warnings
 step "clippy (googlesql)"
-check cargo clippy -q --all-targets -p spanbolt-sql -p spanbolt-server --features spanbolt-server/googlesql -- -D warnings
+check cargo clippy -q --all-targets -p spanbolt-sql -p spanbolt-server -p spanbolt --features spanbolt-server/googlesql -- -D warnings
 step "tests";  check cargo test -q
 step "sql tests (release)"; check cargo test -q --release -p spanbolt-sql
 
@@ -44,7 +44,7 @@ else
 fi
 
 step "conformance"
-cargo build -q --release -p spanbolt-server --features googlesql && cargo build -q --release -p spanbolt-conformance || fail=1
+cargo build -q --release -p spanbolt && cargo build -q --release -p spanbolt-conformance || fail=1
 # Two runs: the default server against prod expectations (`expect@spanner:` where recorded),
 # and the server in --emulator-compat mode against the emulator's expectations.
 run_conformance() { # <label> <baseline> <server flags> -- <check flags>

@@ -5,10 +5,14 @@ spanbolt's SQL engine calls GoogleSQL's analyser, a C++ library, through a small
 about 25 minutes and a lot of memory to build with Bazel, so normally you download it instead.
 
 ```sh
-cargo build --release -p spanbolt-server --features googlesql   # downloads the shim the first time
-cargo test                                                      # default members: no shim needed
-scripts/gate.sh                                                 # what CI runs
+cargo build --release -p spanbolt   # the binary; downloads the shim the first time
+cargo test                          # default members: no shim needed
+scripts/gate.sh                     # what CI runs
 ```
+
+`spanbolt` (`crates/spanbolt`) is the binary with the SQL engine on (its default feature
+`googlesql`); `spanbolt-server` is the library behind it, with the engine off unless you enable its
+`googlesql` feature. `cargo install spanbolt` builds the published crates the same way.
 
 Requirements: Rust 1.91+, `curl` and `tar`. The Spanner API protos compile with the protoc bundled
 in `protoc-bin-vendored`. A system `protoc` 27+ is needed only when you build against your own
@@ -29,13 +33,31 @@ needs glibc 2.38+ (Ubuntu 24.04, Debian 13). The server needs zoneinfo for `Amer
    `native/googlesql-shim.env`) and checked against its pinned SHA-256. The cache lives outside
    `target/`, so `cargo clean` doesn't refetch.
 
-If none applies, the build stops with the options above. Two more switches:
+If none applies, the build stops with the options above. A published crate has no
+`native/googlesql`, so only 1 and 3 apply: `googlesql-sys` ships `googlesql-shim.env` (a symlink to
+`native/googlesql-shim.env` in the repository, a plain file in the `.crate`) and skips the source
+check. On docs.rs (`DOCS_RS`) the build script links nothing and stubs the resolved-AST types. Two more switches:
 
 - The download path refuses an archive whose shim sources (`native/googlesql`: `shim/`, `tools/`,
   `BUILD.bazel`, `MODULE.bazel`, `.bazelrc`, `.bazelversion`) differ from the ones it was built
   from, because it would be stale. `SPANBOLT_SHIM_ALLOW_STALE=1` uses it anyway.
 - `PROTOC` picks the protoc binary for the Bazel and prefix paths without `bin/resolved_ast.fds`
   (a system protoc, 27+), and for `spanbolt-proto` (default: the vendored one).
+
+## Where the binary finds the shim
+
+The shim is linked dynamically. `spanbolt`'s rpath lists, in order: the build directory
+(`target/.../googlesql-sys-*/out`), the executable's directory (`@executable_path` / `$ORIGIN`:
+the image and any tarball ship `libgooglesql_shim.so` next to `spanbolt`) and, for a downloaded
+shim, `<cache>/prebuilt/<archive>/lib`, which holds the library under its install name. The last
+one is what a `cargo install`ed binary uses: cargo deletes the build directory afterwards, and
+`~/.cargo/bin` holds only the executable. Deleting the cache breaks such a binary
+(`Library not loaded: @rpath/libgooglesql_shim.dylib`); `cargo install spanbolt --force`
+downloads it again.
+
+Static linking would avoid this, but the shim is a 40 MB C++ shared library built by Bazel (with
+libc++ on Linux); a static archive would need a second Bazel output per platform and a link step
+that knows its C++ runtime. Not worth it while the cache works.
 
 ## Building the shim with Bazel
 
@@ -116,6 +138,7 @@ Drafts in `.github/workflows` (not enabled yet):
 - `ci.yml`: `scripts/gate.sh` (fmt, clippy, tests, conformance in prod and emulator mode) on
   Linux x86_64, Linux arm64 and macOS arm64, with the prebuilt shim.
 - `shim.yml`: builds the three archives with Bazel and publishes them on a `shim-*` tag.
+- `crates.yml`: on a `v*` tag, publishes the crates to crates.io (`docs/releasing.md`).
 - `image.yml`: on a `v*` tag, builds each architecture natively with `SHIM=prebuilt`, smoke-tests
   it (`scripts/docker-smoke.sh`), pushes by digest and merges a multi-arch manifest at
   `ghcr.io/strise/spanbolt`.

@@ -77,6 +77,9 @@ clients ──gRPC──▶ spanbolt-server (tonic)
   built from our schema, and returns the resolved AST as a protobuf. Rust plans and executes it.
 - Analysed statements are cached by (schema version, SQL text), so the analyser cost is paid once per
   distinct statement.
+- Row order without `ORDER BY`: scans return key order (table or index), as production does in
+  practice. The emulator shuffles on purpose to catch tests that rely on an unspecified order; we
+  decided not to, so spanbolt and production agree. Don't add a shuffle without revisiting this.
 - Until the FFI exists, a minimal Rust SQL path may be used for bootstrapping tests only.
 
 ## Fidelity oracle

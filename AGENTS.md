@@ -38,9 +38,11 @@ docs/building.md cover setup.
   follows production Spanner: FORCE_INDEX on a NULL_FILTERED index needs `IS NOT NULL` filters on the
   indexed columns; `--emulator-compat` honours `spanner_emulator.disable_query_null_filtered_index_check`.
 - Benchmarks: `cargo run --release -p spanbolt-server --features googlesql --example sql_bench`
-  (tonic, in process), `--example search_bench` (SEARCH over 10k rows with and without a search index), `--example session_bench` (heap per session, BatchCreateSessions and ListSessions over 1M sessions; no SQL engine needed), `-p spanbolt-sql --example ddl_bench` (`DDL=<schema dump>`: DDL apply and first SQL after a DDL, replaying a large schema migration) and `python3 scripts/sql_bench.py HOST:PORT` (Python client, any endpoint).
-  Soak: `--example soak -- --duration 3600` (conformance in a loop plus creates/clones/drops and a
-  mixed workload; CSV of RSS, footprint, live heap, p50/p99 and cache sizes), summarised by
+  (tonic, in process; also the shapes the emulator was slow on: key IN lists, streaming, WITH used from nested IN subqueries), `--example search_bench` (SEARCH over 10k rows with and without a search index), `--example session_bench` (heap per session, BatchCreateSessions and ListSessions over 1M sessions; no SQL engine needed), `-p spanbolt-sql --example ddl_bench` (`DDL=<schema dump>`: DDL apply and first SQL after a DDL, replaying a large schema migration) and `python3 scripts/sql_bench.py HOST:PORT` (Python client, any endpoint).
+  Soak: `--example soak -- --duration 3600` (conformance in a loop plus creates/clones/drops, a
+  mixed workload, and with `--churn N` short-lived clients (off by default; multiplexed ones grow the heap until the hour-long transaction sweep, see the example's docs): a new connection and session per query, every
+  other one multiplexed with a read-write transaction, partitioned DML and PartitionQuery on it;
+  CSV of RSS, footprint, live heap, p50/p99 and cache sizes), summarised by
   `python3 scripts/soak_report.py CSV --svg out.svg`. Soak runs on mimalloc like the binary. On macOS
   judge memory by `rust_heap_mb` (live bytes in mimalloc), `malloc_mb` (the shim's C++ heap in the
   system malloc zones) and `footprint_mb`: RSS includes the shim library and freed pages the OS

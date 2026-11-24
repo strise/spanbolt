@@ -330,6 +330,9 @@ insert Ref cols=R,P:
 expect:
   error: FAILED_PRECONDITION
   message: Foreign key `FkParent` constraint violation on table `Ref`. Cannot find referenced key `{Int64(42)}` in table `Parent`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `FkParent` is violated on table `Ref`. Cannot find referenced values in Parent(P).
 
 case foreign_key_null_ok
 insert Ref cols=R,P:

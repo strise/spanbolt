@@ -162,10 +162,10 @@
     },
     "information_schema": {
       "error": 0,
-      "fail": 1,
-      "pass": 41,
+      "fail": 0,
+      "pass": 44,
       "skipped": 0,
-      "total": 42,
+      "total": 44,
       "unimplemented": 0
     },
     "int64": {
@@ -203,9 +203,9 @@
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 111,
+      "pass": 114,
       "skipped": 0,
-      "total": 111,
+      "total": 114,
       "unimplemented": 0
     },
     "net": {
@@ -226,10 +226,10 @@
     },
     "oracle": {
       "error": 0,
-      "fail": 5,
-      "pass": 150,
+      "fail": 4,
+      "pass": 160,
       "skipped": 0,
-      "total": 156,
+      "total": 165,
       "unimplemented": 1
     },
     "oracle2": {
@@ -262,6 +262,14 @@
       "pass": 4,
       "skipped": 0,
       "total": 4,
+      "unimplemented": 0
+    },
+    "pipe": {
+      "error": 0,
+      "fail": 0,
+      "pass": 7,
+      "skipped": 0,
+      "total": 7,
       "unimplemented": 0
     },
     "read": {
@@ -306,10 +314,10 @@
     },
     "sql": {
       "error": 0,
-      "fail": 21,
-      "pass": 3744,
+      "fail": 20,
+      "pass": 3754,
       "skipped": 3,
-      "total": 3778,
+      "total": 3787,
       "unimplemented": 10
     },
     "string": {
@@ -3212,6 +3220,30 @@
     },
     {
       "detail": null,
+      "name": "mutations/fk_violation_wording/composite_key_insert",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/fk_violation_wording/named_schema_key_insert",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/fk_violation_wording/composite_key_dml",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
       "name": "mutations/generated_columns/virtual_query",
       "status": "pass",
       "tags": [
@@ -4793,7 +4825,7 @@
       ]
     },
     {
-      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T22:10:51.456037Z\"]",
+      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T22:43:01.877675Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_on_update",
       "status": "fail",
       "tags": [
@@ -5003,7 +5035,7 @@
       ]
     },
     {
-      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T22:10:51.461175Z\"]",
+      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T22:43:01.883081Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_default_pending",
       "status": "fail",
       "tags": [
@@ -5023,7 +5055,7 @@
       ]
     },
     {
-      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T22:10:51.462095Z\"]",
+      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T22:43:01.884409Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert",
       "status": "fail",
       "tags": [
@@ -5032,7 +5064,7 @@
       ]
     },
     {
-      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T22:10:51.462066Z\"]",
+      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T22:43:01.88449Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert_or_update",
       "status": "fail",
       "tags": [
@@ -32979,9 +33011,29 @@
       ]
     },
     {
-      "detail": "line 53:\n  rows (ordered): expected 7, got 7\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"ref_val\",\"1\",\"1\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"ref_val\",\"1\",\"1\"]\n    - [\"\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    - [\"\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n      [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"id\",\"1\",null]\nline 72:\n  rows (ordered): expected 7, got 7\n      [\"\",\"referring_table\",\"\",\"PK_referring_table\"]\n      [\"\",\"referring_table_2\",\"\",\"PK_referring_table_2\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val_2\"]\n    - [\"other_schema\",\"referenced_table\",\"\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\n    - [\"other_schema\",\"referenced_table\",\"\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    - [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]",
+      "detail": null,
       "name": "sql/information_schema_fk_named/fk_onto_named_schema_unique_index",
-      "status": "fail",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk_named/fk_onto_named_schema_unique_index_column_usage",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk_named/two_keys_onto_one_default_schema_unique_column",
+      "status": "pass",
       "tags": [
         "sql",
         "information_schema",
@@ -33553,6 +33605,76 @@
       "tags": [
         "sql",
         "values"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_projection_operators",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_aggregate",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_join_and_set_operations",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_subqueries",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_dml",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_other_operators",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/pipe_syntax/pipe_tablesample",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle",
+        "pipe"
       ]
     },
     {
@@ -39952,13 +40074,13 @@
       ]
     }
   ],
-  "target": "127.0.0.1:29654",
+  "target": "127.0.0.1:30626",
   "totals": {
     "error": 0,
-    "fail": 25,
-    "pass": 4278,
+    "fail": 24,
+    "pass": 4291,
     "skipped": 9,
-    "total": 4334,
+    "total": 4346,
     "unimplemented": 22
   },
   "unimplemented": "skip"

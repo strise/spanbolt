@@ -100,3 +100,118 @@ expect@spanner:
   ["other_schema","referenced_table","IDX_referenced_table_unique_val_U_D60AC6CF8E211785","INDEX",true,true]
   ["other_schema","referenced_table","PRIMARY_KEY","PRIMARY_KEY",true,false]
   ["other_schema","referenced_table","referenced_table_unique_val_idx","INDEX",true,false]
+
+# The same DDL in CONSTRAINT_COLUMN_USAGE.
+case fk_onto_named_schema_unique_index_column_usage
+schema:
+  CREATE SCHEMA other_schema;
+  CREATE TABLE other_schema.referenced_table (
+    id INT64 NOT NULL,
+    unique_val INT64 NOT NULL,
+  ) PRIMARY KEY (id);
+  CREATE UNIQUE INDEX other_schema.referenced_table_unique_val_idx ON other_schema.referenced_table (unique_val);
+  CREATE TABLE referring_table (
+    id INT64 NOT NULL,
+    ref_val INT64 NOT NULL,
+    CONSTRAINT fk_ref_val FOREIGN KEY (ref_val) REFERENCES other_schema.referenced_table (unique_val) NOT ENFORCED,
+  ) PRIMARY KEY (id);
+  CREATE TABLE referring_table_2 (
+    id INT64 NOT NULL,
+    ref_val INT64 NOT NULL,
+    CONSTRAINT fk_ref_val_2 FOREIGN KEY (ref_val) REFERENCES other_schema.referenced_table (unique_val) NOT ENFORCED,
+  ) PRIMARY KEY (id)
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, CONSTRAINT_SCHEMA, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_SCHEMA = 'other_schema' AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, COLUMN_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
+  ["other_schema","referenced_table","unique_val","","IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+  ["other_schema","referenced_table","unique_val","","IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+  ["other_schema","referenced_table","unique_val","","fk_ref_val"]
+  ["other_schema","referenced_table","unique_val","","fk_ref_val_2"]
+  ["other_schema","referenced_table","id","other_schema","PK_referenced_table"]
+expect@spanner:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
+  ["other_schema","referenced_table","unique_val","","fk_ref_val"]
+  ["other_schema","referenced_table","unique_val","","fk_ref_val_2"]
+  ["other_schema","referenced_table","unique_val","other_schema","IDX_referenced_table_unique_val_U_D60AC6CF8E211785"]
+  ["other_schema","referenced_table","id","other_schema","PK_referenced_table"]
+
+# Two keys onto one unique column of a default-schema table, one of them from a named schema: the
+# backing index in every constraint view.
+case two_keys_onto_one_default_schema_unique_column
+schema:
+  CREATE TABLE P (
+    Id INT64 NOT NULL,
+    Slug STRING(16),
+  ) PRIMARY KEY (Id);
+  CREATE TABLE C1 (
+    Id INT64 NOT NULL,
+    S STRING(16),
+    CONSTRAINT f1 FOREIGN KEY (S) REFERENCES P (Slug),
+  ) PRIMARY KEY (Id);
+  CREATE SCHEMA s2;
+  CREATE TABLE s2.C2 (
+    Id INT64 NOT NULL,
+    S STRING(16),
+    CONSTRAINT f2 FOREIGN KEY (S) REFERENCES P (Slug),
+  ) PRIMARY KEY (Id)
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE = 'UNIQUE' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING
+  ["","IDX_P_Slug_U_0F15033C5B4F6C79","","P"]
+  ["","IDX_P_Slug_U_0F15033C5B4F6C79","","P"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING
+  ["","IDX_P_Slug_U_0D8C78C370431202","","P"]
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'P' AND CONSTRAINT_NAME NOT LIKE 'PK_%' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING
+  ["","IDX_P_Slug_U_0F15033C5B4F6C79","","P","Slug"]
+  ["s2","IDX_P_Slug_U_0F15033C5B4F6C79","","P","Slug"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING
+  ["","IDX_P_Slug_U_0D8C78C370431202","","P","Slug"]
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE WHERE TABLE_NAME = 'P' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING
+  ["","CK_IS_NOT_NULL_P_Id","","P"]
+  ["","IDX_P_Slug_U_0F15033C5B4F6C79","","P"]
+  ["","PK_P","","P"]
+  ["","f1","","P"]
+  ["s2","IDX_P_Slug_U_0F15033C5B4F6C79","","P"]
+  ["s2","f2","","P"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING
+  ["","CK_IS_NOT_NULL_P_Id","","P"]
+  ["","IDX_P_Slug_U_0D8C78C370431202","","P"]
+  ["","PK_P","","P"]
+  ["","f1","","P"]
+  ["s2","f2","","P"]
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE WHERE TABLE_NAME = 'P' AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING
+  ["","IDX_P_Slug_U_0F15033C5B4F6C79","","P","Slug"]
+  ["","PK_P","","P","Id"]
+  ["","f1","","P","Slug"]
+  ["s2","IDX_P_Slug_U_0F15033C5B4F6C79","","P","Slug"]
+  ["s2","f2","","P","Slug"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING
+  ["","IDX_P_Slug_U_0D8C78C370431202","","P","Slug"]
+  ["","PK_P","","P","Id"]
+  ["","f1","","P","Slug"]
+  ["s2","f2","","P","Slug"]
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, UNIQUE_CONSTRAINT_SCHEMA, UNIQUE_CONSTRAINT_NAME FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_SCHEMA STRING, UNIQUE_CONSTRAINT_NAME STRING
+  ["","f1","","IDX_P_Slug_U_0F15033C5B4F6C79"]
+  ["s2","f2","","IDX_P_Slug_U_0F15033C5B4F6C79"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_SCHEMA STRING, UNIQUE_CONSTRAINT_NAME STRING
+  ["","f1","","IDX_P_Slug_U_0D8C78C370431202"]
+  ["s2","f2","","IDX_P_Slug_U_0D8C78C370431202"]

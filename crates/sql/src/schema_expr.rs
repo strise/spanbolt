@@ -97,6 +97,17 @@ fn literal_coerces(expr: &str, found: &ColumnType, col: &ColumnType) -> bool {
     }
 }
 
+fn c_escape_quotes(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 16);
+    for c in raw.chars() {
+        if matches!(c, '\'' | '"' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// A literal as GoogleSQL prints it in errors: a string in double quotes.
 fn literal_text(expr: &str) -> String {
     let mut e = expr.trim();
@@ -154,9 +165,13 @@ impl ExprEvaluator for SchemaExprs {
                 ExprKind::Generated { column } => format!(
                     "Error parsing the definition of generated column `{t}`.`{column}`: {msg}"
                 ),
-                ExprKind::Default { column, .. } => {
+                ExprKind::Default { column, .. } if self.engine.opts.emulator_compat => {
                     format!("Error parsing the default value of column `{t}`.`{column}`: {msg}")
                 }
+                // Production Spanner's wording, with its quotes escaped as Spanner sends them.
+                ExprKind::Default { column, .. } => c_escape_quotes(&format!(
+                    "Error parsing default value expression '{expr}' from column '{column}' in table '{t}': {msg}"
+                )),
             })
         };
         let stmt = match crate::analyze::statement(&self.cat, &sql, &row_param(table)) {

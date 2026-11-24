@@ -93,7 +93,7 @@ pub fn apply_ddl(
 
 /// Validates the DEFAULT, generated-column and CHECK expressions a statement declares through
 /// the registered SQL evaluator (none without the `googlesql` feature).
-fn validate_exprs(schema: &Schema, stmt: &Statement, emulator_compat: bool) -> Result<(), Status> {
+fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
     use spanbolt_storage::expr::{ExprKind, expr_evaluator};
     let (table, only): (&str, Option<&str>) = match stmt {
         Statement::Opaque {
@@ -165,33 +165,9 @@ fn validate_exprs(schema: &Schema, stmt: &Statement, emulator_compat: bool) -> R
         return Ok(());
     };
     for (expr, kind) in &work {
-        ev.validate(expr, tm, kind).map_err(|e| match kind {
-            ExprKind::Default { column, .. } if !emulator_compat => Status::new(
-                to_status(e.clone()).code(),
-                prod_default_error(&t.name, column, expr, &e.message),
-            ),
-            _ => to_status(e),
-        })?;
+        ev.validate(expr, tm, kind).map_err(to_status)?;
     }
     Ok(())
-}
-
-/// Production Spanner's wording for an invalid DEFAULT, from the emulator's
-/// "Error parsing the default value of column `T`.`C`: <reason>". Spanner escapes its quotes.
-fn prod_default_error(table: &str, column: &str, expr: &str, message: &str) -> String {
-    let prefix = format!("Error parsing the default value of column `{table}`.`{column}`: ");
-    let reason = message.strip_prefix(&prefix).unwrap_or(message);
-    let raw = format!(
-        "Error parsing default value expression '{expr}' from column '{column}' in table '{table}': {reason}"
-    );
-    let mut out = String::with_capacity(raw.len() + 16);
-    for c in raw.chars() {
-        if matches!(c, '\'' | '"' | '\\') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
 }
 
 /// Applies one statement to `schema`, returning the data checks the existing rows must pass.
@@ -222,7 +198,7 @@ fn apply_schema(
     } else {
         schema.apply(&stmt).map_err(ddl)?;
     }
-    validate_exprs(schema, &stmt, emulator_compat)?;
+    validate_exprs(schema, &stmt)?;
     Ok(checks)
 }
 

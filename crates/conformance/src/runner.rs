@@ -1005,6 +1005,7 @@ impl<'a> Ctx<'a> {
             Verb::GetOperation => self.get_operation(step).await,
             Verb::ListDatabaseOperations => self.list_saved_operations(false).await,
             Verb::ListOperations => self.list_saved_operations(true).await,
+            Verb::ListDatabaseRoles => Ok(self.list_database_roles().await),
             Verb::DropDatabase => Ok(self
                 .t
                 .db_admin()
@@ -1077,6 +1078,39 @@ impl<'a> Ctx<'a> {
     /// `<db>/operations`) and observes, as `counts: [n]`, how many of the operations saved by
     /// `ddl op=NAME` it lists. Only saved operations count: on spanbolt a case database is a clone,
     /// so it has no CreateDatabase operation of its own.
+    /// Pages through `ListDatabaseRoles` on the case database. Observes one row per role, its
+    /// name without the `<database>/databaseRoles/` prefix.
+    async fn list_database_roles(&mut self) -> Result<Observation, Status> {
+        let prefix = format!("{}/databaseRoles/", self.db);
+        let mut rows = Vec::new();
+        let mut page_token = String::new();
+        for _ in 0..10_000 {
+            let r = self
+                .t
+                .db_admin()
+                .list_database_roles(da::ListDatabaseRolesRequest {
+                    parent: self.db.clone(),
+                    page_token: page_token.clone(),
+                    ..Default::default()
+                })
+                .await?
+                .into_inner();
+            rows.extend(r.database_roles.into_iter().map(|role| {
+                let name = role.name.strip_prefix(&prefix).unwrap_or(&role.name);
+                Json::Array(vec![Json::String(name.to_string())])
+            }));
+            if r.next_page_token.is_empty() {
+                break;
+            }
+            page_token = r.next_page_token;
+        }
+        Ok(Observation {
+            columns: Some("name STRING".into()),
+            rows,
+            ..Default::default()
+        })
+    }
+
     async fn list_saved_operations(
         &mut self,
         longrunning: bool,

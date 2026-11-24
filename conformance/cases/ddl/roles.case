@@ -342,3 +342,35 @@ expect@spanner:
   "GRANT SELECT(V), INSERT ON TABLE T1 TO ROLE R1"
   "CREATE TABLE T2 (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
   "CREATE VIEW V1 SQL SECURITY INVOKER AS SELECT T1.K FROM T1"
+
+case list_roles
+ddl:
+  DROP ROLE R3
+list_database_roles
+expect:
+  error: UNIMPLEMENTED
+  message: 
+expect@spanner:
+  columns: name STRING
+  ["R1"]
+  ["R2"]
+  ["public"]
+  ["spanner_info_reader"]
+  ["spanner_secure_context_reader"]
+  ["spanner_sys_reader"]
+
+case list_roles_none
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+  ) PRIMARY KEY (K)
+list_database_roles
+expect:
+  error: UNIMPLEMENTED
+  message: 
+expect@spanner:
+  columns: name STRING
+  ["public"]
+  ["spanner_info_reader"]
+  ["spanner_secure_context_reader"]
+  ["spanner_sys_reader"]

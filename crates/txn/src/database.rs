@@ -405,8 +405,9 @@ impl Database {
     ) -> Result<Timestamp> {
         let mut log = self.commit.lock();
         let latest = self.latest();
-        let (state, ddl) = f(&latest.state)?;
+        let (mut state, ddl) = f(&latest.state)?;
         let ts = self.clock.next_commit_ts();
+        Arc::make_mut(&mut state.schema).ddl_timestamp = Some(ts.as_micros());
         let ddl = (!ddl.is_empty()).then(|| Arc::from(ddl));
         self.publish(&mut log, ts, state, WriteLog::Schema { ddl });
         Ok(ts)

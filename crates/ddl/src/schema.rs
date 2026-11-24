@@ -390,6 +390,10 @@ pub struct Schema {
     pub options: Vec<(String, String)>,
     /// Bumped on every successful apply; lets SQL caches key on it.
     pub version: u64,
+    /// Commit time, in microseconds, of the last `UpdateDatabaseDdl` that changed the schema;
+    /// `None` until the first one after `CreateDatabase`. Production's
+    /// `INFORMATION_SCHEMA.SCHEMATA.EFFECTIVE_TIMESTAMP`. Not kept in snapshots.
+    pub ddl_timestamp: Option<i64>,
     /// Database name as written in the last `ALTER DATABASE`.
     pub database_name: Option<String>,
     /// Creation order of schemas, sequences, tables and views (lowercase keys); drives `to_ddl`.

@@ -538,11 +538,35 @@ impl DatabaseAdmin for DatabaseAdminService {
 
     async fn list_database_roles(
         &self,
-        _: Request<da::ListDatabaseRolesRequest>,
+        req: Request<da::ListDatabaseRolesRequest>,
     ) -> Result<Response<da::ListDatabaseRolesResponse>, Status> {
-        // Roles are stored but not listed; an empty list would be a different answer. The
-        // emulator also leaves the method unimplemented (an empty message).
-        Err(Status::unimplemented(""))
+        // The emulator leaves the method unimplemented (an empty message).
+        if self.emu.emulator_compat {
+            return Err(Status::unimplemented(""));
+        }
+        let req = req.get_ref();
+        let entry = self.emu.database(&req.parent)?;
+        let schema = &entry.db.latest().state.schema;
+        // Production lists the database's roles and the system roles every database has.
+        let roles = schema
+            .opaque
+            .iter()
+            .filter(|o| o.kind == "ROLE")
+            .map(|o| o.name.as_str())
+            .chain(spanbolt_ddl::SYSTEM_ROLES)
+            .map(|r| da::DatabaseRole {
+                name: format!("{}/databaseRoles/{r}", entry.name),
+            });
+        let (database_roles, next_page_token) = page(
+            roles,
+            |r: &da::DatabaseRole| &r.name,
+            req.page_size,
+            &req.page_token,
+        );
+        Ok(Response::new(da::ListDatabaseRolesResponse {
+            database_roles,
+            next_page_token,
+        }))
     }
 
     async fn add_split_points(

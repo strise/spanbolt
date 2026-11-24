@@ -733,6 +733,90 @@ expect@spanner:
   ["","INFORMATION_SCHEMA",null,"spanner_system"]
   ["","SPANNER_SYS",null,"spanner_system"]
 
+# Production's SCHEMATA has PROTO_BUNDLE before SCHEMA_OWNER; the emulator's has it last.
+case schemata_proto_bundle
+schema:
+  CREATE SCHEMA app;
+  CREATE TABLE app.Items (
+    ItemId INT64 NOT NULL,
+  ) PRIMARY KEY (ItemId)
+query:
+  SELECT * FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, SCHEMA_OWNER STRING, PROTO_BUNDLE PROTO<google.protobuf.FileDescriptorSet>
+  ["","","0","",null]
+  ["","INFORMATION_SCHEMA","0","",null]
+  ["","SPANNER_SYS","0","",null]
+  ["","app","0","",null]
+expect@spanner:
+  columns: CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, PROTO_BUNDLE PROTO<proto2.FileDescriptorSet>, SCHEMA_OWNER STRING
+  ["","","0",null,"spanner_admin"]
+  ["","INFORMATION_SCHEMA",null,null,"spanner_system"]
+  ["","SPANNER_SYS",null,null,"spanner_system"]
+  ["","app","0",null,"spanner_admin"]
+
+# Production's EFFECTIVE_TIMESTAMP is the commit time, in microseconds, of the database's latest
+# schema change, the same for every schema; 0 before the first UpdateDatabaseDdl.
+case schemata_effective_timestamp
+schema:
+  CREATE SCHEMA app;
+  CREATE TABLE app.Items (
+    ItemId INT64 NOT NULL,
+  ) PRIMARY KEY (ItemId)
+query:
+  SELECT SCHEMA_NAME, EFFECTIVE_TIMESTAMP FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64
+  ["","0"]
+  ["INFORMATION_SCHEMA","0"]
+  ["SPANNER_SYS","0"]
+  ["app","0"]
+expect@spanner:
+  columns: SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64
+  ["","0"]
+  ["INFORMATION_SCHEMA",null]
+  ["SPANNER_SYS",null]
+  ["app","0"]
+ddl:
+  CREATE SCHEMA later
+query:
+  SELECT SCHEMA_NAME, EFFECTIVE_TIMESTAMP IS NULL AS no_ts,
+    TIMESTAMP_MICROS(EFFECTIVE_TIMESTAMP) BETWEEN TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 10 MINUTE) AND CURRENT_TIMESTAMP() AS recent
+  FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: SCHEMA_NAME STRING, no_ts BOOL, recent BOOL
+  ["",false,false]
+  ["INFORMATION_SCHEMA",false,false]
+  ["SPANNER_SYS",false,false]
+  ["app",false,false]
+  ["later",false,false]
+expect@spanner:
+  columns: SCHEMA_NAME STRING, no_ts BOOL, recent BOOL
+  ["",false,true]
+  ["INFORMATION_SCHEMA",true,null]
+  ["SPANNER_SYS",true,null]
+  ["app",false,true]
+  ["later",false,true]
+query:
+  SELECT COUNT(DISTINCT EFFECTIVE_TIMESTAMP) AS n FROM INFORMATION_SCHEMA.SCHEMATA
+expect:
+  columns: n INT64
+  ["1"]
+expect@spanner:
+  same
+ddl:
+  CREATE TABLE app.Other (
+    K INT64 NOT NULL,
+  ) PRIMARY KEY (K)
+query:
+  SELECT COUNT(DISTINCT EFFECTIVE_TIMESTAMP) AS n, MIN(EFFECTIVE_TIMESTAMP) > 0 AS is_set FROM INFORMATION_SCHEMA.SCHEMATA
+expect:
+  columns: n INT64, is_set BOOL
+  ["1",false]
+expect@spanner:
+  columns: n INT64, is_set BOOL
+  ["1",true]
+
 case new_index_columns
 schema:
   CREATE TABLE Notes (

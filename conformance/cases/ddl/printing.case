@@ -1,0 +1,108 @@
+# GetDatabaseDdl layout where Cloud Spanner and the emulator print differently: change streams
+# and the order of a table's CHECK constraints.
+tags: ddl
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    A INT64,
+    B STRING(MAX),
+  ) PRIMARY KEY (K);
+  CREATE TABLE U (
+    K INT64 NOT NULL,
+    C INT64,
+  ) PRIMARY KEY (K)
+
+case change_streams
+tags: change_stream
+ddl:
+  CREATE CHANGE STREAM AllCs FOR ALL;
+  CREATE CHANGE STREAM TableCs FOR T;
+  CREATE CHANGE STREAM ColsCs FOR T(A, B), U();
+  CREATE CHANGE STREAM OptsCs FOR U(C) OPTIONS ( retention_period = '36h', value_capture_type = 'NEW_VALUES' );
+  CREATE CHANGE STREAM NoneCs OPTIONS ( exclude_insert = true, exclude_ttl_deletes = true )
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM AllCs FOR ALL"
+  "CREATE CHANGE STREAM TableCs FOR T"
+  "CREATE CHANGE STREAM ColsCs FOR T(A, B), U()"
+  "CREATE CHANGE STREAM OptsCs FOR U(C) OPTIONS ( retention_period = '36h', value_capture_type = 'NEW_VALUES' )"
+  "CREATE CHANGE STREAM NoneCs OPTIONS ( exclude_insert = true, exclude_ttl_deletes = true )"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM AllCs\n  FOR ALL"
+  "CREATE CHANGE STREAM ColsCs\n  FOR T(A, B), U()"
+  "CREATE CHANGE STREAM NoneCs OPTIONS (\n  exclude_insert = true,\n  exclude_ttl_deletes = true\n)"
+  "CREATE CHANGE STREAM OptsCs\n  FOR U(C) OPTIONS (\n  value_capture_type = 'NEW_VALUES',\n  retention_period = '36h'\n)"
+  "CREATE CHANGE STREAM TableCs\n  FOR T"
+
+case change_stream_altered
+tags: change_stream
+ddl:
+  CREATE CHANGE STREAM Cs FOR T(A)
+ddl:
+  ALTER CHANGE STREAM Cs SET FOR T, U(C)
+ddl:
+  ALTER CHANGE STREAM Cs SET OPTIONS ( retention_period = '2d' )
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs FOR T, U(C) OPTIONS ( retention_period = '2d' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs\n  FOR T, U(C) OPTIONS (\n  retention_period = '2d'\n)"
+
+case check_order
+schema:
+  CREATE TABLE C (
+    K INT64 NOT NULL,
+    A INT64,
+    B INT64,
+    CONSTRAINT zz CHECK (A > 0),
+    CHECK (B > 0),
+    CONSTRAINT aa CHECK (A < 100),
+    CONSTRAINT mm CHECK (A <> B),
+  ) PRIMARY KEY (K)
+ddl:
+  ALTER TABLE C ADD CONSTRAINT bb CHECK (B < 100)
+ddl:
+  ALTER TABLE C ADD CHECK (A + B > 1)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE C (\n  K INT64 NOT NULL,\n  A INT64,\n  B INT64,\n  CONSTRAINT zz CHECK(A > 0),\n  CHECK(B > 0),\n  CONSTRAINT aa CHECK(A < 100),\n  CONSTRAINT mm CHECK(A <> B),\n  CONSTRAINT bb CHECK(B < 100),\n  CHECK(A + B > 1),\n) PRIMARY KEY(K)"
+expect@spanner:
+  statements:
+  "CREATE TABLE C (\n  K INT64 NOT NULL,\n  A INT64,\n  B INT64,\n  CONSTRAINT aa CHECK(A < 100),\n  CONSTRAINT bb CHECK(B < 100),\n  CHECK(B > 0),\n  CHECK(A + B > 1),\n  CONSTRAINT mm CHECK(A <> B),\n  CONSTRAINT zz CHECK(A > 0),\n) PRIMARY KEY(K)"
+
+case change_stream_option_order
+tags: change_stream
+ddl:
+  CREATE CHANGE STREAM bLower FOR U, T(B, A) OPTIONS ( allow_txn_exclusion = true, exclude_delete = true, exclude_update = false, exclude_insert = true, exclude_ttl_deletes = false, retention_period = '1d', value_capture_type = 'OLD_AND_NEW_VALUES' );
+  CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( exclude_delete = true, retention_period = '7d' );
+  CREATE CHANGE STREAM cLast FOR T()
+ddl:
+  ALTER CHANGE STREAM Alpha SET OPTIONS ( retention_period = NULL, exclude_update = true )
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM bLower FOR U, T(B, A) OPTIONS ( allow_txn_exclusion = true, exclude_delete = true, exclude_update = false, exclude_insert = true, exclude_ttl_deletes = false, retention_period = '1d', value_capture_type = 'OLD_AND_NEW_VALUES' )"
+  "CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( retention_period = NULL, exclude_update = true )"
+  "CREATE CHANGE STREAM cLast FOR T()"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Alpha\n  FOR ALL OPTIONS (\n  exclude_update = true,\n  exclude_delete = true\n)"
+  "CREATE CHANGE STREAM bLower\n  FOR U, T(B, A) OPTIONS (\n  value_capture_type = 'OLD_AND_NEW_VALUES',\n  retention_period = '1d',\n  exclude_insert = true,\n  exclude_update = false,\n  exclude_delete = true,\n  allow_txn_exclusion = true,\n  exclude_ttl_deletes = false\n)"
+  "CREATE CHANGE STREAM cLast\n  FOR T()"

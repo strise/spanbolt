@@ -1606,22 +1606,28 @@ impl ChangeStream {
         }
     }
 
-    pub(crate) fn to_ddl(&self) -> String {
-        let mut s = format!("CREATE CHANGE STREAM {}", quote_path(&self.name));
+    /// The target after `FOR`, as written; `None` without one.
+    fn target_sql(&self) -> Option<String> {
         match &self.target {
-            CsTarget::None => {}
-            CsTarget::All => s.push_str(" FOR ALL"),
-            CsTarget::Tables(ts) => {
-                s.push_str(" FOR ");
-                let parts: Vec<String> = ts
-                    .iter()
+            CsTarget::None => None,
+            CsTarget::All => Some("ALL".into()),
+            CsTarget::Tables(ts) => Some(
+                ts.iter()
                     .map(|(t, cols)| match cols {
                         None => quote_path(t),
                         Some(c) => format!("{}({})", quote_path(t), join_idents(c)),
                     })
-                    .collect();
-                s.push_str(&parts.join(", "));
-            }
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+        }
+    }
+
+    /// As the emulator's GetDatabaseDdl prints it: one line, options in the order they were set.
+    pub(crate) fn to_ddl(&self) -> String {
+        let mut s = format!("CREATE CHANGE STREAM {}", quote_path(&self.name));
+        if let Some(target) = self.target_sql() {
+            s.push_str(&format!(" FOR {target}"));
         }
         if !self.options.is_empty() {
             let opts: Vec<String> = self
@@ -1630,6 +1636,35 @@ impl ChangeStream {
                 .map(|(k, v)| format!("{k} = {v}"))
                 .collect();
             s.push_str(&format!(" OPTIONS ( {} )", opts.join(", ")));
+        }
+        s
+    }
+
+    /// As production's GetDatabaseDdl prints it: `FOR` on its own line, and one option per line
+    /// in production's order.
+    pub(crate) fn to_ddl_production(&self) -> String {
+        const ORDER: [&str; 7] = [
+            "value_capture_type",
+            "retention_period",
+            "exclude_insert",
+            "exclude_update",
+            "exclude_delete",
+            "allow_txn_exclusion",
+            "exclude_ttl_deletes",
+        ];
+        let mut s = format!("CREATE CHANGE STREAM {}", quote_path(&self.name));
+        if let Some(target) = self.target_sql() {
+            s.push_str(&format!("\n  FOR {target}"));
+        }
+        let mut opts: Vec<&(String, String)> = self
+            .options
+            .iter()
+            .filter(|(_, v)| !v.eq_ignore_ascii_case("NULL"))
+            .collect();
+        if !opts.is_empty() {
+            opts.sort_by_key(|(k, _)| ORDER.iter().position(|o| o == k).unwrap_or(usize::MAX));
+            let body: Vec<String> = opts.iter().map(|(k, v)| format!("  {k} = {v}")).collect();
+            s.push_str(&format!(" OPTIONS (\n{}\n)", body.join(",\n")));
         }
         s
     }

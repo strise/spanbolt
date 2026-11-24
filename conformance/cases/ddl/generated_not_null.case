@@ -1,0 +1,83 @@
+tags: ddl
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+    S STRING(MAX),
+  ) PRIMARY KEY (K)
+
+case create_virtual_not_null
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, G INT64 NOT NULL AS (K + 1)) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Generated column `X.G` that are not marked as STORED cannot be specified as NOT NULL.
+expect@spanner:
+  same
+
+case create_stored_not_null
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, G INT64 NOT NULL AS (K + 1) STORED) PRIMARY KEY (K)
+expect:
+  ok
+expect@spanner:
+  same
+
+case add_virtual_not_null
+ddl:
+  ALTER TABLE T ADD COLUMN G INT64 NOT NULL AS (CHAR_LENGTH(S))
+expect:
+  error: INVALID_ARGUMENT
+  message: Generated column `T.G` that are not marked as STORED cannot be specified as NOT NULL.
+expect@spanner:
+  same
+
+case add_stored_not_null
+ddl:
+  ALTER TABLE T ADD COLUMN G INT64 NOT NULL AS (K * 2) STORED
+expect:
+  ok
+expect@spanner:
+  same
+
+case alter_virtual_to_not_null
+ddl:
+  ALTER TABLE T ADD COLUMN G INT64 AS (K * 2)
+expect:
+  ok
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN G INT64 NOT NULL AS (K * 2)
+expect:
+  error: INVALID_ARGUMENT
+  message: Generated column `T.G` that are not marked as STORED cannot be specified as NOT NULL.
+expect@spanner:
+  same
+
+case virtual_key_not_null
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, G INT64 NOT NULL AS (K + 1)) PRIMARY KEY (G)
+expect:
+  error: INVALID_ARGUMENT
+  message: Generated column `X.G` that are not marked as STORED cannot be specified as NOT NULL.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Generated column `X.G` must be STORED to be part of the primary key.
+
+case virtual_cycle
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, A INT64 AS (B + 1), B INT64 AS (A + 1)) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Cycle detected while analysing generated column, which include objects (A,B)
+expect@spanner:
+  same
+
+case virtual_key
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, G INT64 AS (K + 1)) PRIMARY KEY (G)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Generated column `X.G` must be STORED to be part of the primary key.

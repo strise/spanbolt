@@ -1,0 +1,246 @@
+tags: ddl
+schema:
+  CREATE TABLE T (
+    K INT64 NOT NULL,
+  ) PRIMARY KEY (K)
+insert T cols=K:
+  [1]
+
+case timestamp_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C TIMESTAMP DEFAULT ('1970-01-01T00:00:00Z')
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT C FROM T
+expect:
+  columns: C TIMESTAMP
+  ["1970-01-01T00:00:00Z"]
+expect@spanner:
+  same
+
+case date_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C DATE DEFAULT ('2020-02-29')
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT C FROM T
+expect:
+  columns: C DATE
+  ["2020-02-29"]
+expect@spanner:
+  same
+
+case numeric_float_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C NUMERIC DEFAULT (1.23)
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT C FROM T
+expect:
+  columns: C NUMERIC
+  ["1.23"]
+expect@spanner:
+  same
+
+case numeric_float_literal_not_null
+ddl:
+  ALTER TABLE T ADD COLUMN C NUMERIC NOT NULL DEFAULT (0.00)
+expect:
+  ok
+expect@spanner:
+  same
+dml:
+  INSERT INTO T (K) VALUES (2)
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT K, C FROM T ORDER BY K
+expect:
+  columns: K INT64, C NUMERIC
+  ["1","0"]
+  ["2","0"]
+expect@spanner:
+  same
+
+case numeric_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C NUMERIC DEFAULT ('1.5')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type NUMERIC; found STRING [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'1.5\'\' from column \'C\' in table \'T\': Expected type NUMERIC; found STRING [at 1:1]
+
+case float32_float_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C FLOAT32 DEFAULT (1.5)
+expect:
+  ok
+expect@spanner:
+  same
+
+case int64_float_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C INT64 DEFAULT (1.0)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type INT64; found FLOAT64 [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'1.0\' from column \'C\' in table \'T\': Expected type INT64; found FLOAT64 [at 1:1]
+
+case bytes_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C BYTES(MAX) DEFAULT ('abc')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type BYTES; found STRING [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'abc\'\' from column \'C\' in table \'T\': Expected type BYTES; found STRING [at 1:1]
+
+case json_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C JSON DEFAULT ('{"a":1}')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type JSON; found STRING [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'{\"a\":1}\'\' from column \'C\' in table \'T\': Expected type JSON; found STRING [at 1:1]
+
+case string_int_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C STRING(MAX) DEFAULT (1)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type STRING; found INT64 [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'1\' from column \'C\' in table \'T\': Expected type STRING; found INT64 [at 1:1]
+
+case bool_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C BOOL DEFAULT ('true')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type BOOL; found STRING [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'true\'\' from column \'C\' in table \'T\': Expected type BOOL; found STRING [at 1:1]
+
+case timestamp_bad_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C TIMESTAMP DEFAULT ('not a time')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Could not cast literal "not a time" to type TIMESTAMP [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'not a time\'\' from column \'C\' in table \'T\': Could not cast literal \"not a time\" to type TIMESTAMP [at 1:1]
+
+case date_bad_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C DATE DEFAULT ('2021-02-30')
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Could not cast literal "2021-02-30" to type DATE [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'2021-02-30\'\' from column \'C\' in table \'T\': Could not cast literal \"2021-02-30\" to type DATE [at 1:1]
+
+case timestamp_string_expression
+ddl:
+  ALTER TABLE T ADD COLUMN C TIMESTAMP DEFAULT (CONCAT('1970-01-01', 'T00:00:00Z'))
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `T`.`C`: Expected type TIMESTAMP; found STRING [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'CONCAT(\'1970-01-01\', \'T00:00:00Z\')\' from column \'C\' in table \'T\': Expected type TIMESTAMP; found STRING [at 1:1]
+
+case timestamp_string_literal_parens
+ddl:
+  ALTER TABLE T ADD COLUMN C TIMESTAMP DEFAULT ((('2000-01-01 00:00:00+00')))
+expect:
+  ok
+expect@spanner:
+  same
+
+case date_in_create
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, D DATE NOT NULL DEFAULT ('2000-01-01'), Ts TIMESTAMP DEFAULT ('2000-01-01 12:00:00 UTC')) PRIMARY KEY (K)
+expect:
+  ok
+expect@spanner:
+  same
+insert X cols=K:
+  [1]
+read X cols=K,D,Ts:
+  all
+expect:
+  columns: K INT64, D DATE, Ts TIMESTAMP
+  ["1","2000-01-01","2000-01-01T12:00:00Z"]
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE TABLE X (\n  K INT64 NOT NULL,\n  D DATE NOT NULL DEFAULT ('2000-01-01'),\n  Ts TIMESTAMP DEFAULT ('2000-01-01 12:00:00 UTC'),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+
+case set_default_string_literal
+ddl:
+  ALTER TABLE T ADD COLUMN C TIMESTAMP
+expect:
+  ok
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN C SET DEFAULT ('2001-02-03T04:05:06Z')
+expect:
+  ok
+expect@spanner:
+  same
+dml:
+  INSERT INTO T (K) VALUES (3)
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT C FROM T WHERE K = 3
+expect:
+  columns: C TIMESTAMP
+  ["2001-02-03T04:05:06Z"]
+expect@spanner:
+  same
+
+case information_schema_default
+ddl:
+  ALTER TABLE T ADD COLUMN C NUMERIC DEFAULT (1.23)
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T' AND COLUMN_NAME = 'C'
+expect:
+  columns: COLUMN_DEFAULT STRING
+  ["1.23"]
+expect@spanner:
+  same

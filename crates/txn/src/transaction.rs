@@ -157,7 +157,10 @@ impl ReadWriteTxn {
         Self::active(&inner)?;
         let (state, ts) = self.view(&mut inner);
         // The commit timestamp isn't chosen yet; it will exceed everything the clock handed out.
-        let mut w = Writer::new(&state, ts).with_max_ts(self.db.clock().write_horizon());
+        let clock = self.db.clock();
+        let mut w = Writer::new(&state, ts)
+            .with_max_ts(clock.write_horizon())
+            .with_now(clock.now());
         for m in &ops {
             w.apply(m)?;
         }

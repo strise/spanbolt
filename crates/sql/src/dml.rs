@@ -465,6 +465,7 @@ fn keyed_rows(
     columns: &[usize],
     mut rows: Vec<Vec<Value>>,
     defaults: Vec<(usize, usize)>,
+    now: Timestamp,
 ) -> Result<KeyedRows> {
     use spanbolt_storage::expr::{compute_row, mentions};
     let fillable = |c: usize| tm.columns[c].default.is_some() || tm.columns[c].identity;
@@ -521,7 +522,7 @@ fn keyed_rows(
                 supplied[c] = true;
             }
         }
-        compute_row(tm, &mut full, &|c| needed[c] && !supplied[c], &|c| {
+        compute_row(tm, &mut full, now, &|c| needed[c] && !supplied[c], &|c| {
             needed[c]
         })?;
         for &i in defaulted.iter().filter(|&&i| needed[columns[i]]) {
@@ -635,7 +636,7 @@ pub fn execute(
                 rows,
                 keys,
                 defaults,
-            } = keyed_rows(&tm, columns, rows, defaults)?;
+            } = keyed_rows(&tm, columns, rows, defaults, now)?;
             let columns = &columns;
             let mut seen: HashSet<Vec<u8>> = HashSet::new();
             let mut kept_rows = Vec::new();

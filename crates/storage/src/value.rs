@@ -240,6 +240,15 @@ impl Timestamp {
         }
     }
 
+    /// The system's wall-clock time.
+    pub fn system_now() -> Timestamp {
+        Timestamp::from_nanos(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos() as i128),
+        )
+    }
+
     pub fn from_nanos(nanos: i128) -> Timestamp {
         Timestamp {
             secs: nanos.div_euclid(1_000_000_000) as i64,

@@ -724,6 +724,76 @@ async fn dml_read_then_insert_race_aborts_loser() {
     );
 }
 
+/// DEFAULT (CURRENT_TIMESTAMP()) reads the clock `Control.SetClock` fixes, on a write and when
+/// ADD COLUMN backfills existing rows.
+#[cfg(feature = "googlesql")]
+#[tokio::test]
+async fn default_reads_the_settable_clock() {
+    let env = setup().await;
+    let set = |secs: i64| ctl::SetClockRequest {
+        clock: Some(ctl::set_clock_request::Clock::Timestamp(
+            prost_types::Timestamp {
+                seconds: secs,
+                nanos: 0,
+            },
+        )),
+    };
+    let ddl = |stmt: &str| da::UpdateDatabaseDdlRequest {
+        database: DB.into(),
+        statements: vec![stmt.into()],
+        ..Default::default()
+    };
+    let mut admin = env.admin();
+    let op = admin
+        .update_database_ddl(ddl(
+            "CREATE TABLE Events (Id INT64 NOT NULL, Created TIMESTAMP DEFAULT (CURRENT_TIMESTAMP())) PRIMARY KEY (Id)",
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert!(matches!(op.result, Some(operation::Result::Response(_))));
+    // 2001-02-03T04:05:06Z
+    env.control()
+        .set_clock(set(981_173_106))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let s = env.session(DB).await;
+    let mut sp = env.spanner();
+    sp.commit(pb::CommitRequest {
+        session: s.clone(),
+        transaction: single_use_rw(),
+        mutations: vec![upsert("Events", &["Id"], vec![row(&["1"])])],
+        ..Default::default()
+    })
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+    // 2010-01-01T00:00:00Z
+    env.control()
+        .set_clock(set(1_262_304_000))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let op = admin
+        .update_database_ddl(ddl(
+            "ALTER TABLE Events ADD COLUMN Added TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP())",
+        ))
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner();
+    assert!(matches!(op.result, Some(operation::Result::Response(_))));
+    let got = sp
+        .execute_sql(pb::ExecuteSqlRequest {
+            session: s,
+            sql: "SELECT Created, Added FROM Events".into(),
+            ..Default::default()
+        })
+        .await
+        .map(|r| rows(&r.into_inner()))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(got.len(), 1);
+    assert!(got[0][0].starts_with("2001-02-03T04:05:06"), "{got:?}");
+    assert!(got[0][1].starts_with("2010-01-01T00:00:0"), "{got:?}");
+}
+
 /// Property graphs over gRPC: CREATE PROPERTY GRAPH is checked against the tables, then GQL
 /// queries and INFORMATION_SCHEMA.PROPERTY_GRAPHS read it.
 #[cfg(feature = "googlesql")]

@@ -18,7 +18,14 @@ struct Toy;
 static NEXT: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
 
 impl ExprEvaluator for Toy {
-    fn eval(&self, expr: &str, t: &TableMeta, row: &[Value], _ty: &ColumnType) -> Result<Value> {
+    fn eval(
+        &self,
+        expr: &str,
+        t: &TableMeta,
+        row: &[Value],
+        _ty: &ColumnType,
+        _now: Timestamp,
+    ) -> Result<Value> {
         if expr == "NEXT()" {
             return Ok(Value::Int64(
                 NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),

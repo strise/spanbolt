@@ -411,7 +411,8 @@ pub fn schema_from_ddl(statements: &[String]) -> Result<Schema> {
                 "Snapshot schema statement does not parse: {e}: {sql}"
             ))
         })?;
-        schema.apply(&stmt)?;
+        // The more lenient rules, so a schema the emulator-compat server accepted loads back.
+        schema.apply_emulator_compat(&stmt)?;
     }
     Ok(schema)
 }

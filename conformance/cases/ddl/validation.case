@@ -317,6 +317,9 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing the default value of column `X`.`D`: Expected type INT64; found STRING [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'\'x\'\' from column \'D\' in table \'X\': Expected type INT64; found STRING [at 1:1]
 
 case commit_ts_option_on_int
 ddl:

@@ -78,6 +78,7 @@ query:
   SELECT Id, SCORE(Body_Tokens, 'epsilon') AS s FROM S WHERE SEARCH(Body_Tokens, 'epsilon') ORDER BY Id
 expect:
   columns: Id INT64, s FLOAT64
+  ["12",1.0]
 expect@spanner:
   columns: Id INT64, s FLOAT64
   ["12",1.2588917016983032]

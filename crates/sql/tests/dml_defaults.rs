@@ -54,9 +54,7 @@ fn dml(e: &Engine, db: &Arc<Database>, sql: &str) -> Vec<Vec<String>> {
 }
 
 fn stored(e: &Engine, db: &Arc<Database>) -> Vec<Vec<String>> {
-    let txn = ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let txn = ReadOnlyTxn::new(db.latest());
     let req = pb::ExecuteSqlRequest {
         sql: "SELECT Id, Name FROM Singers ORDER BY Name".into(),
         ..Default::default()

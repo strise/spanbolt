@@ -355,6 +355,7 @@ impl Engine {
                         "DML statements can only be performed in a read-write or partitioned-dml transaction. Current transaction type is ReadOnly."
                     }));
                 }
+                t.check_expired()?;
                 let params = self.bind(&p, &st)?;
                 self.run_query(
                     &cat,

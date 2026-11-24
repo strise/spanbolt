@@ -11,6 +11,7 @@ use spanbolt_storage::{
 };
 
 use crate::clock::Clock;
+use crate::transaction::ReadOnlyTxn;
 
 /// Versions kept for stale reads; older ones are dropped even inside the retention period.
 const MAX_VERSIONS: usize = 4096;
@@ -293,6 +294,52 @@ impl Database {
                 self.version_at(ts)
             }
         }
+    }
+
+    /// A read-only snapshot at `bound`: the version it reads and the read timestamp clients are
+    /// told (`return_read_timestamp`). A strong (or bounded-staleness) read is at now, as in
+    /// Spanner and the emulator, not at the last commit; a stale read is at its bound.
+    ///
+    /// A read past the retention period fails. In emulator-compat mode it fails only when it
+    /// reads, after the table, key set or query has been resolved, as in the emulator: the error
+    /// rides along in [`ReadOnlyTxn::expired`].
+    pub fn read_only(&self, bound: TimestampBound) -> Result<ReadOnlyTxn> {
+        let read_ts = match bound {
+            TimestampBound::Strong
+            | TimestampBound::MaxStaleness(_)
+            | TimestampBound::MinReadTimestamp(_) => {
+                let ts = self.clock.read_ts();
+                let version = self.latest();
+                return Ok(ReadOnlyTxn {
+                    read_ts: ts.max(version.ts),
+                    version,
+                    expired: None,
+                });
+            }
+            TimestampBound::ReadTimestamp(ts) => ts,
+            TimestampBound::ExactStaleness(d) => {
+                Timestamp::from_nanos(self.clock.now().as_nanos() - d.as_nanos() as i128)
+            }
+        };
+        let expired = match self.check_retention(read_ts) {
+            Ok(()) => None,
+            Err(e) if !self.created.state.prod_messages => Some(e),
+            Err(e) => return Err(e),
+        };
+        let version = match self.find_version(read_ts) {
+            Ok(v) => v,
+            Err(e) => return Err(expired.unwrap_or(e)),
+        };
+        Ok(ReadOnlyTxn {
+            version,
+            read_ts,
+            expired,
+        })
+    }
+
+    /// Whether errors are worded as production Spanner's (not emulator-compat mode).
+    pub fn prod_messages(&self) -> bool {
+        self.created.state.prod_messages
     }
 
     /// How long old versions stay readable: the latest schema's `version_retention_period`.

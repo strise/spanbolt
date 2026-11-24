@@ -1,0 +1,342 @@
+# Pipe query syntax (`FROM t |> WHERE ... |> SELECT ...`, spanbolt #53). Cloud Spanner accepts it;
+# the emulator rejects it. `expect:` is recorded from the emulator; `expect@spanner:` from Spanner.
+tags: sql oracle pipe
+schema:
+  CREATE TABLE Items (
+    Id INT64 NOT NULL,
+    Grp STRING(16),
+    Val INT64,
+  ) PRIMARY KEY (Id);
+  CREATE TABLE Tags (
+    Id INT64 NOT NULL,
+    Tag STRING(16) NOT NULL,
+  ) PRIMARY KEY (Id, Tag)
+insert Items cols=Id,Grp,Val:
+  [1, "a", 10]
+  [2, "a", 20]
+  [3, "b", 5]
+  [4, null, 7]
+insert Tags cols=Id,Tag:
+  [1, "red"]
+  [1, "blue"]
+  [3, "red"]
+  [9, "green"]
+
+case pipe_projection_operators
+query:
+  FROM Items |> EXTEND Val * 2 AS Dbl |> SET Val = Val + 1 |> DROP Grp |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64, Val INT64, Dbl INT64
+  ["1","11","20"]
+  ["2","21","40"]
+  ["3","6","10"]
+  ["4","8","14"]
+query:
+  FROM Items |> RENAME Val AS V |> AS t |> SELECT t.Id, t.V |> WHERE V > 6 |> ORDER BY Id DESC |> LIMIT 2 OFFSET 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64, V INT64
+  ["2","20"]
+  ["1","10"]
+query:
+  FROM Items |> SELECT Grp |> DISTINCT |> ORDER BY Grp
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Grp STRING
+  [null]
+  ["a"]
+  ["b"]
+query:
+  SELECT * FROM Items |> SELECT Id, Grp |> WHERE Grp = 'a' |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Pipe query syntax not supported [at 1:21]
+expect@spanner:
+  columns: Id INT64, Grp STRING
+  ["1","a"]
+  ["2","a"]
+query:
+  FROM Items |> WHERE Val > @v |> SELECT Id |> ORDER BY Id
+params:
+  @v INT64 = 6
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+query:
+  FROM Items |> SELECT Id, Nope
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Nope [at 1:26]
+query:
+  FROM Items |> DROP Nope
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column name in pipe DROP not found in input table: Nope [at 1:20]
+
+case pipe_aggregate
+query:
+  FROM Items |> AGGREGATE SUM(Val) AS Total, COUNT(*) AS N GROUP AND ORDER BY Grp
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Grp STRING, Total INT64, N INT64
+  [null,"7","1"]
+  ["a","30","2"]
+  ["b","5","1"]
+query:
+  FROM Items |> AGGREGATE COUNT(*) AS N, MAX(Val) AS Mx
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: N INT64, Mx INT64
+  ["4","20"]
+query:
+  FROM Items |> AGGREGATE MAX(Val) AS Mx GROUP BY Grp DESC
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Grp STRING, Mx INT64
+  ["b","5"]
+  ["a","20"]
+  [null,"7"]
+query:
+  FROM Items |> WHERE Grp IS NOT NULL |> AGGREGATE SUM(Val) AS S GROUP BY Grp |> WHERE S > 10 |> SELECT Grp
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Grp STRING
+  ["a"]
+query:
+  FROM Items |> AGGREGATE COUNT(*) AS N GROUP BY Val > 6 AS Big |> ORDER BY Big
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Big BOOL, N INT64
+  [false,"1"]
+  [true,"3"]
+
+case pipe_join_and_set_operations
+query:
+  FROM Items |> JOIN Tags USING (Id) |> SELECT Id, Tag |> ORDER BY Id, Tag
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64, Tag STRING
+  ["1","blue"]
+  ["1","red"]
+  ["3","red"]
+query:
+  FROM Items AS i |> LEFT JOIN Tags AS t ON i.Id = t.Id |> SELECT i.Id, t.Tag |> ORDER BY Id, Tag
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64, Tag STRING
+  ["1","blue"]
+  ["1","red"]
+  ["2",null]
+  ["3","red"]
+  ["4",null]
+query:
+  FROM Items |> SELECT Id |> UNION ALL (FROM Tags |> SELECT Id) |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["1"]
+  ["1"]
+  ["2"]
+  ["3"]
+  ["3"]
+  ["4"]
+  ["9"]
+query:
+  FROM Items |> SELECT Id |> INTERSECT DISTINCT (SELECT Id FROM Tags) |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+query:
+  FROM Items |> SELECT Id |> EXCEPT DISTINCT (SELECT Id FROM Tags)
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+
+case pipe_subqueries
+query:
+  SELECT Id FROM Items WHERE Id IN (FROM Tags |> SELECT Id) ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:35]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+query:
+  WITH g AS (FROM Items |> WHERE Val > 5) FROM g |> SELECT Id |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:12]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+query:
+  (SELECT Id, Val FROM Items) |> WHERE Val < 10 |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Pipe query syntax not supported [at 1:29]
+expect@spanner:
+  columns: Id INT64, Val INT64
+  ["3","5"]
+  ["4","7"]
+query:
+  FROM Items |> EXTEND (FROM Tags |> WHERE Tags.Id = Items.Id |> AGGREGATE COUNT(*) AS c) AS NTags |> SELECT Id, NTags |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64, NTags INT64
+  ["1","2"]
+  ["2","0"]
+  ["3","1"]
+  ["4","0"]
+query:
+  FROM Items, Tags |> WHERE Items.Id = Tags.Id |> AGGREGATE COUNT(*) AS N
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: N INT64
+  ["3"]
+
+case pipe_dml
+dml:
+  INSERT INTO Items (Id, Grp, Val) FROM Items |> WHERE Id <= 2 |> SELECT Id + 100, Grp, Val
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:34]
+expect@spanner:
+  count: 2
+query:
+  FROM Items |> WHERE Id > 100 |> SELECT Id, Val |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64, Val INT64
+  ["101","10"]
+  ["102","20"]
+dml:
+  DELETE FROM Items WHERE Id IN (FROM Tags |> WHERE Tag = 'red' |> SELECT Id)
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:32]
+expect@spanner:
+  count: 2
+query:
+  FROM Items |> SELECT Id |> ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["101"]
+  ["102"]
+
+case pipe_other_operators
+query:
+  FROM Items |> EXTEND ROW_NUMBER() OVER (ORDER BY Id) AS Rn
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: ROW_NUMBER.
+query:
+  FROM Items |> WINDOW SUM(Val) OVER () AS Total
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported built-in function: SUM.
+query:
+  FROM Items |> PIVOT (SUM(Val) FOR Grp IN ('a', 'b'))
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: PIVOT is not supported [at 1:15]
+query:
+  FROM Items |> SELECT Id, Grp, Val |> UNPIVOT (V FOR K IN (Val))
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: UNPIVOT is not supported [at 1:38]
+query:
+  FROM Items |> ASSERT Val > 0
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Pipe ASSERT not supported [at 1:12]
+query:
+  FROM Items |> STATIC_DESCRIBE
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Pipe STATIC_DESCRIBE not supported [at 1:12]
+
+# spanbolt has no TABLESAMPLE (SampleScan), with or without pipes.
+case pipe_tablesample
+query:
+  FROM Items |> TABLESAMPLE BERNOULLI (100 PERCENT) |> AGGREGATE COUNT(*) AS N
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected FROM [at 1:1]
+expect@spanner:
+  columns: N INT64
+  ["4"]

@@ -35,8 +35,8 @@ It also adds what the emulator lacks:
 - **Real concurrency:** optimistic transactions; non-conflicting transactions never abort.
 - **Test controls:** a settable clock and deterministic `ABORTED` injection.
 - **Production behaviour by default.** Where the emulator and production Spanner disagree and we
-  have recorded production's answer (full-text search, `NULL_FILTERED` indexes, window functions,
-  filtered indexes, reading a field of a returned `ARRAY<STRUCT>` subquery, returning an
+  have recorded production's answer (full-text search, pipe syntax, `NULL_FILTERED` indexes, window
+  functions, filtered indexes, reading a field of a returned `ARRAY<STRUCT>` subquery, returning an
   `ARRAY<STRUCT>` that can be NULL or is built with `[STRUCT(...)]`, INFORMATION_SCHEMA's views and
   columns, a DDL batch that fails midway keeping the statements before the failing one), spanbolt
   follows production. `--emulator-compat` restores the emulator's behaviour.

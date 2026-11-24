@@ -94,31 +94,49 @@ insert Others cols=OtherId,Qty:
 expect:
   error: OUT_OF_RANGE
   message: Check constraint `Others`.`CK_Others_B1162681556A2BED_1` is violated for key {Int64(1)}
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_1` is violated for key (1)
 insert Others cols=OtherId,Qty:
   [1, 100]
 expect:
   error: OUT_OF_RANGE
   message: Check constraint `Others`.`CK_Others_B1162681556A2BED_2` is violated for key {Int64(1)}
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_2` is violated for key (1)
 insert Others cols=OtherId,ParentId,Qty:
   [1, 7, 1]
 expect:
   error: FAILED_PRECONDITION
   message: Foreign key `FK_Others_Parents_77D2EFE8327295FC_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(7)}` in table `Parents`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_1` is violated on table `Others`. Cannot find referenced values in Parents(ParentId).
 insert Others cols=OtherId,ParentCode,Qty:
   [1, "x", 1]
 expect:
   error: FAILED_PRECONDITION
   message: Foreign key `FK_Others_Parents_77D2EFE8327295FC_2` constraint violation on table `Others`. Cannot find referenced key `{String("x")}` in table `Parents`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_2` is violated on table `Others`. Cannot find referenced values in Parents(Code).
 insert Others cols=OtherId,PrevId,Qty:
   [1, 9, 1]
 expect:
   error: FAILED_PRECONDITION
   message: Foreign key `FK_Others_Others_9A67C58514E55A35_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(9)}` in table `Others`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `FK_Others_Others_0B7AAFB6B52B8DB3_1` is violated on table `Others`. Cannot find referenced values in Others(OtherId).
 insert sch.Items cols=Id,ParentId:
   [1, 7]
 expect:
   error: FAILED_PRECONDITION
   message: Foreign key `sch.FK_Items_Parents_7EC0040F058CA24C_1` constraint violation on table `sch.Items`. Cannot find referenced key `{Int64(7)}` in table `Parents`.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Foreign key constraint `FK_Items_Parents_8C31E00338286717_1` is violated on table `sch.Items`. Cannot find referenced values in Parents(ParentId).
 
 case named_schema_check
 ddl:

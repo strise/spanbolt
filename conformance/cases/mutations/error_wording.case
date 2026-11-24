@@ -1,0 +1,128 @@
+tags: mutations
+# Write errors whose wording differs between the emulator and Cloud Spanner (#62): how each
+# prints a composite key with strings, BYTES and NULLs.
+schema:
+  CREATE TABLE T (
+    A INT64 NOT NULL,
+    B STRING(MAX),
+    C BYTES(MAX),
+    Qty INT64,
+    CONSTRAINT QtyPositive CHECK (Qty > 0),
+  ) PRIMARY KEY (A, B, C)
+
+case duplicate_composite_key
+insert T cols=A,B,C,Qty:
+  [1, "x y", "AQI=", 1]
+insert T cols=A,B,C,Qty:
+  [1, "x y", "AQI=", 2]
+expect:
+  error: ALREADY_EXISTS
+  message: Table T: Row {Int64(1), String("x y"), Bytes(b"\x01\x02")} already exists.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Row [1,x y,\001\002] in table T already exists
+
+case duplicate_composite_key_nulls
+insert T cols=A,B,C,Qty:
+  [-1, null, null, 1]
+insert T cols=A,B,C,Qty:
+  [-1, null, null, 2]
+expect:
+  error: ALREADY_EXISTS
+  message: Table T: Row {Int64(-1), String(NULL), Bytes(NULL)} already exists.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Row [-1,<null>,<null>] in table T already exists
+
+case duplicate_after_insert_or_update_in_txn
+begin txn=t
+insert_or_update T cols=A,B,C,Qty txn=t:
+  [2, "b", "AA==", 1]
+insert T cols=A,B,C,Qty txn=t:
+  [2, "b", "AA==", 2]
+commit txn=t
+expect:
+  error: ALREADY_EXISTS
+  message: Table T: Row {Int64(2), String("b"), Bytes(b"\x00")} already exists.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Row [2,b,\000] in T was already inserted in this transaction.
+
+case insert_delete_insert_in_txn
+begin txn=t
+insert T cols=A,B,C,Qty txn=t:
+  [3, "c", "AA==", 1]
+delete T txn=t:
+  [3, "c", "AA=="]
+insert T cols=A,B,C,Qty txn=t:
+  [3, "c", "AA==", 2]
+commit txn=t
+read T cols=A,Qty:
+  all
+expect:
+  columns: A INT64, Qty INT64
+  ["3","2"]
+expect@spanner:
+  same
+
+case check_composite_key
+insert T cols=A,B,C,Qty:
+  [4, "it's", "AQI=", -1]
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `T`.`QtyPositive` is violated for key {Int64(4), String("it's"), Bytes(b"\x01\x02")}
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Check constraint `T`.`QtyPositive` is violated for key (4, it\'s, \001\002)
+
+case check_composite_key_nulls
+insert T cols=A,B,C,Qty:
+  [5, null, null, 0]
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `T`.`QtyPositive` is violated for key {Int64(5), String(NULL), Bytes(NULL)}
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Check constraint `T`.`QtyPositive` is violated for key (5, <null>, <null>)
+
+case add_check_composite_key
+insert T cols=A,B,C,Qty:
+  [6, "z", "AQI=", 5]
+ddl:
+  ALTER TABLE T ADD CONSTRAINT Big CHECK (Qty > 10)
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `T`.`Big` is violated for key {Int64(6), String("z"), Bytes(b"\x01\x02")}
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Check constraint data validation error: Check constraint `Big` on table `T` is violated for key: (6,z,\001\002).
+
+case delete_wrong_key_arity_mixed
+delete T:
+  [1, "a"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected 3 key parts, found 2 key parts. Supplied key: values { string_value: "1" } values { string_value: "a" }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected: 3. Got: ["1","a"]
+
+case delete_wrong_key_arity_null
+delete T:
+  [null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected 3 key parts, found 1 key parts. Supplied key: values { null_value: NULL_VALUE }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected: 3. Got: [null]
+
+case read_wrong_key_arity_too_long
+read T cols=A:
+  [1, "a", "AA==", true]
+expect:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected 3 key parts, found 4 key parts. Supplied key: values { string_value: "1" } values { string_value: "a" } values { string_value: "AA==" } values { bool_value: true }
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Wrong number of key parts for T. Expected: 3. Got: ["1","a","AA==",true]

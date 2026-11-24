@@ -71,6 +71,9 @@ insert Parent cols=P,Name:
 expect:
   error: ALREADY_EXISTS
   message: Table Parent: Row {Int64(1)} already exists.
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Row [1] in table Parent already exists
 
 case duplicate_key_same_mutation
 insert Parent cols=P,Name:
@@ -79,6 +82,9 @@ insert Parent cols=P,Name:
 expect:
   error: ALREADY_EXISTS
   message: Table Parent: Row {Int64(5)} already exists.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Row [5] in Parent was already inserted in this transaction.
 
 case insert_or_update_existing
 insert_or_update Parent cols=P,Name:
@@ -361,6 +367,9 @@ insert Checked cols=K,Qty:
 expect:
   error: OUT_OF_RANGE
   message: Check constraint `Checked`.`QtyPositive` is violated for key {Int64(1)}
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Check constraint `Checked`.`QtyPositive` is violated for key (1)
 
 case check_constraint_ok_and_generated
 insert Checked cols=K,Qty:
@@ -454,3 +463,6 @@ commit txn=t
 expect:
   error: ALREADY_EXISTS
   message: Table Parent: Row {Int64(9)} already exists.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Row [9] in Parent was already inserted in this transaction.

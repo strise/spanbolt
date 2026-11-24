@@ -27,6 +27,9 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Table X references nonexistent key column Nope.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: table X references nonexistent key column Nope.
 
 case unknown_type
 skip: the emulator answers INTERNAL (GOOGLESQL_RET_CHECK); real Spanner rejects with INVALID_ARGUMENT
@@ -42,6 +45,8 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing Spanner DDL statement: CREATE TABLE X (K INT64, S STRING) PRIMARY KEY (K) : Syntax error on line 1, column 34: Expecting '(' but found ')'
+expect@spanner:
+  same
 
 case string_length_zero
 ddl:
@@ -84,6 +89,8 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing Spanner DDL statement: CREATE TABEL X (K INT64) PRIMARY KEY (K) : Syntax error on line 1, column 8: Encountered 'TABEL' while parsing: create_statement
+expect@spanner:
+  same
 
 case no_primary_key
 ddl:

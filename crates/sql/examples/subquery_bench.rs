@@ -119,9 +119,7 @@ fn main() {
             }),
             ..Default::default()
         };
-        let ro = ReadOnlyTxn {
-            version: db.latest(),
-        };
+        let ro = ReadOnlyTxn::new(db.latest());
         // Warm-up plans and caches the statement.
         let t = Instant::now();
         let rs = engine

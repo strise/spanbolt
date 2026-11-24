@@ -57,9 +57,7 @@ fn view_type(e: &Engine, s: &DbState) -> i32 {
         std::sync::Arc::new(spanbolt_txn::Clock::default()),
         s.clone(),
     ));
-    let ro = spanbolt_txn::ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let ro = spanbolt_txn::ReadOnlyTxn::new(db.latest());
     let req = spanbolt_proto::spanner::ExecuteSqlRequest {
         sql: "SELECT v FROM VW".into(),
         ..Default::default()

@@ -123,9 +123,7 @@ fn run(
     db: &Arc<Database>,
     req: &pb::ExecuteSqlRequest,
 ) -> Result<Vec<String>, spanbolt_storage::Error> {
-    let txn = ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let txn = ReadOnlyTxn::new(db.latest());
     let rs = engine.execute_sql(db, Txn::ReadOnly(&txn), req)?;
     Ok(rs
         .rows

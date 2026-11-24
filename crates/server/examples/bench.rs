@@ -145,9 +145,7 @@ fn in_process() -> Result<(), BoxErr> {
     let mut samples = Vec::new();
     for i in 0..100000i64 {
         let t0 = Instant::now();
-        let ro = ReadOnlyTxn {
-            version: db.latest(),
-        };
+        let ro = ReadOnlyTxn::new(db.latest());
         let view = ro.read(|c| {
             Ok((
                 Target::Table(c.lookup_table("T")?),

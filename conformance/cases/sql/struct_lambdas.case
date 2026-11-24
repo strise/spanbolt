@@ -1,0 +1,210 @@
+# ARRAY<STRUCT> results through lambda functions (spanbolt #81): the rules of
+# struct_array_results.case and struct_field_access.case apply to lambda arguments too. The
+# emulator rejects every lambda call that makes an ARRAY<STRUCT>. `expect:` is recorded from the
+# emulator; `expect@spanner:` from real Spanner.
+tags: sql struct oracle
+schema:
+  CREATE TABLE Items (
+    Id INT64 NOT NULL,
+    Grp STRING(16),
+    Val INT64,
+  ) PRIMARY KEY (Id)
+insert Items cols=Id,Grp,Val:
+  [1, "a", 10]
+  [2, "a", 20]
+  [3, "b", 5]
+
+# Structs built inside a lambda. ARRAY_TRANSFORM's elements are what its lambda returns, so
+# `e -> STRUCT(...)` is fine where `[STRUCT(...)]` is not; the array argument of ARRAY_FILTER and
+# a lambda body wrapping STRUCT(...) in a function count as constructor syntax.
+case constructor
+query:
+  SELECT ARRAY_TRANSFORM([1, 2], e -> STRUCT(e AS x)) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: a ARRAY<STRUCT<x INT64>>
+  [[["1"],["2"]]]
+query:
+  SELECT ARRAY_TRANSFORM(ARRAY(SELECT Id FROM Items ORDER BY Id), e -> STRUCT(e AS x)) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: a ARRAY<STRUCT<x INT64>>
+  [[["1"],["2"],["3"]]]
+query:
+  SELECT ARRAY_TRANSFORM(ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id), e -> STRUCT(e.Id AS x)) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: a ARRAY<STRUCT<x INT64>>
+  [[["1"],["2"],["3"]]]
+query:
+  SELECT ARRAY_TRANSFORM([1], e -> (SELECT AS STRUCT e AS x)) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: a ARRAY<STRUCT<x INT64>>
+  [[["1"]]]
+query:
+  SELECT ARRAY_FILTER([STRUCT(1 AS x)], e -> e.x > 0) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+query:
+  SELECT ARRAY_FILTER([STRUCT(1 AS x)], e -> TRUE) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+query:
+  SELECT ARRAY_FILTER(ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id), e -> e.Val > 6) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+query:
+  SELECT ARRAY_TRANSFORM(ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id), e -> e) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]]]
+query:
+  SELECT ARRAY_TRANSFORM([1], e -> IF(e > 0, STRUCT(e AS x), NULL)) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+query:
+  SELECT ARRAY_INCLUDES([STRUCT(1 AS x)], e -> e.x > 0) AS b
+expect:
+  columns: b BOOL
+  [true]
+expect@spanner:
+  same
+query:
+  SELECT ARRAY_LENGTH(ARRAY_FILTER([STRUCT(1 AS x)], e -> e.x > 0)) AS n
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: n INT64
+  ["1"]
+query:
+  SELECT ARRAY_FILTER(ARRAY_CONCAT(ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id), [STRUCT(9 AS Id, 9 AS Val)]), e -> e.Val > 6) AS a
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
+
+# A NULL-able array argument makes a NULL-able result.
+case nullable
+query:
+  SELECT ARRAY_FILTER(ARRAY_AGG(STRUCT(Id, Val)), e -> e.Val > 6) AS a FROM Items WHERE Id > 100
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<Id INT64, Val INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  SELECT ARRAY_FILTER(IF(Id > 1, ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id), NULL), e -> e.Val > 6) AS a FROM Items
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<Id INT64, Val INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+query:
+  SELECT ARRAY_FILTER(COALESCE(ARRAY_AGG(STRUCT(Id, Val)), ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id)), e -> e.Val > 6) AS a FROM Items
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+query:
+  SELECT ARRAY_TRANSFORM(ARRAY_AGG(STRUCT(Id, Val)), e -> STRUCT(e.Id AS x)) AS a FROM Items WHERE Id > 100
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query can return a null-valued array of struct, which is not supported by Spanner. ARRAY<STRUCT<x INT64>> is the type that might contain null values. Use IFNULL/COALESCE to convert potentially null values to non-null values.
+
+# A field read inside a lambda reads the structs of the array argument.
+case field_read
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_TRANSFORM(a, e -> e.Val) AS v FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, v ARRAY<INT64>
+  [[["1","10"],["2","20"],["3","5"]],["10","20","5"]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_INCLUDES(a, e -> e.Val > 6) AS b FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b BOOL
+  [[["1","10"],["2","20"],["3","5"]],true]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_LENGTH(ARRAY_FILTER(a, e -> TRUE)) AS n FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, n INT64
+  [[["1","10"],["2","20"],["3","5"]],"3"]
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY_TRANSFORM(a, e -> e.Val) AS v FROM t
+expect:
+  columns: v ARRAY<INT64>
+  [["10","20","5"]]
+expect@spanner:
+  same
+query:
+  SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a, ARRAY_TRANSFORM([1, 2], i -> (SELECT COUNT(*) FROM Items WHERE Val > i)) AS c
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, c ARRAY<INT64>
+  [[["1","10"],["2","20"],["3","5"]],["3","3"]]
+expect@spanner:
+  same
+
+# Spanner also rejects returning the same nested table twice, which spanbolt doesn't model yet.
+case field_read_twice
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_FILTER(a, e -> e.Val > 6) AS f FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_TRANSFORM(a, e -> e) AS same FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.

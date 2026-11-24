@@ -132,6 +132,33 @@ fn one_element(e: &AnyResolvedExprProto) -> bool {
     call_base(e).is_some_and(|b| fn_name(b) == "$make_array" && b.argument_list.len() == 1)
 }
 
+/// The value arguments of a call. A call that takes a lambda (`ARRAY_FILTER(a, e -> ...)`) has
+/// all its arguments in `generic_argument_list`; this yields the ones that are not lambdas.
+pub(crate) fn value_args(
+    b: &ResolvedFunctionCallBaseProto,
+) -> impl Iterator<Item = &AnyResolvedExprProto> {
+    b.argument_list.iter().chain(
+        b.generic_argument_list
+            .iter()
+            .filter_map(|g| g.expr.as_ref()),
+    )
+}
+
+/// The lambda argument of a call, as in `ARRAY_TRANSFORM(a, e -> ...)`.
+pub(crate) fn lambda(b: &ResolvedFunctionCallBaseProto) -> Option<&ResolvedInlineLambdaProto> {
+    b.generic_argument_list
+        .iter()
+        .find_map(|g| g.inline_lambda.as_ref())
+}
+
+/// `ARRAY_TRANSFORM(a, e -> body)`: its elements are the body's values, not `a`'s.
+pub(crate) fn transform_body(b: &ResolvedFunctionCallBaseProto) -> Option<&AnyResolvedExprProto> {
+    if fn_name(b) != "array_transform" {
+        return None;
+    }
+    lambda(b)?.body.as_ref()
+}
+
 impl<'a> Shape<'a> {
     // ------------------------------------------------------------ collecting
 
@@ -257,8 +284,23 @@ impl<'a> Shape<'a> {
                     },
                     None => None,
                 };
-                for a in base.iter().flat_map(|b| &b.argument_list) {
+                let Some(base) = base else {
+                    return;
+                };
+                for a in value_args(base) {
                     self.expr(a);
+                }
+                // The lambda's first argument is an element of the array argument, as with UNNEST.
+                if let Some(l) = lambda(base) {
+                    if let (Some(array), Some(id)) = (
+                        value_args(base).next(),
+                        l.argument_list.first().and_then(|c| c.column_id),
+                    ) {
+                        self.defs.insert(id, Def::ElementOf(array));
+                    }
+                    if let Some(body) = l.body.as_ref() {
+                        self.expr(body);
+                    }
                 }
             }
             Some(E::ResolvedCastNode(c)) => self.opt_expr(&c.expr),
@@ -455,9 +497,17 @@ impl<'a> Shape<'a> {
                 self.subquery_column(Flow::Contained, s, depth, out);
             }
             // Scalar calls pass their arguments' structs on; an aggregate makes a new value.
+            // ARRAY_TRANSFORM holds what its lambda returns.
             Some(E::ResolvedFunctionCallBaseNode(_)) => {
-                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
-                    self.contained_in(a, depth + 1, out);
+                if let Some(b) = call_base(e) {
+                    match transform_body(b) {
+                        Some(body) => self.contained_in(body, depth + 1, out),
+                        None => {
+                            for a in value_args(b) {
+                                self.contained_in(a, depth + 1, out);
+                            }
+                        }
+                    }
                 }
             }
             Some(E::ResolvedMakeStructNode(m)) => {
@@ -500,8 +550,13 @@ impl<'a> Shape<'a> {
                 }
                 None => {}
             },
+            // ARRAY_FILTER(a, ...) is a's nested table; ARRAY_TRANSFORM makes a new array.
             Some(E::ResolvedFunctionCallBaseNode(_)) => {
-                for a in call_base(e).iter().flat_map(|b| &b.argument_list) {
+                for a in call_base(e)
+                    .filter(|b| transform_body(b).is_none())
+                    .into_iter()
+                    .flat_map(value_args)
+                {
                     self.array_of(a, depth + 1, out);
                 }
             }

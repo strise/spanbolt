@@ -231,8 +231,10 @@ impl Engine {
                 let p = planner.scan(scan, &Scope::TOP)?;
                 planner.finish_search()?;
                 if !self.opts.emulator_compat {
-                    crate::struct_shape::check(&q)?;
+                    // Spanner reports a NULL-able or constructed ARRAY<STRUCT> result before a
+                    // field read of a returned struct.
                     crate::struct_result::check(&q)?;
+                    crate::struct_shape::check(&q)?;
                 }
                 let positions = positions(&p.layout, &ids)?;
                 Ok(Prepared {

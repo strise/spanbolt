@@ -493,3 +493,75 @@ fn drop_stored_null_filter_column() {
     assert!(f1.storing.is_empty());
     assert_eq!(f1.filter, None);
 }
+
+/// Spanner DDL spanbolt doesn't model is UNIMPLEMENTED; DDL Spanner doesn't have stays a syntax
+/// error.
+#[test]
+fn unsupported_ddl_is_unimplemented() {
+    for (sql, what) in [
+        ("CREATE PROTO BUNDLE (foo.Bar)", "CREATE PROTO BUNDLE"),
+        ("ALTER PROTO BUNDLE INSERT (foo.Bar)", "ALTER PROTO BUNDLE"),
+        ("DROP PROTO BUNDLE", "DROP PROTO BUNDLE"),
+        (
+            "CREATE QUEUE Q (Id INT64, Payload BYTES(MAX) NOT NULL) PRIMARY KEY (Id)",
+            "CREATE QUEUE",
+        ),
+        ("DROP QUEUE Q", "DROP QUEUE"),
+        (
+            "CREATE PLACEMENT p OPTIONS (instance_partition = 'p1')",
+            "CREATE PLACEMENT",
+        ),
+        (
+            "CREATE FUNCTION F(x INT64) RETURNS INT64 AS (x + 1)",
+            "CREATE FUNCTION",
+        ),
+        (
+            "CREATE OR REPLACE FUNCTION F(x INT64) RETURNS INT64 AS (x + 1)",
+            "CREATE FUNCTION",
+        ),
+        ("DROP FUNCTION F", "DROP FUNCTION"),
+        (
+            "CREATE VECTOR INDEX V ON T(E) OPTIONS (distance_type = 'COSINE')",
+            "CREATE VECTOR INDEX",
+        ),
+        (
+            "ALTER VECTOR INDEX V ADD STORED COLUMN X",
+            "ALTER VECTOR INDEX",
+        ),
+        ("DROP VECTOR INDEX V", "DROP VECTOR INDEX"),
+        (
+            "CREATE INDEX I ON P((JSON_VALUE(j, '$.city')))",
+            "An index key expression",
+        ),
+        (
+            "CREATE INDEX I ON P(s, (LOWER(s)))",
+            "An index key expression",
+        ),
+    ] {
+        let e = parse_statement(sql).expect_err(sql);
+        assert_eq!(
+            kind(&e),
+            (
+                "Unimpl",
+                format!("{what} is not supported by spanbolt yet.").as_str()
+            ),
+            "{sql}"
+        );
+    }
+    for (sql, msg) in [
+        (
+            "CREATE WIDGET W",
+            "Error parsing Spanner DDL statement: CREATE WIDGET W : Syntax error on line 1, column 8: Encountered 'WIDGET' while parsing: create_statement",
+        ),
+        (
+            "ALTER WIDGET W",
+            "Error parsing Spanner DDL statement: ALTER WIDGET W : Syntax error on line 1, column 7: Encountered 'WIDGET' while parsing: alter_statement",
+        ),
+        (
+            "DROP WIDGET W",
+            "Error parsing Spanner DDL statement: DROP WIDGET W : Syntax error on line 1, column 6: Encountered 'WIDGET' while parsing: drop_statement",
+        ),
+    ] {
+        assert_eq!(kind(&parse_statement(sql).expect_err(sql)), ("Inv", msg));
+    }
+}

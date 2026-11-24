@@ -158,6 +158,27 @@ impl<'a> Parser<'a> {
         )
     }
 
+    /// Spanner DDL that spanbolt doesn't model: UNIMPLEMENTED rather than a syntax error, so a
+    /// client can tell "valid but unsupported" from "invalid".
+    fn unimplemented(&self, what: &str) -> DdlError {
+        DdlError::Unimplemented(format!("{what} is not supported by spanbolt yet."))
+    }
+
+    /// After CREATE/ALTER/DROP: the object kinds Spanner has and spanbolt doesn't support.
+    fn unsupported_kind(&self, verb: &str) -> Option<DdlError> {
+        const KINDS: &[(&[&str], &str)] = &[
+            (&["PROTO", "BUNDLE"], "PROTO BUNDLE"),
+            (&["VECTOR", "INDEX"], "VECTOR INDEX"),
+            (&["QUEUE"], "QUEUE"),
+            (&["PLACEMENT"], "PLACEMENT"),
+            (&["FUNCTION"], "FUNCTION"),
+        ];
+        KINDS
+            .iter()
+            .find(|(kws, _)| kws.iter().enumerate().all(|(i, k)| self.kw_at(i, k)))
+            .map(|(_, kind)| self.unimplemented(&format!("{verb} {kind}")))
+    }
+
     fn unsupported(&self, what: &str) -> DdlError {
         DdlError::Syntax(format!(
             "Error parsing Spanner DDL statement: {} : {what} is not supported",
@@ -491,6 +512,9 @@ impl<'a> Parser<'a> {
                 self.rest_text();
                 return Ok(opaque(kind, &name, ddl, false));
             }
+        }
+        if let Some(e) = self.unsupported_kind("CREATE") {
+            return Err(e);
         }
         if or_replace {
             return Err(self.expecting("VIEW"));
@@ -838,6 +862,23 @@ impl<'a> Parser<'a> {
         let name = self.path()?;
         self.expect_kw("ON")?;
         let table = self.path()?;
+        // An expression key, `ON T((expr), ...)`: Spanner indexes it through a hidden generated
+        // column, which spanbolt doesn't model.
+        let mut depth = 0usize;
+        for i in 0.. {
+            match self.tok_at(i) {
+                Tok::Sym("(")
+                    if depth == 1 && matches!(self.tok_at(i - 1), Tok::Sym("(" | ",")) =>
+                {
+                    return Err(self.unimplemented("An index key expression"));
+                }
+                Tok::Sym("(") => depth += 1,
+                Tok::Sym(")") if depth <= 1 => break,
+                Tok::Sym(")") => depth -= 1,
+                Tok::Eof => break,
+                _ => {}
+            }
+        }
         let key = self.key_parts()?;
         let mut index = Index {
             name,
@@ -1030,7 +1071,10 @@ impl<'a> Parser<'a> {
             }
             return Ok(opaque("ALTER CHANGE STREAM", &name, ddl, false));
         }
-        Err(self.encountered("ALTER statement"))
+        if let Some(e) = self.unsupported_kind("ALTER") {
+            return Err(e);
+        }
+        Err(self.encountered("alter_statement"))
     }
 
     fn alter_table_action(&mut self) -> R<AlterTable> {
@@ -1201,7 +1245,10 @@ impl<'a> Parser<'a> {
                 return Ok(opaque(kind, &name, ddl.to_string(), true));
             }
         }
-        Err(self.encountered("DROP statement"))
+        if let Some(e) = self.unsupported_kind("DROP") {
+            return Err(e);
+        }
+        Err(self.encountered("drop_statement"))
     }
 
     fn rename(&mut self) -> R<Statement> {

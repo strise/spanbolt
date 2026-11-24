@@ -486,10 +486,11 @@ impl DatabaseAdmin for DatabaseAdminService {
 
     async fn list_database_roles(
         &self,
-        req: Request<da::ListDatabaseRolesRequest>,
+        _: Request<da::ListDatabaseRolesRequest>,
     ) -> Result<Response<da::ListDatabaseRolesResponse>, Status> {
-        self.emu.database(&req.get_ref().parent)?;
-        Ok(Response::new(da::ListDatabaseRolesResponse::default()))
+        // Roles are stored but not listed; an empty list would be a different answer. The
+        // emulator also leaves the method unimplemented (an empty message).
+        Err(Status::unimplemented(""))
     }
 
     async fn add_split_points(

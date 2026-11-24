@@ -2,6 +2,7 @@
 
 pub mod case;
 pub mod observe;
+pub mod record;
 pub mod report;
 pub mod runner;
 pub mod value;

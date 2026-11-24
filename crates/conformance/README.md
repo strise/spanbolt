@@ -58,6 +58,12 @@ Run the commands from the workspace root. `record` rewrites only the `expect:` b
 ran, so `record --filter <name>` re-records one case. Review the diff before committing: an expectation
 is the oracle's answer, not necessarily Spanner's.
 
+Both write each case's blocks as soon as the case finishes, so a run cut short (a time limit, an
+expired access grant, Ctrl-C) keeps the cases it got through: re-run it with `--filter` for the rest.
+A save re-reads the file under a lock and applies to what is on disk then, so recorders running at
+the same time don't overwrite each other's blocks. A case whose steps were edited during the run is
+not saved (`SAVE ...` in the output).
+
 `check` exits non-zero when any case fails (and, with `--unimplemented fail`, when any step returned
 `UNIMPLEMENTED`). The summary prints pass / fail / unimplemented / error per tag.
 

@@ -145,6 +145,8 @@ impl Case {
 #[derive(Debug)]
 pub struct CaseFile {
     pub path: PathBuf,
+    /// Path relative to the corpus root without `.case`: the prefix of its case names.
+    pub rel: String,
     pub lines: Vec<String>,
 }
 
@@ -180,6 +182,7 @@ pub fn load(root: &Path) -> Result<Corpus, String> {
         }
         corpus.files.push(CaseFile {
             path,
+            rel,
             lines: text.lines().map(str::to_string).collect(),
         });
     }

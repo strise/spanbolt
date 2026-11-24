@@ -3,6 +3,7 @@
 #   scripts/gate.sh            fmt, clippy, tests, conformance twice: default server vs baseline-prod.json (check --oracle spanner), --emulator-compat vs baseline.json
 #   GATE_EXTRA='<command>'     also run this command last (through the shell); it fails the gate if it fails
 #   GATE_BASE=origin/main      the ref recorded expectations are compared against (default main)
+#   GATE_PORT=24720            port for the conformance servers (one run after the other); default: a free port the OS picks
 set -uo pipefail
 cd "$(dirname "$0")/.."
 root=$(pwd)
@@ -47,14 +48,42 @@ step "conformance"
 cargo build -q --release -p spanbolt && cargo build -q --release -p spanbolt-conformance || fail=1
 # Two runs: the default server against prod expectations (`expect@spanner:` where recorded),
 # and the server in --emulator-compat mode against the emulator's expectations.
+# A port nothing listens on: GATE_PORT if set (it must be free), else one the OS hands out.
+free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+port_in_use() { nc -z 127.0.0.1 "$1" 2>/dev/null; }
 run_conformance() { # <label> <baseline> <server flags> -- <check flags>
   local label="$1" baseline="$2" sflags="$3" cflags="$4"
-  local port=$((20000 + RANDOM % 20000))
-  ./target/release/spanbolt --host-port "127.0.0.1:$port" $sflags > "$out/server-$label.log" 2>&1 &
-  local srv=$!
-  for _ in $(seq 1 200); do nc -z 127.0.0.1 "$port" 2>/dev/null && break; sleep 0.05; done
+  local port srv="" attempt
+  # Another process can take an OS-picked port before spanbolt binds it, so try a few.
+  for attempt in 1 2 3; do
+    port="${GATE_PORT:-$(free_port)}"
+    if port_in_use "$port"; then
+      echo "[$label] port $port is already in use"
+      [ -n "${GATE_PORT:-}" ] && break
+      continue
+    fi
+    echo "[$label] server on 127.0.0.1:$port (log: $out/server-$label.log)"
+    ./target/release/spanbolt --host-port "127.0.0.1:$port" $sflags > "$out/server-$label.log" 2>&1 &
+    srv=$!
+    for _ in $(seq 1 200); do
+      port_in_use "$port" && break
+      kill -0 "$srv" 2>/dev/null || break
+      sleep 0.05
+    done
+    if kill -0 "$srv" 2>/dev/null && port_in_use "$port"; then break; fi
+    echo "[$label] server did not start on port $port (attempt $attempt):"
+    tail -5 "$out/server-$label.log"
+    kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
+    srv=""
+    [ -n "${GATE_PORT:-}" ] && break
+  done
+  if [ -z "$srv" ]; then
+    echo "FAILED: [$label] no conformance server"
+    fail=1
+    return
+  fi
   ./target/release/spanbolt-conformance check --target "127.0.0.1:$port" $cflags --json "$out/conformance-$label.json" > "$out/conformance-$label.txt" 2>&1
-  kill "$srv" 2>/dev/null
+  kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
   echo "[$label] $(tail -1 "$out/conformance-$label.txt")"
   python3 scripts/conformance_compare.py "$baseline" "$out/conformance-$label.json" || fail=1
 }

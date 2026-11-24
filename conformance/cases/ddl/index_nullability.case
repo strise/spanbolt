@@ -47,11 +47,23 @@ ddl:
   DROP INDEX FooByQux
 ddl:
   ALTER TABLE Foo ALTER COLUMN Qux INT64 NOT NULL
+expect:
+  ok
+expect@spanner:
+  same
 
 case storing_column_add_not_null
 ddl:
   ALTER TABLE Foo ALTER COLUMN Stored INT64 NOT NULL
+expect:
+  ok
+expect@spanner:
+  same
 
 case unique_index_same_nullability
 ddl:
   ALTER TABLE Foo ALTER COLUMN Baz INT64 NOT NULL
+expect:
+  ok
+expect@spanner:
+  same

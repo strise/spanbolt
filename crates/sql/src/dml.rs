@@ -385,10 +385,11 @@ fn pk_debug(tm: &TableMeta, key: &[Value]) -> String {
     format!("({{{}}})", parts.join(", "))
 }
 
-/// An INSERT's rows with their keys. A key column the statement leaves to a DEFAULT or an identity
-/// (absent, or written as `DEFAULT`) gets its value here and is written explicitly, so the key
-/// checks, THEN RETURN and the stored row agree on one value (`GENERATE_UUID()` differs on every
-/// call). Other omitted columns stay omitted: INSERT OR UPDATE keeps them on an existing row.
+/// An INSERT's rows with their keys. The key columns and the columns their DEFAULT or generation
+/// reads are computed per row as storage stores them; those the statement leaves to a DEFAULT or an
+/// identity (absent, or written as `DEFAULT`) are written explicitly, so the key checks, THEN RETURN
+/// and the stored row agree on one value (`GENERATE_UUID()` differs on every call). Other omitted
+/// columns stay omitted: INSERT OR UPDATE keeps them on an existing row.
 struct KeyedRows {
     columns: Vec<usize>,
     rows: Vec<Vec<Value>>,
@@ -403,17 +404,23 @@ fn keyed_rows(
     mut rows: Vec<Vec<Value>>,
     defaults: Vec<(usize, usize)>,
 ) -> Result<KeyedRows> {
+    use spanbolt_storage::expr::{compute_row, mentions};
     let fillable = |c: usize| tm.columns[c].default.is_some() || tm.columns[c].identity;
-    let is_key = |c: usize| tm.pk.contains(&c);
-    let absent: Vec<usize> = tm
-        .pk
-        .iter()
-        .copied()
-        .filter(|&k| fillable(k) && !columns.contains(&k))
+    let key_reads = |c: usize| {
+        tm.pk.iter().any(|&k| {
+            let km = &tm.columns[k];
+            [&km.default, &km.expr]
+                .into_iter()
+                .flatten()
+                .any(|e| mentions(e, &tm.columns[c].name))
+        })
+    };
+    let needed: Vec<bool> = (0..tm.columns.len())
+        .map(|c| tm.pk.contains(&c) || key_reads(c))
         .collect();
-    let computes_key = tm.pk.iter().any(|&k| !columns.contains(&k))
-        || defaults.iter().any(|&(_, i)| is_key(columns[i]));
-    if !computes_key {
+    let computes = tm.pk.iter().any(|k| !columns.contains(k))
+        || defaults.iter().any(|&(_, i)| needed[columns[i]]);
+    if !computes {
         let keys = rows
             .iter()
             .map(|row| {
@@ -435,13 +442,15 @@ fn keyed_rows(
             defaults,
         });
     }
-    let mut by_row: HashMap<usize, Vec<usize>> = HashMap::new();
+    let absent: Vec<usize> = (0..tm.columns.len())
+        .filter(|&c| needed[c] && fillable(c) && !columns.contains(&c))
+        .collect();
+    let mut defaulted: Vec<Vec<usize>> = vec![Vec::new(); rows.len()];
     for &(r, i) in &defaults {
-        by_row.entry(r).or_default().push(i);
+        defaulted[r].push(i);
     }
     let mut keys = Vec::with_capacity(rows.len());
-    for (r, row) in rows.iter_mut().enumerate() {
-        let defaulted = by_row.get(&r).map_or(&[][..], Vec::as_slice);
+    for (row, defaulted) in rows.iter_mut().zip(&defaulted) {
         let mut full = vec![Value::Null; tm.columns.len()];
         let mut supplied = vec![false; tm.columns.len()];
         for (i, &c) in columns.iter().enumerate() {
@@ -450,8 +459,10 @@ fn keyed_rows(
                 supplied[c] = true;
             }
         }
-        spanbolt_storage::expr::compute_missing(tm, &mut full, &|c| !supplied[c])?;
-        for &i in defaulted.iter().filter(|&&i| is_key(columns[i])) {
+        compute_row(tm, &mut full, &|c| needed[c] && !supplied[c], &|c| {
+            needed[c]
+        })?;
+        for &i in defaulted.iter().filter(|&&i| needed[columns[i]]) {
             row[i] = full[columns[i]].clone();
         }
         row.extend(absent.iter().map(|&c| full[c].clone()));
@@ -463,7 +474,7 @@ fn keyed_rows(
         keys,
         defaults: defaults
             .into_iter()
-            .filter(|&(_, i)| !is_key(columns[i]))
+            .filter(|&(_, i)| !needed[columns[i]])
             .collect(),
     })
 }

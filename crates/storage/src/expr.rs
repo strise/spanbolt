@@ -64,19 +64,9 @@ pub(crate) const DEFAULTS: &str = "DEFAULT values";
 pub(crate) const GENERATED: &str = "Stored generated columns";
 pub(crate) const CHECKS: &str = "CHECK constraints on existing rows";
 
-/// Computes the `missing` columns of `row` (one value per column, in schema order) as a write that
-/// omits them stores them: DEFAULT and identity values, then the stored generated columns.
-pub fn compute_missing(
-    tm: &TableMeta,
-    row: &mut [Value],
-    missing: &dyn Fn(usize) -> bool,
-) -> Result<()> {
-    compute_row(tm, row, missing, &|_| true)
-}
-
 /// Fills the defaults of `missing` columns and recomputes the stored generated columns selected
 /// by `regenerate`, then assigns identity values to missing identity columns.
-pub(crate) fn compute_row(
+pub fn compute_row(
     tm: &TableMeta,
     row: &mut [Value],
     missing: &dyn Fn(usize) -> bool,
@@ -122,7 +112,7 @@ fn next_identity() -> Value {
 
 /// Whether `expr` refers to the identifier `name` (case-insensitive, outside string literals is
 /// not distinguished: a conservative over-approximation).
-pub(crate) fn mentions(expr: &str, name: &str) -> bool {
+pub fn mentions(expr: &str, name: &str) -> bool {
     let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
     let lower = expr.to_ascii_lowercase();
     let name = name.to_ascii_lowercase();

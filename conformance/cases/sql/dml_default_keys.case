@@ -14,7 +14,12 @@ schema:
     Id STRING(36) NOT NULL DEFAULT (GENERATE_UUID()),
     Note STRING(MAX) DEFAULT ('fresh'),
     N INT64,
-  ) PRIMARY KEY (Id)
+  ) PRIMARY KEY (Id);
+  CREATE TABLE R (
+    Src STRING(MAX) NOT NULL,
+    Tag STRING(36) DEFAULT (GENERATE_UUID()),
+    K STRING(MAX) NOT NULL AS (CONCAT(Tag, '-', Src)) STORED,
+  ) PRIMARY KEY (K)
 
 case dml_insert_default_key_then_return
 dml:
@@ -67,3 +72,16 @@ expect:
   count: 1
   columns: Id STRING, Note STRING, N INT64
   ["x","kept","2"]
+
+case dml_insert_key_from_volatile_column_then_return
+dml:
+  INSERT INTO R (Src) VALUES ('a') THEN RETURN Src, LENGTH(K) AS len, K = CONCAT(Tag, '-', Src) AS consistent
+expect:
+  count: 1
+  columns: Src STRING, len INT64, consistent BOOL
+  ["a","38",true]
+query:
+  SELECT COUNT(*) AS n FROM R WHERE K = CONCAT(Tag, '-', Src)
+expect:
+  columns: n INT64
+  ["1"]

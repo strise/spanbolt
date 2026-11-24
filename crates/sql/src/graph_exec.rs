@@ -2,7 +2,8 @@
 //! `GraphScan` lowers to.
 //!
 //! A graph element is `STRUCT<slot INT64, key BYTES, row STRUCT>`: the element table it came from
-//! (node tables first, then edge tables), its encoded primary key and the base table row.
+//! (node tables first, then edge tables), its encoded key and its input row: the base table row,
+//! or the view row for an element table over a view.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -57,11 +58,21 @@ pub struct GraphRt {
 }
 
 pub struct SlotRt {
-    pub table: TableId,
+    pub input: SlotInput,
     pub labels: Arc<[Value]>,
     /// Edges only.
     pub source: Option<EndRt>,
     pub destination: Option<EndRt>,
+}
+
+pub enum SlotInput {
+    Table(TableId),
+    /// A view: its query (rows in view column order), read once per `MATCH` operator run, and the
+    /// element key's positions in its rows.
+    View {
+        query: BoxOp,
+        key: Vec<usize>,
+    },
 }
 
 pub struct EndRt {
@@ -71,7 +82,8 @@ pub struct EndRt {
 }
 
 impl GraphRt {
-    pub fn new(g: &crate::graph::GraphDef) -> GraphRt {
+    /// `views` holds the planned query of each element table over a view, by slot.
+    pub fn new(g: &crate::graph::GraphDef, mut views: Vec<Option<BoxOp>>) -> GraphRt {
         let n = g.nodes.len();
         let end = |r: &Option<crate::graph::NodeRef>| {
             r.as_ref().map(|r| EndRt {
@@ -86,7 +98,16 @@ impl GraphRt {
             .chain(&g.edges)
             .enumerate()
             .map(|(i, t)| SlotRt {
-                table: t.table_id,
+                input: match (&t.input, views.get_mut(i).and_then(Option::take)) {
+                    (crate::graph::ElementInput::Table(id), _) => SlotInput::Table(*id),
+                    (crate::graph::ElementInput::View(_), Some(query)) => SlotInput::View {
+                        query,
+                        key: t.key.clone(),
+                    },
+                    (crate::graph::ElementInput::View(_), None) => {
+                        unreachable!("element table over a view without a planned query")
+                    }
+                },
                 labels: t.labels.iter().map(|l| Value::string(l)).collect(),
                 source: if i >= n { end(&t.source) } else { None },
                 destination: if i >= n { end(&t.destination) } else { None },
@@ -167,6 +188,68 @@ fn lookup(
         out.extend(rows.iter().cloned());
     }
     Ok(())
+}
+
+/// The rows of the element tables over views, read on first use by one run of a `MATCH`
+/// operator, with hash indexes over the columns edges are found by.
+struct ViewRows {
+    slots: Mutex<HashMap<usize, Arc<ViewData>>>,
+}
+
+struct ViewData {
+    rows: Vec<(Arc<[u8]>, StoredRow)>,
+    indexes: Mutex<HashMap<Vec<usize>, Arc<Index>>>,
+}
+
+impl ViewData {
+    fn index(&self, cols: &[usize]) -> Arc<Index> {
+        let mut m = self.indexes.lock().unwrap_or_else(|e| e.into_inner());
+        m.entry(cols.to_vec())
+            .or_insert_with(|| {
+                let mut idx: Index = HashMap::new();
+                for (key, row) in &self.rows {
+                    let vals: Vec<Value> = cols.iter().map(|&c| row[c].clone()).collect();
+                    if vals.iter().any(Value::is_null) {
+                        continue;
+                    }
+                    idx.entry(Key(vals))
+                        .or_default()
+                        .push((key.clone(), row.clone()));
+                }
+                Arc::new(idx)
+            })
+            .clone()
+    }
+}
+
+impl ViewRows {
+    fn get(&self, cx: &Cx, slot: usize, query: &BoxOp, key: &[usize]) -> Result<Arc<ViewData>> {
+        if let Some(d) = self
+            .slots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&slot)
+        {
+            return Ok(d.clone());
+        }
+        let mut rows = Vec::new();
+        let desc = vec![false; key.len()];
+        for r in query.open(cx, &Env::EMPTY)? {
+            let r = r?;
+            let vals: Vec<Value> = key.iter().map(|&k| r[k].clone()).collect();
+            let k: Arc<[u8]> = Arc::from(encode_key(&vals, &desc)?);
+            rows.push((k, StoredRow::from(r)));
+        }
+        let d = Arc::new(ViewData {
+            rows,
+            indexes: Default::default(),
+        });
+        self.slots
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(slot, d.clone());
+        Ok(d)
+    }
 }
 
 fn record_all(cx: &Cx, table: TableId) {
@@ -266,6 +349,9 @@ pub struct GraphMatch {
 impl Op for GraphMatch {
     fn open<'a>(&'a self, cx: &'a Cx<'a>, env: &'a Env<'a>) -> Result<RowIter<'a>> {
         let it = self.input.open(cx, env)?;
+        let views = ViewRows {
+            slots: Mutex::new(HashMap::new()),
+        };
         Ok(Box::new(it.flat_map(move |r| {
             let rows = r.and_then(|input| {
                 let n = input.len();
@@ -275,6 +361,7 @@ impl Op for GraphMatch {
                     cx,
                     env,
                     g: &self.graph,
+                    views: &views,
                     out: Vec::new(),
                     trace: Vec::new(),
                     steps: 0,
@@ -315,6 +402,7 @@ struct Matcher<'a> {
     cx: &'a Cx<'a>,
     env: &'a Env<'a>,
     g: &'a GraphRt,
+    views: &'a ViewRows,
     out: Vec<Row>,
     trace: Vec<Visit>,
     steps: u64,
@@ -464,20 +552,20 @@ impl<'a> Matcher<'a> {
             }
             Anchor::Scan => {
                 for &s in &pat.slots {
-                    self.scan(s, &mut out);
+                    self.scan(s, &mut out)?;
                 }
             }
             Anchor::Seek(per) => {
                 for (s, seek) in per {
                     match seek {
-                        None => self.scan(*s, &mut out),
+                        None => self.scan(*s, &mut out)?,
                         Some((cols, exprs)) => {
                             let vals = exprs
                                 .iter()
                                 .map(|f| self.eval(f, row))
                                 .collect::<Result<Vec<_>>>()?;
                             let mut rows = Vec::new();
-                            lookup(self.cx, self.g.slots[*s].table, cols, vals, &mut rows)?;
+                            self.lookup(*s, cols, vals, &mut rows)?;
                             out.extend(rows.into_iter().map(|(k, r)| (*s, k, r)));
                         }
                     }
@@ -487,16 +575,48 @@ impl<'a> Matcher<'a> {
         Ok(out)
     }
 
-    fn scan(&self, slot: usize, out: &mut Vec<Found>) {
-        let t = self.g.slots[slot].table;
-        record_all(self.cx, t);
-        out.extend(
-            self.cx
-                .state
-                .rows(t)
-                .iter()
-                .map(|(k, r)| (slot, k.clone(), r.clone())),
-        );
+    fn scan(&self, slot: usize, out: &mut Vec<Found>) -> Result<()> {
+        match &self.g.slots[slot].input {
+            SlotInput::Table(t) => {
+                record_all(self.cx, *t);
+                out.extend(
+                    self.cx
+                        .state
+                        .rows(*t)
+                        .iter()
+                        .map(|(k, r)| (slot, k.clone(), r.clone())),
+                );
+            }
+            SlotInput::View { query, key } => {
+                let d = self.views.get(self.cx, slot, query, key)?;
+                out.extend(d.rows.iter().map(|(k, r)| (slot, k.clone(), r.clone())));
+            }
+        }
+        Ok(())
+    }
+
+    /// Rows of element table `slot` whose `cols` equal `vals` (SQL equality: NULL matches
+    /// nothing).
+    fn lookup(
+        &self,
+        slot: usize,
+        cols: &[usize],
+        vals: Vec<Value>,
+        out: &mut Vec<(Arc<[u8]>, StoredRow)>,
+    ) -> Result<()> {
+        match &self.g.slots[slot].input {
+            SlotInput::Table(t) => lookup(self.cx, *t, cols, vals, out),
+            SlotInput::View { query, key } => {
+                if vals.iter().any(Value::is_null) {
+                    return Ok(());
+                }
+                let d = self.views.get(self.cx, slot, query, key)?;
+                if let Some(rows) = d.index(cols).get(&Key(vals)) {
+                    out.extend(rows.iter().cloned());
+                }
+                Ok(())
+            }
+        }
     }
 
     /// The node at one end of an edge, if it exists.
@@ -507,13 +627,7 @@ impl<'a> Matcher<'a> {
             .map(|&c| edge_row[c].clone())
             .collect();
         let mut rows = Vec::new();
-        lookup(
-            self.cx,
-            self.g.slots[end.node].table,
-            &end.node_columns,
-            vals,
-            &mut rows,
-        )?;
+        self.lookup(end.node, &end.node_columns, vals, &mut rows)?;
         Ok(rows.first().map(|(k, r)| element(end.node, k, r)))
     }
 
@@ -556,7 +670,7 @@ impl<'a> Matcher<'a> {
                 .map(|&c| from.row[c].clone())
                 .collect();
             let mut rows = Vec::new();
-            lookup(self.cx, s.table, &near.edge_columns, vals, &mut rows)?;
+            self.lookup(slot, &near.edge_columns, vals, &mut rows)?;
             for (k, r) in rows {
                 let Some(next) = self.end_node(far, &r)? else {
                     continue;

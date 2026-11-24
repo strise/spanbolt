@@ -111,7 +111,7 @@ impl Engine {
             self.opts.extra_features(),
             self.opts.emulator_compat,
         )?;
-        crate::graph::analyse(&cat.gsql, &storage, &g.ddl).map(|_| ())
+        crate::graph::analyse(&cat.gsql, &storage, &|n| cat.view(n), &g.ddl).map(|_| ())
     }
 
     /// GoogleSQL catalogs this engine holds (pruned when the next catalog is looked up).

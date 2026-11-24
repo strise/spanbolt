@@ -17,7 +17,7 @@ use super::{
     Planned, Planner, Scope, call_base, conjuncts, fn_name, hash_key_type, nid, refs_any, type_of,
 };
 use crate::exec::{Cx, Env, Eval};
-use crate::graph::GraphDef;
+use crate::graph::{ElementInput, GraphDef};
 use crate::graph_exec::{
     Anchor, ElemPat, GraphMatch, GraphRt, Item, Mode, Orient, Path, Quant, SlotSeek, decode,
     same_element,
@@ -208,7 +208,7 @@ impl Planner<'_> {
             .find(|(n, _)| n.eq_ignore_ascii_case(name))
             .map(|(_, d)| d.clone())
             .ok_or_else(|| Error::not_found(format!("Property graph not found: {name}")))?;
-        let rt = Arc::new(GraphRt::new(&def));
+        let rt = Arc::new(GraphRt::new(&def, self.graph_views(&def)?));
         let saved = self.graph.replace(GraphCx {
             def,
             rt,
@@ -223,6 +223,36 @@ impl Planner<'_> {
             .and_then(|p| self.graph_columns(p, &g.shape_expr_list, outer));
         self.graph = saved;
         r
+    }
+
+    /// The queries of the element tables over views, by slot: rows in view column order.
+    fn graph_views(&mut self, def: &GraphDef) -> Result<Vec<Option<crate::exec::BoxOp>>> {
+        def.nodes
+            .iter()
+            .chain(&def.edges)
+            .map(|t| {
+                let ElementInput::View(v) = &t.input else {
+                    return Ok(None);
+                };
+                let q = v
+                    .query
+                    .query
+                    .as_ref()
+                    .ok_or_else(|| Error::internal("view without query"))?;
+                let p = self.scan(q, &Scope::TOP)?;
+                let out_ids: Vec<i64> = v
+                    .query
+                    .output_column_list
+                    .iter()
+                    .map(|o| nid(&o.column))
+                    .collect();
+                let op: crate::exec::BoxOp = Box::new(crate::ops::Select {
+                    input: p.op,
+                    positions: super::positions(&p.layout, &out_ids)?,
+                });
+                Ok(Some(op))
+            })
+            .collect()
     }
 
     /// `GRAPH_TABLE(... COLUMNS (...))`: the output columns, computed over the matched rows.

@@ -665,7 +665,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
             let mut graphs: Vec<_> = cat.graphs.values().collect();
             graphs.sort_by(|a, b| a.name.cmp(&b.name));
             for g in graphs {
-                let meta = crate::graph::metadata_json(g, &cat.storage);
+                let meta = crate::graph::metadata_json(g);
                 out.push(vec![
                     s(""),
                     s(""),

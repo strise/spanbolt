@@ -8,7 +8,7 @@ mod printer;
 mod schema;
 
 pub use apply::DataCheck;
-pub use lexer::is_reserved;
+pub use lexer::{identifiers, is_reserved};
 pub use parser::{
     is_ddl, null_filter_columns, parse_statement, quote_ident, quote_path, quote_string,
 };

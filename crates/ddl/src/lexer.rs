@@ -396,6 +396,20 @@ pub const RESERVED: &[&str] = &[
     "WITHIN",
 ];
 
+/// The identifiers in `sql`, quoted or not, in source order; string and bytes literals and comments
+/// are skipped. `None` when `sql` does not tokenize.
+pub fn identifiers(sql: &str) -> Option<Vec<String>> {
+    let toks = tokenize(sql).ok()?;
+    Some(
+        toks.into_iter()
+            .filter_map(|t| match t.tok {
+                Tok::Ident(w) | Tok::QuotedIdent(w) => Some(w),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
 pub fn is_reserved(word: &str) -> bool {
     RESERVED.iter().any(|k| k.eq_ignore_ascii_case(word))
 }
@@ -403,6 +417,15 @@ pub fn is_reserved(word: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifiers_skip_literals_and_comments() {
+        assert_eq!(
+            identifiers("CONCAT(Src, 'Note', b'Tag', r\"K\") -- Other\n || `Mid`").unwrap(),
+            ["CONCAT", "Src", "Mid"]
+        );
+        assert_eq!(identifiers("'unterminated"), None);
+    }
 
     fn toks(s: &str) -> Vec<Tok> {
         tokenize(s).unwrap().into_iter().map(|t| t.tok).collect()

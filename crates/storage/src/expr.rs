@@ -7,6 +7,7 @@ use spanbolt_ddl::ColumnType;
 
 use crate::catalog::TableMeta;
 use crate::error::{Code, Error, Result};
+use crate::state::WriteKind;
 use crate::value::Value;
 
 /// Evaluates a schema expression against one row.
@@ -110,17 +111,64 @@ fn next_identity() -> Value {
     Value::Int64((n.reverse_bits() >> 1) as i64)
 }
 
-/// Whether `expr` refers to the identifier `name` (case-insensitive, outside string literals is
-/// not distinguished: a conservative over-approximation).
+/// The identifiers `expr` refers to, lowercased. String and bytes literals don't count; when
+/// `expr` does not tokenize, every identifier-shaped word does (a conservative over-approximation).
+pub fn identifiers(expr: &str) -> Vec<String> {
+    match spanbolt_ddl::identifiers(expr) {
+        Some(ids) => ids.into_iter().map(|w| w.to_ascii_lowercase()).collect(),
+        None => expr
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .filter(|w| !w.is_empty())
+            .map(str::to_ascii_lowercase)
+            .collect(),
+    }
+}
+
+/// Whether `expr` refers to the identifier `name` (case-insensitive; see [`identifiers`]).
 pub fn mentions(expr: &str, name: &str) -> bool {
-    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    let lower = expr.to_ascii_lowercase();
-    let name = name.to_ascii_lowercase();
-    lower.match_indices(&name).any(|(i, _)| {
-        let before = lower[..i].chars().next_back();
-        let after = lower[i + name.len()..].chars().next();
-        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
-    })
+    identifiers(expr)
+        .iter()
+        .any(|w| w.eq_ignore_ascii_case(name))
+}
+
+/// Rejects a write that leaves a generated primary-key column without its inputs, as the emulator
+/// does: every column the key's expression reads must be written, or (except in an Update, which
+/// may write the key itself instead) have a DEFAULT. A key that reads another generated column can
+/// therefore not be inserted at all.
+pub fn check_generated_key_inputs(
+    tm: &TableMeta,
+    kind: WriteKind,
+    columns: &[usize],
+) -> Result<()> {
+    for &k in &tm.pk {
+        let km = &tm.columns[k];
+        let Some(e) = km.expr.as_deref() else {
+            continue;
+        };
+        if kind == WriteKind::Update && columns.contains(&k) {
+            continue;
+        }
+        let ids = identifiers(e);
+        let unset = tm.columns.iter().enumerate().any(|(c, cm)| {
+            ids.iter().any(|w| w.eq_ignore_ascii_case(&cm.name))
+                && !columns.contains(&c)
+                && (kind == WriteKind::Update || (cm.default.is_none() && !cm.identity))
+        });
+        if unset {
+            return Err(Error::failed_precondition(if kind == WriteKind::Update {
+                format!(
+                    "The value of generated primary key column `{}.{}` must be explicitly specified or else its non-key dependent columns must be specified in Update mutations.",
+                    tm.name, km.name
+                )
+            } else {
+                format!(
+                    "The value of generated primary key column `{}.{}` cannot be evaluated since value of all its dependent columns is not specified.",
+                    tm.name, km.name
+                )
+            }));
+        }
+    }
+    Ok(())
 }
 
 /// Evaluates the table's CHECK constraints when an evaluator is registered; without one they are

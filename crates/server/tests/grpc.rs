@@ -805,3 +805,156 @@ async fn property_graph_ddl_and_gql() {
         .into_inner();
     assert_eq!(rows(&names), vec![vec!["g".to_string()]]);
 }
+
+fn registry_size(env: &Env, what: &str) -> usize {
+    env.server
+        .emulator
+        .registry_sizes()
+        .into_iter()
+        .find(|(k, _)| *k == what)
+        .map_or(0, |(_, n)| n)
+}
+
+async fn get_session(env: &Env, name: &str) -> Result<pb::Session, tonic::Status> {
+    env.spanner()
+        .get_session(pb::GetSessionRequest { name: name.into() })
+        .await
+        .map(|r| r.into_inner())
+}
+
+fn assert_session_not_found(res: Result<impl std::fmt::Debug, tonic::Status>, name: &str) {
+    let err = res.expect_err("session should be gone");
+    assert_eq!(err.code(), Code::NotFound);
+    assert_eq!(err.message(), format!("Session not found: {name}"));
+}
+
+/// Sessions unused for an hour expire (multiplexed ones after 28 days), with the emulator's
+/// NOT_FOUND, and the sweeper drops them and their transactions without anyone naming them.
+#[tokio::test]
+async fn idle_sessions_expire() {
+    const MIN: std::time::Duration = std::time::Duration::from_secs(60);
+    let env = setup().await;
+    let idle = &env.server.emulator.idle;
+    let mut sp = env.spanner();
+    let stale = env.session(DB).await;
+    let used = env.session(DB).await;
+    let mux = sp
+        .create_session(pb::CreateSessionRequest {
+            database: DB.into(),
+            session: Some(pb::Session {
+                multiplexed: true,
+                ..Default::default()
+            }),
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner()
+        .name;
+
+    // Any RPC naming a session keeps it alive; an hour without one expires it.
+    idle.advance(59 * MIN);
+    sp.begin_transaction(pb::BeginTransactionRequest {
+        session: used.clone(),
+        options: Some(pb::TransactionOptions {
+            mode: Some(pb::transaction_options::Mode::ReadOnly(Default::default())),
+            ..Default::default()
+        }),
+        ..Default::default()
+    })
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+    idle.advance(2 * MIN);
+    assert_session_not_found(get_session(&env, &stale).await, &stale);
+    let begin = sp
+        .begin_transaction(pb::BeginTransactionRequest {
+            session: stale.clone(),
+            options: Some(Default::default()),
+            ..Default::default()
+        })
+        .await;
+    assert_session_not_found(begin, &stale);
+    get_session(&env, &used)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    get_session(&env, &mux)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let listed: Vec<String> = sp
+        .list_sessions(pb::ListSessionsRequest {
+            database: DB.into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"))
+        .into_inner()
+        .sessions
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(listed, vec![used.clone()]);
+
+    // The sweeper drops what nobody names again, with its transaction.
+    assert_eq!(registry_size(&env, "sessions"), 2);
+    assert_eq!(registry_size(&env, "txns"), 1);
+    idle.advance(61 * MIN);
+    assert_eq!(registry_size(&env, "sessions"), 2);
+    env.server.emulator.sweep();
+    assert_eq!(registry_size(&env, "sessions"), 1);
+    assert_eq!(registry_size(&env, "txns"), 0);
+    assert_session_not_found(get_session(&env, &used).await, &used);
+
+    // Multiplexed sessions last 28 days unused.
+    idle.advance(28 * 24 * 60 * MIN - 62 * MIN);
+    get_session(&env, &mux)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    idle.advance(28 * 24 * 60 * MIN + MIN);
+    env.server.emulator.sweep();
+    assert_eq!(registry_size(&env, "sessions"), 0);
+    assert_session_not_found(get_session(&env, &mux).await, &mux);
+}
+
+/// DeleteSession, DropDatabase and DeleteInstance remove sessions from the registry, and the
+/// sessions answer "Session not found" afterwards, as on the emulator.
+#[tokio::test]
+async fn sessions_go_with_their_database_and_instance() {
+    let env = setup().await;
+    let mut sp = env.spanner();
+    let deleted = env.session(DB).await;
+    sp.delete_session(pb::DeleteSessionRequest {
+        name: deleted.clone(),
+    })
+    .await
+    .unwrap_or_else(|e| panic!("{e}"));
+    assert_session_not_found(get_session(&env, &deleted).await, &deleted);
+    assert_eq!(registry_size(&env, "sessions"), 0);
+
+    let dropped = env.session(DB).await;
+    env.admin()
+        .drop_database(da::DropDatabaseRequest {
+            database: DB.into(),
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(registry_size(&env, "sessions"), 0);
+    assert_session_not_found(get_session(&env, &dropped).await, &dropped);
+
+    let other = "projects/p/instances/inst/databases/other";
+    env.admin()
+        .create_database(da::CreateDatabaseRequest {
+            parent: "projects/p/instances/inst".into(),
+            create_statement: "CREATE DATABASE other".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let in_instance = env.session(other).await;
+    InstanceAdminClient::new(env.channel.clone())
+        .delete_instance(ia::DeleteInstanceRequest {
+            name: "projects/p/instances/inst".into(),
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(registry_size(&env, "sessions"), 0);
+    assert_session_not_found(get_session(&env, &in_instance).await, &in_instance);
+}

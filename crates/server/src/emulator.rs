@@ -53,6 +53,59 @@ pub struct Session {
     pub creator_role: String,
     /// Regular sessions run one transaction at a time; beginning another retires the previous one.
     pub current_txn: Mutex<Option<u64>>,
+    /// When an RPC last named this session, in `IdleClock` milliseconds.
+    pub last_used: AtomicU64,
+}
+
+impl Session {
+    /// How long this session may go unused before it expires.
+    pub fn idle_limit(&self) -> Duration {
+        if self.multiplexed {
+            MULTIPLEXED_SESSION_IDLE
+        } else {
+            SESSION_IDLE
+        }
+    }
+
+    /// Unused for longer than its idle limit at `now` (`IdleClock` milliseconds).
+    pub fn expired(&self, now: u64) -> bool {
+        let idle = now.saturating_sub(self.last_used.load(Ordering::Relaxed));
+        u128::from(idle) > self.idle_limit().as_millis()
+    }
+
+    fn touch(&self, now: u64) {
+        self.last_used.fetch_max(now, Ordering::Relaxed);
+    }
+}
+
+/// Monotonic time for idle expiry of sessions and transactions, in milliseconds since start.
+/// Separate from the Spanner clock (`Emulator::clock`), which tests fix or move: pinning commit
+/// timestamps must not expire sessions.
+pub struct IdleClock {
+    start: Instant,
+    skew_ms: AtomicU64,
+}
+
+impl Default for IdleClock {
+    fn default() -> Self {
+        IdleClock {
+            start: Instant::now(),
+            skew_ms: AtomicU64::new(0),
+        }
+    }
+}
+
+impl IdleClock {
+    pub fn now(&self) -> u64 {
+        let elapsed = u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        elapsed.saturating_add(self.skew_ms.load(Ordering::Relaxed))
+    }
+
+    /// Moves idle time forward, so tests can expire sessions without waiting.
+    pub fn advance(&self, by: Duration) {
+        let ms = u64::try_from(by.as_millis()).unwrap_or(u64::MAX);
+        self.skew_ms.fetch_add(ms, Ordering::Relaxed);
+    }
 }
 
 pub enum TxnKind {
@@ -64,11 +117,13 @@ pub enum TxnKind {
 pub struct TxnEntry {
     pub session: String,
     pub kind: TxnKind,
-    pub created: Instant,
+    /// `IdleClock` milliseconds.
+    pub created: u64,
 }
 
 pub struct Emulator {
     pub clock: Arc<Clock>,
+    pub idle: IdleClock,
     instances: RwLock<BTreeMap<String, Arc<Instance>>>,
     sessions: DashMap<String, Arc<Session>>,
     txns: DashMap<u64, Arc<TxnEntry>>,
@@ -165,6 +220,12 @@ impl Operations {
 /// Transactions idle this long are dropped by the sweeper.
 pub const TXN_IDLE: Duration = Duration::from_secs(3600);
 
+/// Regular sessions unused this long expire, like the emulator's and Cloud Spanner's.
+pub const SESSION_IDLE: Duration = Duration::from_secs(3600);
+
+/// Multiplexed sessions unused this long expire: 28 days, like the emulator's and Cloud Spanner's.
+pub const MULTIPLEXED_SESSION_IDLE: Duration = Duration::from_secs(28 * 24 * 3600);
+
 impl Default for Emulator {
     fn default() -> Self {
         Emulator::new(default_engine(false))
@@ -178,6 +239,7 @@ impl Emulator {
             .map_or(0, |d| d.as_nanos() as u64);
         Emulator {
             clock: Arc::new(Clock::default()),
+            idle: IdleClock::default(),
             instances: RwLock::new(BTreeMap::new()),
             sessions: DashMap::new(),
             txns: DashMap::new(),
@@ -247,6 +309,8 @@ impl Emulator {
         for db in inst.databases.read().values() {
             db.db.mark_dropped();
         }
+        // Like the emulator: the instance's sessions go with it.
+        self.remove_sessions_under(&format!("{name}/databases/"));
         self.operations
             .lock()
             .remove_under(&format!("{name}/databases/"));
@@ -305,8 +369,7 @@ impl Emulator {
             return Ok(());
         };
         entry.db.mark_dropped();
-        let prefix = format!("{name}/sessions/");
-        self.sessions.retain(|k, _| !k.starts_with(&prefix));
+        self.remove_sessions_under(&format!("{name}/sessions/"));
         // Like the emulator: a dropped database's operations are gone (GetOperation: NOT_FOUND).
         self.operations
             .lock()
@@ -330,16 +393,33 @@ impl Emulator {
 
     pub fn add_session(&self, s: Session) -> Arc<Session> {
         let s = Arc::new(s);
+        s.touch(self.idle.now());
         self.sessions.insert(s.name.clone(), s.clone());
         s
     }
 
+    /// The session `name`, marked as used now. Every RPC that names a session looks it up here,
+    /// so any of them keeps it alive (the emulator does the same in `SessionManager::GetSession`).
     pub fn session(&self, name: &str) -> Result<Arc<Session>, Status> {
+        let not_found = || resource_not_found("Session", "google.spanner.v1.Session", name);
         let s = self
             .sessions
             .get(name)
             .map(|s| s.clone())
-            .ok_or_else(|| resource_not_found("Session", "google.spanner.v1.Session", name))?;
+            .ok_or_else(not_found)?;
+        let now = self.idle.now();
+        if s.expired(now) {
+            // Gone as soon as it expires, not only once the sweeper has run.
+            if self
+                .sessions
+                .remove_if(name, |_, s| s.expired(now))
+                .is_some()
+            {
+                self.txns.retain(|_, t| t.session != name);
+            }
+            return Err(not_found());
+        }
+        s.touch(now);
         if s.db.is_dropped() {
             return Err(database_not_found(&s.database));
         }
@@ -347,10 +427,11 @@ impl Emulator {
     }
 
     pub fn sessions_of(&self, database: &str) -> Vec<Arc<Session>> {
+        let now = self.idle.now();
         let mut v: Vec<Arc<Session>> = self
             .sessions
             .iter()
-            .filter(|s| s.database == database && !s.multiplexed)
+            .filter(|s| s.database == database && !s.multiplexed && !s.expired(now))
             .map(|s| s.clone())
             .collect();
         v.sort_by(|a, b| a.name.cmp(&b.name));
@@ -365,6 +446,12 @@ impl Emulator {
         Ok(())
     }
 
+    /// Drops every session whose name starts with `prefix`, and their transactions.
+    fn remove_sessions_under(&self, prefix: &str) {
+        self.sessions.retain(|k, _| !k.starts_with(prefix));
+        self.txns.retain(|_, t| !t.session.starts_with(prefix));
+    }
+
     // ---- transactions ----
 
     pub fn add_txn(&self, session: &Session, kind: TxnKind) -> u64 {
@@ -374,7 +461,7 @@ impl Emulator {
             Arc::new(TxnEntry {
                 session: session.name.clone(),
                 kind,
-                created: Instant::now(),
+                created: self.idle.now(),
             }),
         );
         if !session.multiplexed {
@@ -408,11 +495,17 @@ impl Emulator {
         }
     }
 
-    /// Drops transactions that clients never finished (read-only ones are never closed explicitly).
+    /// Drops sessions unused past their idle limit (clients that never delete theirs would
+    /// otherwise grow the registry without bound), and transactions that clients never finished
+    /// (read-only ones are never closed explicitly) or whose session is gone.
     pub fn sweep(&self) {
-        let now = Instant::now();
-        self.txns
-            .retain(|_, t| now.duration_since(t.created) < TXN_IDLE);
+        let now = self.idle.now();
+        self.sessions.retain(|_, s| !s.expired(now));
+        let txn_idle = TXN_IDLE.as_millis();
+        self.txns.retain(|_, t| {
+            u128::from(now.saturating_sub(t.created)) < txn_idle
+                && self.sessions.contains_key(&t.session)
+        });
     }
 
     /// Entry counts of the registries (soak tests).

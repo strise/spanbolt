@@ -84,6 +84,7 @@ impl SpannerService {
             labels: t.labels,
             creator_role: t.creator_role,
             current_txn: parking_lot::Mutex::new(None),
+            last_used: Default::default(),
         })
     }
 

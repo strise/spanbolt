@@ -18,6 +18,7 @@ insert W cols=Id,Body:
   [7, "word"]
   [8, "     "]
   [9, "one two three four five six seven eight"]
+  [10, "abcdefghijkl x y z w, then more words here"]
 
 case literal_issue
 query:
@@ -185,3 +186,87 @@ expect@spanner:
   columns: Id INT64, s JSON
   ["4","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
   ["9","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
+
+# How the width cut grows the snippet around the first match (row 9 single-spaced, row 10 a long
+# word before the match): whether a snippet of width - 1 characters fits, whether it keeps
+# growing to one side once the other side no longer fits, which match it starts from, and a match
+# at the end of the text.
+case width_exact_fit
+query:
+  SELECT Id, SNIPPET(Body, 'two', max_snippet_width => 14) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":8,\"start_position\":5}],\"snippet\":\"one two three\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":8}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
+
+case width_exact_fit_no_match
+query:
+  SELECT Id, SNIPPET(Body, 'zzz', max_snippet_width => 14) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[],\"snippet\":\"one two three\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
+
+case width_last_word
+query:
+  SELECT Id, SNIPPET(Body, 'eight', max_snippet_width => 12) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":12,\"start_position\":7}],\"snippet\":\"seven eight\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":6}],\"snippet\":\"eight\",\"source_begin\":35,\"source_end\":40}]}"]
+
+case width_last_word_wider
+query:
+  SELECT Id, SNIPPET(Body, 'eight', max_snippet_width => 13) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":12,\"start_position\":7}],\"snippet\":\"seven eight\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":12}],\"snippet\":\"seven eight\",\"source_begin\":29,\"source_end\":40}]}"]
+
+case width_left_blocked
+query:
+  SELECT Id, SNIPPET(Body, 'x', max_snippet_width => 12) AS s FROM W WHERE Id = 10
+expect:
+  columns: Id INT64, s JSON
+  ["10","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y z w\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["10","{\"snippets\":[]}"]
+
+case width_two_terms
+query:
+  SELECT Id, SNIPPET(Body, 'seven two', max_snippet_width => 20) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"two three four five\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":8}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8},{\"highlights\":[{\"begin\":5,\"end\":10}],\"snippet\":\"six seven\",\"source_begin\":25,\"source_end\":34}]}"]
+
+case width_punctuation
+query:
+  SELECT Id, SNIPPET(Body, 'then', max_snippet_width => 16) AS s FROM W WHERE Id = 10
+expect:
+  columns: Id INT64, s JSON
+  ["10","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":1}],\"snippet\":\"then more words\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["10","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":11}],\"snippet\":\"xyzw, then\",\"source_begin\":14,\"source_end\":27}]}"]
+
+case width_odd_sizes
+query:
+  SELECT Id, SNIPPET(Body, 'five', max_snippet_width => 19) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":1}],\"snippet\":\"five six seven\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":12,\"end\":16}],\"snippet\":\"three four five six\",\"source_begin\":9,\"source_end\":28}]}"]

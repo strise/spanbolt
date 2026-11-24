@@ -155,8 +155,44 @@ async fn errors_carry_details_only_when_there_are_some() {
 }
 
 #[tokio::test]
-async fn invalid_ddl_fails_the_request_and_applies_nothing() {
+async fn invalid_ddl_fails_the_operation_and_keeps_the_statements_before_it() {
     let r = rest().await;
+    let dup = "CREATE TABLE T (K INT64 NOT NULL) PRIMARY KEY (K)";
+    let new = "CREATE TABLE W (K INT64 NOT NULL) PRIMARY KEY (K)";
+    for (statements, kept) in [(vec![dup, new], 0), (vec![new, dup], 1)] {
+        let (status, body) = r.update_ddl(json!({ "statements": statements })).await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["done"], json!(true));
+        assert_eq!(
+            body["error"],
+            json!({"code": 9, "message": "Duplicate name in schema: T."})
+        );
+        let stamps = body["metadata"]["commitTimestamps"]
+            .as_array()
+            .map_or(0, Vec::len);
+        assert_eq!(stamps, kept, "{body}");
+    }
+    // A statement that doesn't parse still fails the request.
+    let (status, _) = r
+        .update_ddl(
+            json!({"statements": ["CREATE TABLE X (K INT64) PRIMARY KEY (K)", "CREATE TABEL X"]}),
+        )
+        .await;
+    assert_eq!(status, 400);
+    assert_eq!(
+        r.ddl().await,
+        vec![
+            TABLE_T.to_string(),
+            "CREATE TABLE W (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn invalid_ddl_fails_the_request_and_applies_nothing_in_emulator_compat() {
+    let mut emu = Emulator::default();
+    emu.emulator_compat = true;
+    let r = Rest::start(emu).await;
     let dup = "CREATE TABLE T (K INT64 NOT NULL) PRIMARY KEY (K)";
     let new = "CREATE TABLE W (K INT64 NOT NULL) PRIMARY KEY (K)";
     for statements in [vec![dup, new], vec![new, dup]] {

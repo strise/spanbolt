@@ -370,11 +370,18 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Duplicate name in schema: X.
+expect@spanner:
+  same
 get_ddl
 expect:
   statements:
   "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  Arr ARRAY<INT64>,\n) PRIMARY KEY(K)"
   "CREATE INDEX AByV ON A(V)"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  Arr ARRAY<INT64>,\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByV ON A(V)"
+  "CREATE TABLE X (\n  K INT64,\n) PRIMARY KEY(K)"
 
 
 # A filtered index can't drop the STORING column its WHERE clause filters on.

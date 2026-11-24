@@ -170,6 +170,12 @@ impl DbState {
                     return Ok(());
                 };
                 match m.values().find(|r| r[c].is_null()) {
+                    Some(r) if self.prod_messages => Err(Error::failed_precondition(format!(
+                        "Adding a NOT NULL constraint on a column {}.{} is not allowed because it has a NULL value at key: {}",
+                        tm.name,
+                        tm.columns[c].name,
+                        prod_key(&tm.pk.iter().map(|&c| r[c].clone()).collect::<Vec<_>>())
+                    ))),
                     Some(r) => Err(Error::failed_precondition(format!(
                         "Cannot specify a null value for column: {} in table: {} referenced by key: {}",
                         tm.columns[c].name,

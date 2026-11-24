@@ -122,6 +122,9 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: V in table: T referenced by key: {Int64(1)}
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Adding a NOT NULL constraint on a column T.V is not allowed because it has a NULL value at key: [1]
 
 case shrink_string_with_long_data
 schema:

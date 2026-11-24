@@ -85,21 +85,38 @@ impl Session {
 pub struct IdleClock {
     start: Instant,
     skew_ms: AtomicU64,
+    /// Elapsed milliseconds the clock stopped at (`freeze`), or `RUNNING`.
+    frozen_ms: AtomicU64,
 }
+
+const RUNNING: u64 = u64::MAX;
 
 impl Default for IdleClock {
     fn default() -> Self {
         IdleClock {
             start: Instant::now(),
             skew_ms: AtomicU64::new(0),
+            frozen_ms: AtomicU64::new(RUNNING),
         }
     }
 }
 
 impl IdleClock {
     pub fn now(&self) -> u64 {
-        let elapsed = u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let elapsed = match self.frozen_ms.load(Ordering::Relaxed) {
+            RUNNING => u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX - 1),
+            frozen => frozen,
+        };
         elapsed.saturating_add(self.skew_ms.load(Ordering::Relaxed))
+    }
+
+    /// Stops real time for this clock, so only `advance` moves it: tests that compare exact
+    /// idle ages need that.
+    pub fn freeze(&self) {
+        let elapsed = u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX - 1);
+        let _ =
+            self.frozen_ms
+                .compare_exchange(RUNNING, elapsed, Ordering::Relaxed, Ordering::Relaxed);
     }
 
     /// Moves idle time forward, so tests can expire sessions without waiting.

@@ -1091,6 +1091,8 @@ async fn approximate_last_use_time_moves_with_use() {
             t0.as_micros() + to * 60_000_000,
         )));
     };
+    // Only the test moves time: both clocks stand still between steps.
+    emu.idle.freeze();
     emu.clock.set(Some(t0));
     let s = env.session(DB).await;
     let mut sp = env.spanner();

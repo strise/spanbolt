@@ -132,6 +132,7 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 | `get_ddl` | – | `GetDatabaseDdl`; expects `statements:`. |
 | `get_operation op=NAME [meta]` | – | `GetOperation` on the operation saved by `ddl op=NAME`; expects `counts: [1]` (done). With `meta`: `counts: [done, failed, statements, commit_timestamps]` from its `UpdateDatabaseDdlMetadata`, or `[-1]` when the `UpdateDatabaseDdl` request itself failed. |
 | `get_database` | – | `GetDatabase`; expects the database's `version_retention_period` as a one-row result. |
+| `list_database_roles` | – | Pages through `ListDatabaseRoles`; expects one row per role, its name without the `<database>/databaseRoles/` prefix. |
 | `list_sessions [create=K] [page_size=N]` | – | Creates K sessions, then pages through `ListSessions`; expects `counts:` (sessions per page). |
 | `create_session session=S [multiplexed]` | – | `CreateSession`, saving the name under `S`. |
 | `get_session session=S [wait=D]` | – | Sleeps `D`, then `GetSession`; expects `counts: [1]` when `approximate_last_use_time` is at least 0.5 s after `create_time`, else `[0]`. |

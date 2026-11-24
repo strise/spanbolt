@@ -79,6 +79,10 @@ expect:
   statements:
   "CREATE TABLE T (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
   "CREATE CHANGE STREAM Cs FOR T"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs\n  FOR T"
 
 case add_then_drop_index
 schema:

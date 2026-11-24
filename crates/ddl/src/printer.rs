@@ -197,6 +197,13 @@ pub(crate) fn rdp_sql(r: &RowDeletionPolicy) -> String {
 }
 
 pub(crate) fn table_sql(t: &Table) -> String {
+    table_sql_ordered(t, false)
+}
+
+/// `CREATE TABLE`; with `checks_by_name`, the CHECK constraints in name order (case-insensitive,
+/// generated names included) as production's GetDatabaseDdl lists them, rather than in the order
+/// they were added, as the emulator does.
+fn table_sql_ordered(t: &Table, checks_by_name: bool) -> String {
     let mut s = format!("CREATE TABLE {} (\n", quote_path(&t.name));
     for c in &t.columns {
         s.push_str(&format!("  {},\n", column_sql(c)));
@@ -204,7 +211,11 @@ pub(crate) fn table_sql(t: &Table) -> String {
     for fk in &t.foreign_keys {
         s.push_str(&format!("  {},\n", fk_sql(fk)));
     }
-    for c in &t.checks {
+    let mut checks: Vec<&CheckConstraint> = t.checks.iter().collect();
+    if checks_by_name {
+        checks.sort_by_cached_key(|c| c.name.to_ascii_lowercase());
+    }
+    for c in checks {
         s.push_str(&format!("  {},\n", check_sql(c)));
     }
     if let Some(syn) = &t.synonym {
@@ -409,7 +420,7 @@ impl Schema {
             let Some(t) = self.tables.get(key) else {
                 continue;
             };
-            out.push(table_sql(t));
+            out.push(table_sql_ordered(t, access));
             let mut idx: Vec<(&str, String)> = self
                 .indexes
                 .values()
@@ -428,8 +439,23 @@ impl Schema {
                 out.extend(self.table_grants(t));
             }
         }
-        for o in self.opaque.iter().filter(|o| o.kind == "CHANGE STREAM") {
-            out.push(o.ddl.clone());
+        let mut streams: Vec<&OpaqueObject> = self
+            .opaque
+            .iter()
+            .filter(|o| o.kind == "CHANGE STREAM")
+            .collect();
+        if access {
+            // Production lists change streams by name and prints each over several lines.
+            streams.sort_by_cached_key(|o| o.name.to_ascii_lowercase());
+        }
+        for o in streams {
+            out.push(if access {
+                crate::parser::ChangeStream::parse(&o.ddl)
+                    .map(|cs| cs.to_ddl_production())
+                    .unwrap_or_else(|_| o.ddl.clone())
+            } else {
+                o.ddl.clone()
+            });
             if access {
                 let tvf = format!("READ_{}", o.name);
                 out.extend(self.object_grants(

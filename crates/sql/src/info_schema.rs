@@ -571,14 +571,16 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     out.push(vec![s(""), s(n), Value::Int64(0), s("")]);
                 }
             } else {
-                out.push(vec![s(""), s(""), Value::Int64(0), s("spanner_admin")]);
+                // Production's EFFECTIVE_TIMESTAMP is the commit time of the latest schema
+                // change, the same for the default schema and every named one; 0 before the
+                // first UpdateDatabaseDdl.
+                let effective = Value::Int64(schema.ddl_timestamp.unwrap_or(0));
+                out.push(vec![s(""), s(""), effective.clone(), s("spanner_admin")]);
                 for n in ["INFORMATION_SCHEMA", "SPANNER_SYS"] {
                     out.push(vec![s(""), s(n), Value::Null, s("spanner_system")]);
                 }
-                // Production's EFFECTIVE_TIMESTAMP of a named schema is not recorded; 0 as for
-                // the default schema.
                 for n in schema.schemas.values() {
-                    out.push(vec![s(""), s(n), Value::Int64(0), s("spanner_admin")]);
+                    out.push(vec![s(""), s(n), effective.clone(), s("spanner_admin")]);
                 }
             }
         }

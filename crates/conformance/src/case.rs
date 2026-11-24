@@ -31,6 +31,7 @@ pub enum Verb {
     GetOperation,
     ListDatabaseOperations,
     ListOperations,
+    ListDatabaseRoles,
     DropDatabase,
 }
 
@@ -431,6 +432,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
         "get_operation" => Verb::GetOperation,
         "list_database_operations" => Verb::ListDatabaseOperations,
         "list_operations" => Verb::ListOperations,
+        "list_database_roles" => Verb::ListDatabaseRoles,
         "drop_database" => Verb::DropDatabase,
         other => return Err(format!("unknown directive `{other}`")),
     };
@@ -470,6 +472,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
             | Verb::GetOperation
             | Verb::ListDatabaseOperations
             | Verb::ListOperations
+            | Verb::ListDatabaseRoles
             | Verb::DropDatabase
     );
     if wants_body && (!has_body || b.body.iter().all(|l| l.trim().is_empty())) {

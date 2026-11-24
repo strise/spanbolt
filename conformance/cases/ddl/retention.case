@@ -1,0 +1,183 @@
+# version_retention_period: GetDatabase, INFORMATION_SCHEMA.DATABASE_OPTIONS, validation and the
+# stale-read horizon. `<dbid>` is the case database's id.
+tags: ddl retention
+schema:
+  CREATE TABLE T (
+    K INT64,
+  ) PRIMARY KEY (K)
+
+case default_retention
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["1h"]
+query:
+  SELECT OPTION_NAME, OPTION_TYPE, OPTION_VALUE FROM INFORMATION_SCHEMA.DATABASE_OPTIONS
+  WHERE OPTION_NAME = 'version_retention_period'
+expect:
+  columns: OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+expect@spanner:
+  same
+
+case set_hours
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '2h')
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["2h"]
+query:
+  SELECT OPTION_NAME, OPTION_TYPE, OPTION_VALUE FROM INFORMATION_SCHEMA.DATABASE_OPTIONS
+  WHERE OPTION_NAME = 'version_retention_period'
+expect:
+  columns: OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+  ["version_retention_period","STRING","2h"]
+expect@spanner:
+  same
+
+case set_seconds_kept_as_written
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '3600s')
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["3600s"]
+
+case set_days
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '7d')
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["7d"]
+
+case reset_to_null
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '3d')
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = NULL)
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["1h"]
+query:
+  SELECT OPTION_NAME, OPTION_TYPE, OPTION_VALUE FROM INFORMATION_SCHEMA.DATABASE_OPTIONS
+  WHERE OPTION_NAME = 'version_retention_period'
+expect:
+  columns: OPTION_NAME STRING, OPTION_TYPE STRING, OPTION_VALUE STRING
+expect@spanner:
+  same
+
+case below_one_hour
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '59m')
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Option must be a value in the range [`1h`, `7d`].
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["1h"]
+
+case above_seven_days
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '8d')
+expect:
+  error: INVALID_ARGUMENT
+  message: Retention period must be less than 7 days: 8d
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Option must be a value in the range [`1h`, `7d`].
+get_database
+expect:
+  columns: version_retention_period STRING
+  [""]
+expect@spanner:
+  columns: version_retention_period STRING
+  ["1h"]
+
+case zero
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '0d')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid retention period: 0d
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Option must be a value in the range [`1h`, `7d`].
+
+case unparsable
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = 'abc')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid retention period: abc
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = 'abc') : Cannot parse 'abc' as a valid timestamp
+
+case uppercase_unit
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '1H')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid retention period: 1H
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '1H') : Cannot parse '1H' as a valid timestamp
+
+case compound_duration
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '1d2h')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid retention period: 1d2h
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '1d2h') : Cannot parse '1d2h' as a valid timestamp
+
+case not_a_string
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = 7)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = 7) : Unexpected value for option: version_retention_period. Supported values are non-empty strings only.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = 7) : Unexpected value for option: version_retention_period. Supported option value is string.
+
+case stale_read_within_longer_retention
+ddl:
+  ALTER DATABASE `<dbid>` SET OPTIONS (version_retention_period = '7d')
+query bound=exact_staleness:2h:
+  SELECT COUNT(*) FROM T
+expect:
+  columns: INT64
+  ["0"]
+expect@spanner:
+  same
+query bound=exact_staleness:144h:
+  SELECT COUNT(*) FROM T
+expect:
+  columns: INT64
+  ["0"]
+expect@spanner:
+  same

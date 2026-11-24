@@ -5,6 +5,7 @@ mod lexer;
 pub mod names;
 mod parser;
 mod printer;
+mod retention;
 mod schema;
 
 pub use apply::DataCheck;
@@ -14,6 +15,7 @@ pub use parser::{
     parse_statement_emulator_compat, quote_ident, quote_path, quote_string,
 };
 pub use printer::print_statement;
+pub use retention::{DEFAULT_VERSION_RETENTION, VERSION_RETENTION_PERIOD};
 pub use schema::*;
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]

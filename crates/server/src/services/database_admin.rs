@@ -20,13 +20,22 @@ pub struct DatabaseAdminService {
 
 const TYPE_PREFIX: &str = "type.googleapis.com/google.spanner.admin.database.v1.";
 
-fn to_proto(entry: &DatabaseEntry) -> da::Database {
+/// `emulator_compat`: the emulator leaves `version_retention_period` empty; production reports
+/// the option, or its default of one hour.
+fn to_proto(entry: &DatabaseEntry, emulator_compat: bool) -> da::Database {
+    let schema = &entry.db.latest().state.schema;
+    let version_retention_period = match schema.version_retention_option() {
+        _ if emulator_compat => String::new(),
+        Some(period) => period.to_string(),
+        None => "1h".into(),
+    };
+    let earliest = entry.db.earliest_version_time().max(entry.create_time);
     da::Database {
         name: entry.name.clone(),
         state: da::database::State::Ready as i32,
         create_time: Some(entry.create_time.to_proto()),
-        version_retention_period: "1h".into(),
-        earliest_version_time: Some(entry.create_time.to_proto()),
+        version_retention_period,
+        earliest_version_time: Some(earliest.to_proto()),
         database_dialect: da::DatabaseDialect::GoogleStandardSql as i32,
         ..Default::default()
     }
@@ -219,7 +228,7 @@ impl DatabaseAdmin for DatabaseAdminService {
             .databases
             .read()
             .values()
-            .map(|d| to_proto(d))
+            .map(|d| to_proto(d, self.emu.emulator_compat))
             .collect();
         let (databases, next_page_token) = page(
             all,
@@ -254,7 +263,7 @@ impl DatabaseAdmin for DatabaseAdminService {
             .map_err(DdlFailure::into_status)?;
             self.emu.new_database((*state.schema).clone())
         })?;
-        let proto = to_proto(&entry);
+        let proto = to_proto(&entry, self.emu.emulator_compat);
         let meta = da::CreateDatabaseMetadata {
             database: name.clone(),
         };
@@ -271,7 +280,7 @@ impl DatabaseAdmin for DatabaseAdminService {
         req: Request<da::GetDatabaseRequest>,
     ) -> Result<Response<da::Database>, Status> {
         let entry = self.emu.database(&req.get_ref().name)?;
-        Ok(Response::new(to_proto(&entry)))
+        Ok(Response::new(to_proto(&entry, self.emu.emulator_compat)))
     }
 
     async fn update_database(
@@ -283,7 +292,7 @@ impl DatabaseAdmin for DatabaseAdminService {
             .database
             .ok_or_else(|| Status::invalid_argument("Missing database"))?;
         let entry = self.emu.database(&spec.name)?;
-        let mut proto = to_proto(&entry);
+        let mut proto = to_proto(&entry, self.emu.emulator_compat);
         proto.enable_drop_protection = spec.enable_drop_protection;
         let meta = da::UpdateDatabaseMetadata {
             request: None,
@@ -345,7 +354,7 @@ impl DatabaseAdmin for DatabaseAdminService {
         let now = self.emu.clock.now();
         let result = entry.db.update_state(|s| {
             let failure = match apply_ddl(s, &req.statements, now) {
-                Ok(next) => return Ok(next),
+                Ok(next) => return Ok((next, req.statements.join("; "))),
                 Err(f) => f,
             };
             let (status, keep) = match failure {
@@ -361,7 +370,9 @@ impl DatabaseAdmin for DatabaseAdminService {
             if keep == 0 {
                 return Err(err);
             }
-            apply_ddl(s, &req.statements[..keep], now).map_err(|_| err)
+            apply_ddl(s, &req.statements[..keep], now)
+                .map(|next| (next, req.statements[..keep].join("; ")))
+                .map_err(|_| err)
         });
         if let Some(e) = schema_error {
             return Err(e);

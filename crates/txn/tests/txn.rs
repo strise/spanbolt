@@ -502,3 +502,68 @@ fn statement_timestamp_fits_a_commit_timestamp_column() {
             .starts_with("Cannot write timestamps in the future")
     );
 }
+
+fn with_retention(db: &Database, period: &str) {
+    db.update_schema(|s| {
+        let mut s = (*s.schema).clone();
+        s.options
+            .push(("version_retention_period".into(), format!("'{period}'")));
+        Ok(s)
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+}
+
+#[test]
+fn version_retention_period_sets_the_stale_read_horizon() {
+    let db = db();
+    let clock = db.clock().clone();
+    let start = clock.now();
+    clock.set(Some(start));
+    let t1 = commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v1")])
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(db.version_retention(), Duration::from_secs(3600));
+    with_retention(&db, "2d");
+    assert_eq!(db.version_retention(), Duration::from_secs(2 * 86_400));
+    // Three hours later the first commit is still readable, which the default hour would refuse.
+    clock.set(Some(Timestamp::from_micros(
+        start.as_micros() + 3 * 3600 * 1_000_000,
+    )));
+    let v = db
+        .snapshot(TimestampBound::ReadTimestamp(t1))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(v.ts, t1);
+    assert!(db.earliest_version_time() < t1);
+    // Back to the default: the same read is past the horizon.
+    db.update_schema(|s| {
+        let mut s = (*s.schema).clone();
+        s.options.clear();
+        Ok(s)
+    })
+    .unwrap_or_else(|e| panic!("{e}"));
+    let stale = db.snapshot(TimestampBound::ReadTimestamp(t1));
+    assert!(matches!(stale, Err(e) if e.code == Code::FailedPrecondition));
+    clock.set(None);
+}
+
+#[test]
+fn schema_change_abort_names_the_change() {
+    let db = db();
+    let a = ReadWriteTxn::new(db.clone());
+    a.read(|c| Ok((table_target(c)?, (key(1)).clone())))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let muts = [put(&db, 1, "x")];
+    let ddl = "ALTER DATABASE db SET OPTIONS (version_retention_period = '2h')";
+    let ts = db
+        .update_state(|s| {
+            let mut sch = (*s.schema).clone();
+            sch.version += 1;
+            Ok((s.with_schema(sch)?, ddl.to_string()))
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
+    let err = a.commit(&a.catalog(), &muts).err();
+    assert_eq!(err.as_ref().map(|e| e.code), Some(Code::Aborted));
+    let msg = err.map(|e| e.message).unwrap_or_default();
+    assert!(msg.contains("concurrent schema change"), "{msg}");
+    assert!(msg.contains(&ts.to_rfc3339()), "{msg}");
+    assert!(msg.ends_with(ddl), "{msg}");
+}

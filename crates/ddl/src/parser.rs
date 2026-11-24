@@ -1220,6 +1220,9 @@ impl<'a> Parser<'a> {
                         self.src
                     )));
                 }
+                if k.eq_ignore_ascii_case(crate::retention::VERSION_RETENTION_PERIOD) {
+                    crate::retention::check_option(self.src, v, self.emulator)?;
+                }
             }
             return Ok(Statement::AlterDatabase { options, name });
         }

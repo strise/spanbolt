@@ -27,8 +27,12 @@ expect:
   columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_SCHEMA STRING, UNIQUE_CONSTRAINT_NAME STRING
   ["","fk_ref_val","other_schema","IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
   ["","fk_ref_val_2","other_schema","IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_SCHEMA STRING, UNIQUE_CONSTRAINT_NAME STRING
+  ["","fk_ref_val","other_schema","IDX_referenced_table_unique_val_U_D60AC6CF8E211785"]
+  ["","fk_ref_val_2","other_schema","IDX_referenced_table_unique_val_U_D60AC6CF8E211785"]
 query:
-  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_TYPE FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE != 'CHECK' AND TABLE_SCHEMA != 'INFORMATION_SCHEMA' ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_TYPE FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE != 'CHECK' AND TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
 expect:
   columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_TYPE STRING
   ["","PK_referring_table","","referring_table","PRIMARY KEY"]
@@ -38,8 +42,16 @@ expect:
   ["other_schema","PK_referenced_table","other_schema","referenced_table","PRIMARY KEY"]
   ["","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","UNIQUE"]
   ["","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","UNIQUE"]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_TYPE STRING
+  ["","PK_referring_table","","referring_table","PRIMARY KEY"]
+  ["","fk_ref_val","","referring_table","FOREIGN KEY"]
+  ["","PK_referring_table_2","","referring_table_2","PRIMARY KEY"]
+  ["","fk_ref_val_2","","referring_table_2","FOREIGN KEY"]
+  ["other_schema","IDX_referenced_table_unique_val_U_D60AC6CF8E211785","other_schema","referenced_table","UNIQUE"]
+  ["other_schema","PK_referenced_table","other_schema","referenced_table","PRIMARY KEY"]
 query:
-  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, POSITION_IN_UNIQUE_CONSTRAINT FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA' ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, POSITION_IN_UNIQUE_CONSTRAINT FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION
 expect:
   columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64, POSITION_IN_UNIQUE_CONSTRAINT INT64
   ["","PK_referring_table","","referring_table","id","1",null]
@@ -49,8 +61,16 @@ expect:
   ["","IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","unique_val","1",null]
   ["","IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","unique_val","1",null]
   ["other_schema","PK_referenced_table","other_schema","referenced_table","id","1",null]
+expect@spanner:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64, POSITION_IN_UNIQUE_CONSTRAINT INT64
+  ["","PK_referring_table","","referring_table","id","1",null]
+  ["","fk_ref_val","","referring_table","ref_val","1","1"]
+  ["","PK_referring_table_2","","referring_table_2","id","1",null]
+  ["","fk_ref_val_2","","referring_table_2","ref_val","1","1"]
+  ["other_schema","IDX_referenced_table_unique_val_U_D60AC6CF8E211785","other_schema","referenced_table","unique_val","1",null]
+  ["other_schema","PK_referenced_table","other_schema","referenced_table","id","1",null]
 query:
-  SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_SCHEMA, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA' AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME
+  SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_SCHEMA, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE WHERE TABLE_SCHEMA NOT IN ('INFORMATION_SCHEMA', 'SPANNER_SYS') AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME
 expect:
   columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
   ["","referring_table","","PK_referring_table"]
@@ -60,10 +80,23 @@ expect:
   ["other_schema","referenced_table","","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
   ["other_schema","referenced_table","","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
   ["other_schema","referenced_table","other_schema","PK_referenced_table"]
+expect@spanner:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
+  ["","referring_table","","PK_referring_table"]
+  ["","referring_table_2","","PK_referring_table_2"]
+  ["other_schema","referenced_table","","fk_ref_val"]
+  ["other_schema","referenced_table","","fk_ref_val_2"]
+  ["other_schema","referenced_table","other_schema","IDX_referenced_table_unique_val_U_D60AC6CF8E211785"]
+  ["other_schema","referenced_table","other_schema","PK_referenced_table"]
 query:
   SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, INDEX_TYPE, IS_UNIQUE, SPANNER_IS_MANAGED FROM INFORMATION_SCHEMA.INDEXES WHERE TABLE_SCHEMA = 'other_schema' ORDER BY INDEX_NAME
 expect:
   columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, INDEX_NAME STRING, INDEX_TYPE STRING, IS_UNIQUE BOOL, SPANNER_IS_MANAGED BOOL
   ["other_schema","referenced_table","IDX_referenced_table_unique_val_U_6279FBB6083F67DA","INDEX",true,true]
+  ["other_schema","referenced_table","PRIMARY_KEY","PRIMARY_KEY",true,false]
+  ["other_schema","referenced_table","referenced_table_unique_val_idx","INDEX",true,false]
+expect@spanner:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, INDEX_NAME STRING, INDEX_TYPE STRING, IS_UNIQUE BOOL, SPANNER_IS_MANAGED BOOL
+  ["other_schema","referenced_table","IDX_referenced_table_unique_val_U_D60AC6CF8E211785","INDEX",true,true]
   ["other_schema","referenced_table","PRIMARY_KEY","PRIMARY_KEY",true,false]
   ["other_schema","referenced_table","referenced_table_unique_val_idx","INDEX",true,false]

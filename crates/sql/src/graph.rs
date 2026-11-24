@@ -132,9 +132,12 @@ fn element_table(
         .as_ref()
         .and_then(|t| t.full_name.clone().or_else(|| t.name.clone()))
         .ok_or_else(|| Error::internal("graph element table without a table"))?;
-    let table_id = storage
-        .table_id(&table)
-        .ok_or_else(|| Error::not_found(format!("Table not found: {table}")))?;
+    // The analyser has resolved the name, so a scan that isn't a stored table reads a view.
+    let table_id = storage.table_id(&table).ok_or_else(|| {
+        unimplemented(format!(
+            "Property graph element tables over views ({table})"
+        ))
+    })?;
     let width = storage.table(table_id).columns.len();
     let mut layout = vec![-1; width];
     let cols = scan

@@ -732,6 +732,23 @@ impl Schema {
                         )));
                     }
                 }
+                // A key column of an index keeps its nullability, unique or not; STORING
+                // columns and NULL_FILTERED indexes don't count (emulator and production agree).
+                if old.not_null != column.not_null
+                    && let Some(ix) = self.indexes.values().find(|ix| {
+                        !ix.null_filtered
+                            && ix.table.eq_ignore_ascii_case(&tname)
+                            && ix
+                                .key
+                                .iter()
+                                .any(|p| p.column.eq_ignore_ascii_case(&column.name))
+                    })
+                {
+                    return Err(pre(format!(
+                        "Changing NOT NULL constraints on column {} is not allowed because it affects index {}.",
+                        old.name, ix.name
+                    )));
+                }
                 validate_column(&tname, column)?;
                 let mut new = column.clone();
                 new.name = old.name.clone();

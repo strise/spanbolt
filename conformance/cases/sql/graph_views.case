@@ -20,14 +20,22 @@ ddl:
   CREATE PROPERTY GRAPH Social NODE TABLES (ActivePerson KEY (Id) LABEL Person PROPERTIES (Id, Name)) EDGE TABLES (KnowsView KEY (Id) SOURCE KEY (Src) REFERENCES ActivePerson (Id) DESTINATION KEY (Dst) REFERENCES ActivePerson (Id) LABEL Knows PROPERTIES (Id))
 expect:
   ok
+expect@spanner:
+  same
 query:
   GRAPH Social MATCH (a:Person)-[k:Knows]->(b:Person) RETURN a.Name AS a, b.Name AS b ORDER BY a
 expect:
   columns: a STRING, b STRING
   ["Ola","Kari"]
+expect@spanner:
+  same
 query:
   GRAPH Social MATCH (p:Person) RETURN p.Id AS id ORDER BY id
 expect:
   columns: id STRING
   ["p2"]
   ["p1"]
+expect@spanner:
+  columns: id STRING
+  ["p1"]
+  ["p2"]

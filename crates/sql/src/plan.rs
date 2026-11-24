@@ -1253,7 +1253,11 @@ impl<'c> Planner<'c> {
                 if is_search && self.search.forced_index.is_none() {
                     self.search.forced_index = Some(name.to_string());
                 }
-                if name.eq_ignore_ascii_case("_BASE_TABLE") || is_search {
+                // Production also takes the undocumented PRIMARY_KEY for the base table; the
+                // emulator rejects it (GoogleCloudPlatform/cloud-spanner-emulator#214).
+                let primary_key =
+                    !self.opts.emulator_compat && name.eq_ignore_ascii_case("PRIMARY_KEY");
+                if name.eq_ignore_ascii_case("_BASE_TABLE") || primary_key || is_search {
                     Some(None)
                 } else {
                     let ix = storage
@@ -2085,9 +2089,11 @@ impl<'c> Planner<'c> {
                     .r#type
                     .as_ref()
                     .ok_or_else(|| Error::internal("literal without type"))?;
-                // The emulator's query validator: a NULL ARRAY<STRUCT> literal, as in
-                // `CASE ... ELSE NULL END` around an array of structs.
-                if v.value.as_ref().is_none_or(|x| x.value.is_none())
+                // The emulator's query validator rejects any NULL ARRAY<STRUCT> literal, as in
+                // `CASE ... ELSE NULL END`. Production rejects only result columns that can be a
+                // NULL ARRAY<STRUCT>, wherever the NULL comes from, and not yet in spanbolt.
+                if self.opts.emulator_compat
+                    && v.value.as_ref().is_none_or(|x| x.value.is_none())
                     && crate::struct_shape::is_struct_array(tp)
                 {
                     return Err(Error::new(

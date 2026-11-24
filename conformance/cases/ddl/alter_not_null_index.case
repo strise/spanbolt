@@ -12,24 +12,40 @@ schema:
     B INT64,
     C INT64 NOT NULL,
     D INT64,
+    E INT64 NOT NULL,
   ) PRIMARY KEY (Id);
   CREATE INDEX TByAB ON T(A, B);
-  CREATE INDEX TStoring ON T(Id) STORING (C, D)
+  CREATE INDEX TStoring ON T(Id) STORING (C, D);
+  CREATE NULL_FILTERED INDEX TByE ON T(E)
 ddl:
   ALTER TABLE T ALTER COLUMN A INT64
 expect:
   error: FAILED_PRECONDITION
   message: Changing NOT NULL constraints on column A is not allowed because it affects index TByAB.
+expect@spanner:
+  same
 ddl:
   ALTER TABLE T ALTER COLUMN B INT64 NOT NULL
 expect:
   error: FAILED_PRECONDITION
   message: Changing NOT NULL constraints on column B is not allowed because it affects index TByAB.
+expect@spanner:
+  same
 ddl:
   ALTER TABLE T ALTER COLUMN C INT64
 expect:
   ok
+expect@spanner:
+  same
 ddl:
   ALTER TABLE T ALTER COLUMN D INT64 NOT NULL
 expect:
   ok
+expect@spanner:
+  same
+ddl:
+  ALTER TABLE T ALTER COLUMN E INT64
+expect:
+  ok
+expect@spanner:
+  same

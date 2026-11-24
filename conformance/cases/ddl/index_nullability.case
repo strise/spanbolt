@@ -1,0 +1,57 @@
+# Changing a column's NOT NULL is refused while an index covers it (production and the emulator).
+tags: ddl
+schema:
+  CREATE TABLE Foo (
+    K INT64 NOT NULL,
+    Bar INT64,
+    Baz INT64 NOT NULL,
+    Qux INT64,
+    Stored INT64,
+  ) PRIMARY KEY (K);
+  CREATE UNIQUE INDEX FooByBar ON Foo(Bar);
+  CREATE UNIQUE INDEX FooByBaz ON Foo(Baz);
+  CREATE INDEX FooByQux ON Foo(Qux) STORING (Stored);
+  CREATE UNIQUE NULL_FILTERED INDEX FooByQuxNf ON Foo(Qux)
+
+case unique_index_add_not_null
+ddl:
+  ALTER TABLE Foo ALTER COLUMN Bar INT64 NOT NULL
+expect:
+  error: FAILED_PRECONDITION
+  message: Changing NOT NULL constraints on column Bar is not allowed because it affects index FooByBar.
+expect@spanner:
+  same
+
+case unique_index_drop_not_null
+ddl:
+  ALTER TABLE Foo ALTER COLUMN Baz INT64
+expect:
+  error: FAILED_PRECONDITION
+  message: Changing NOT NULL constraints on column Baz is not allowed because it affects index FooByBaz.
+expect@spanner:
+  same
+
+case non_unique_index_add_not_null
+ddl:
+  DROP INDEX FooByQuxNf
+ddl:
+  ALTER TABLE Foo ALTER COLUMN Qux INT64 NOT NULL
+expect:
+  error: FAILED_PRECONDITION
+  message: Changing NOT NULL constraints on column Qux is not allowed because it affects index FooByQux.
+expect@spanner:
+  same
+
+case null_filtered_index_add_not_null
+ddl:
+  DROP INDEX FooByQux
+ddl:
+  ALTER TABLE Foo ALTER COLUMN Qux INT64 NOT NULL
+
+case storing_column_add_not_null
+ddl:
+  ALTER TABLE Foo ALTER COLUMN Stored INT64 NOT NULL
+
+case unique_index_same_nullability
+ddl:
+  ALTER TABLE Foo ALTER COLUMN Baz INT64 NOT NULL

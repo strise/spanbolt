@@ -165,7 +165,11 @@ impl Engine {
     fn plan(&self, cat: &SqlCatalog, sql: &str, params_json: &str) -> Result<Prepared> {
         let stmt = crate::analyze::statement(cat, sql, params_json).map_err(|e| {
             // Only Cloud Spanner has DEBUG_TOKENLIST. It prints production's token lists, and
-            // spanbolt's follow the emulator's format, so there is nothing faithful to print.
+            // spanbolt's follow the emulator's format, so there is nothing faithful to print:
+            // TOKEN, TOKENIZE_BOOL, TOKENIZE_NUMBER and TOKENIZE_JSON lists hold no values here,
+            // the NUMBER range tree and the JSON path encoding are undocumented, and prod's
+            // fulltext tokens differ (it joins runs of single letters: "b c" is one token, bc).
+            // Kept UNIMPLEMENTED on purpose (#65).
             if !self.opts.emulator_compat
                 && e.code == spanbolt_storage::Code::InvalidArgument
                 && e.message

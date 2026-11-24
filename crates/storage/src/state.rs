@@ -386,11 +386,9 @@ impl DbState {
                 )));
             }
             let added = |c: usize| mapping[c].is_none();
-            let fill = tm
-                .columns
-                .iter()
-                .enumerate()
-                .any(|(c, cm)| added(c) && (cm.default.is_some() || cm.stored || cm.identity));
+            let fill = tm.columns.iter().enumerate().any(|(c, cm)| {
+                added(c) && (cm.default.is_some() || cm.expr.is_some() || cm.identity)
+            });
             let mut map = RowMap::new();
             for (_, row) in self.tables[old_id].iter() {
                 let mut new_row: Vec<Value> = mapping
@@ -983,14 +981,10 @@ impl Writer {
                 }
                 if tm.computed {
                     let regenerate = crate::expr::expr_evaluator().is_some()
-                        || tm.columns.iter().any(|cm| {
-                            cm.stored
-                                && cm.expr.as_deref().is_some_and(|e| {
-                                    columns
-                                        .iter()
-                                        .any(|&c| crate::expr::mentions(e, &tm.columns[c].name))
-                                })
-                        });
+                        || tm
+                            .generated_order
+                            .iter()
+                            .any(|&g| tm.inputs[g].iter().any(|c| columns.contains(c)));
                     crate::expr::compute_row(tm, &mut new_row, &|_| false, &|_| regenerate)?;
                     crate::expr::check_row(tm, &new_row, &|| pk_debug(tm, &new_row))?;
                 }

@@ -248,7 +248,15 @@ impl DbState {
                     if ev.eval(&ck.expr, tm, r, &ColumnType::Bool, Timestamp::system_now())?
                         == Value::Bool(false)
                     {
-                        // OUT_OF_RANGE, as for the same violation in a mutation.
+                        if self.prod_messages {
+                            return Err(Error::failed_precondition(format!(
+                                "Check constraint data validation error: Check constraint `{}` on table `{}` is violated for key: {}.",
+                                ck.name,
+                                tm.name,
+                                prod_check_key(&pk_values(tm, r), ",")
+                            )));
+                        }
+                        // The emulator: OUT_OF_RANGE, as for the same violation in a mutation.
                         return Err(Error::new(
                             Code::OutOfRange,
                             format!(
@@ -578,17 +586,46 @@ fn entry_pk(im: &IndexMeta, tm: &TableMeta, entry: &[Value]) -> Vec<Value> {
 
 /// A key as production Spanner prints it in constraint errors: `[10,1]`.
 fn prod_key(values: &[Value]) -> String {
-    let parts: Vec<String> = values
+    format!("[{}]", prod_key_parts(values).join(","))
+}
+
+/// A key as production Spanner prints it in CHECK violations: `(10, x)` for a write, `(10,x)` when
+/// `ADD CONSTRAINT` validates existing rows.
+fn prod_check_key(values: &[Value], sep: &str) -> String {
+    format!("({})", prod_key_parts(values).join(sep))
+}
+
+/// Key parts as production Spanner prints them: STRING and BYTES C-escaped (`it\'s`, `\001`),
+/// NULL as `<null>`.
+fn prod_key_parts(values: &[Value]) -> Vec<String> {
+    values
         .iter()
         .map(|v| match v {
             Value::Null => "<null>".to_string(),
             Value::Bool(b) => b.to_string(),
             Value::Int64(i) => i.to_string(),
-            Value::String(s) => s.to_string(),
+            Value::String(s) => {
+                let mut out = String::with_capacity(s.len());
+                crate::wire::c_escape(&mut out, s);
+                out
+            }
+            Value::Bytes(b) => crate::wire::c_escape_bytes(b),
             other => format!("{other:?}"),
         })
-        .collect();
-    format!("[{}]", parts.join(","))
+        .collect()
+}
+
+/// The key in a CHECK violation from a write: the emulator's `{Int64(1)}` or production's `(1)`.
+fn check_key_debug(prod: bool, tm: &TableMeta, row: &[Value]) -> String {
+    if prod {
+        prod_check_key(&pk_values(tm, row), ", ")
+    } else {
+        pk_debug(tm, row)
+    }
+}
+
+fn pk_values(tm: &TableMeta, row: &[Value]) -> Vec<Value> {
+    tm.pk.iter().map(|&c| row[c].clone()).collect()
 }
 
 fn index_row(im: &IndexMeta, row: &[Value]) -> Row {
@@ -707,13 +744,22 @@ impl Mutation {
     }
 }
 
-/// Decodes a wire point key, which must have one part per key column.
+/// Decodes a wire point key, which must have one part per key column. `prod_messages` words a
+/// wrong number of parts as production Spanner does, with the key as JSON.
 pub fn decode_point_key(
     list: &prost_types::ListValue,
     types: &[ColumnType],
     name: &str,
+    prod_messages: bool,
 ) -> Result<Vec<Value>> {
     if list.values.len() != types.len() {
+        if prod_messages {
+            return Err(Error::failed_precondition(format!(
+                "Wrong number of key parts for {name}. Expected: {}. Got: {}",
+                types.len(),
+                crate::wire::list_json(list)
+            )));
+        }
         let mut e = crate::key::wrong_parts(name, types.len(), list.values.len());
         e.message.push_str(" Supplied key: ");
         e.message.push_str(&crate::wire::list_short_debug(list));
@@ -1072,12 +1118,45 @@ impl Writer {
                     crate::expr::compute_row(tm, &mut new_row, self.now, &|_| false, &|_| {
                         regenerate
                     })?;
-                    crate::expr::check_row(tm, &new_row, self.now, &|| pk_debug(tm, &new_row))?;
+                    let prod = self.state.prod_messages;
+                    crate::expr::check_row(tm, &new_row, self.now, &|| {
+                        check_key_debug(prod, tm, &new_row)
+                    })?;
                 }
                 self.put_row(t, key, Some(old), Arc::from(new_row))
             }
             WriteKind::Insert | WriteKind::Replace => {
                 if let Some(_old) = existing {
+                    if kind == WriteKind::Insert && self.state.prod_messages {
+                        let vals: Vec<Value> = match &computed_row {
+                            Some(row) => pk_values(tm, row),
+                            None => key_pos
+                                .iter()
+                                .map(|p| p.map_or(Value::Null, |p| values[p].clone()))
+                                .collect(),
+                        };
+                        // A row this transaction wrote earlier is a different error.
+                        let here = self
+                            .written
+                            .iter()
+                            .any(|(tg, k)| *tg == Target::Table(t) && *k == key);
+                        return Err(if here {
+                            Error::invalid_argument(format!(
+                                "Row {} in {} was already inserted in this transaction.",
+                                prod_key(&vals),
+                                tm.name
+                            ))
+                        } else {
+                            Error::constraint(
+                                Code::AlreadyExists,
+                                format!(
+                                    "Row {} in table {} already exists",
+                                    prod_key(&vals),
+                                    tm.name
+                                ),
+                            )
+                        });
+                    }
                     if kind == WriteKind::Insert {
                         return Err(Error::constraint(
                             Code::AlreadyExists,
@@ -1121,7 +1200,10 @@ impl Writer {
                             self.check_value(tm, c, &new_row[c])?;
                         }
                     }
-                    crate::expr::check_row(tm, &new_row, self.now, &|| pk_debug(tm, &new_row))?;
+                    let prod = self.state.prod_messages;
+                    crate::expr::check_row(tm, &new_row, self.now, &|| {
+                        check_key_debug(prod, tm, &new_row)
+                    })?;
                 }
                 self.check_parent(tm, &new_row)?;
                 self.put_row(t, key, None, Arc::from(new_row))

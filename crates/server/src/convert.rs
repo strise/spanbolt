@@ -47,11 +47,13 @@ pub fn spanner_type(t: &ColumnType) -> pb::Type {
     }
 }
 
-/// `name` (table or index) is used in key-arity errors.
+/// `name` (table or index) is used in key-arity errors, worded as production Spanner does with
+/// `prod_messages`.
 pub fn keyset(
     ks: Option<&pb::KeySet>,
     types: &[ColumnType],
     name: &str,
+    prod_messages: bool,
 ) -> spanbolt_storage::Result<KeySet> {
     let Some(ks) = ks else {
         return Ok(KeySet::default());
@@ -61,7 +63,8 @@ pub fn keyset(
     }
     let mut out = KeySet::default();
     for k in &ks.keys {
-        out.keys.push(decode_point_key(k, types, name)?);
+        out.keys
+            .push(decode_point_key(k, types, name, prod_messages)?);
     }
     use pb::key_range::{EndKeyType, StartKeyType};
     for r in &ks.ranges {

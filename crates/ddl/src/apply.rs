@@ -742,9 +742,12 @@ impl Schema {
             }
             match t.column(&k.column) {
                 None => {
+                    // Production Spanner starts this one in lowercase.
                     return Err(pre(format!(
-                        "Table {} references nonexistent key column {}.",
-                        t.name, k.column
+                        "{} {} references nonexistent key column {}.",
+                        if compat { "Table" } else { "table" },
+                        t.name,
+                        k.column
                     )));
                 }
                 Some(c) if not_keyable(&c.ty) => {

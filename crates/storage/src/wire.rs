@@ -214,6 +214,29 @@ pub fn short_debug(v: &prost_types::Value) -> String {
 }
 
 /// Protobuf `ShortDebugString` of a `google.protobuf.ListValue`.
+/// A wire list as compact JSON, as production Spanner echoes a key: `["1","a",null,true]`.
+pub fn list_json(l: &prost_types::ListValue) -> String {
+    fn json(v: &prost_types::Value) -> serde_json::Value {
+        match &v.kind {
+            None | Some(Kind::NullValue(_)) => serde_json::Value::Null,
+            Some(Kind::BoolValue(b)) => serde_json::Value::Bool(*b),
+            Some(Kind::NumberValue(n)) => serde_json::Number::from_f64(*n)
+                .map_or(serde_json::Value::Null, serde_json::Value::Number),
+            Some(Kind::StringValue(s)) => serde_json::Value::String(s.clone()),
+            Some(Kind::ListValue(l)) => {
+                serde_json::Value::Array(l.values.iter().map(json).collect())
+            }
+            Some(Kind::StructValue(st)) => serde_json::Value::Object(
+                st.fields
+                    .iter()
+                    .map(|(k, v)| (k.clone(), json(v)))
+                    .collect(),
+            ),
+        }
+    }
+    serde_json::Value::Array(l.values.iter().map(json).collect()).to_string()
+}
+
 pub fn list_short_debug(l: &prost_types::ListValue) -> String {
     let mut out = String::new();
     write_list_body(&mut out, l);
@@ -275,7 +298,28 @@ fn write_value(out: &mut String, v: &prost_types::Value) {
     }
 }
 
-fn c_escape(out: &mut String, s: &str) {
+/// absl's `CEscape` of raw bytes: the usual escapes, printable ASCII as is, every other byte as
+/// three octal digits.
+pub(crate) fn c_escape_bytes(b: &[u8]) -> String {
+    let mut out = String::with_capacity(b.len());
+    for &c in b {
+        match c {
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            b'\t' => out.push_str("\\t"),
+            b'"' => out.push_str("\\\""),
+            b'\'' => out.push_str("\\'"),
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7e => out.push(c as char),
+            c => {
+                let _ = write!(out, "\\{c:03o}");
+            }
+        }
+    }
+    out
+}
+
+pub(crate) fn c_escape(out: &mut String, s: &str) {
     for c in s.chars() {
         match c {
             '\n' => out.push_str("\\n"),

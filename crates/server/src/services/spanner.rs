@@ -287,7 +287,7 @@ impl SpannerService {
         let catalog = txn.catalog();
         let muts = mutations
             .iter()
-            .map(|m| mutation(&catalog, m))
+            .map(|m| mutation(&catalog, m, !self.emu.emulator_compat))
             .collect::<Result<Vec<_>, _>>()?;
         txn.commit(&catalog, &muts).map_err(to_status)
     }
@@ -304,7 +304,10 @@ fn read_target(
     if index.is_empty() {
         let tm = cat.table(t);
         let types = tm.key_types();
-        return Ok((Target::Table(t), convert::keyset(ks, &types, &tm.name)?));
+        return Ok((
+            Target::Table(t),
+            convert::keyset(ks, &types, &tm.name, !emulator_compat)?,
+        ));
     }
     let ix = cat.index_id(index).ok_or_else(|| {
         Error::not_found(if emulator_compat {
@@ -324,7 +327,10 @@ fn read_target(
     }
     let tm = cat.table(t);
     let types: Vec<_> = im.key.iter().map(|&c| tm.columns[c].ty.clone()).collect();
-    Ok((Target::Index(ix), convert::keyset(ks, &types, &im.name)?))
+    Ok((
+        Target::Index(ix),
+        convert::keyset(ks, &types, &im.name, !emulator_compat)?,
+    ))
 }
 
 /// Collects a whole result (unary Read).
@@ -494,7 +500,8 @@ fn project(
     Ok(())
 }
 
-fn mutation(cat: &Catalog, m: &pb::Mutation) -> Result<Mutation, Status> {
+/// `prod_messages` words key errors as production Spanner does.
+fn mutation(cat: &Catalog, m: &pb::Mutation, prod_messages: bool) -> Result<Mutation, Status> {
     use pb::mutation::Operation as Op;
     let write =
         |kind, w: &pb::mutation::Write| Mutation::write(cat, kind, &w.table, &w.columns, &w.values);
@@ -505,7 +512,7 @@ fn mutation(cat: &Catalog, m: &pb::Mutation) -> Result<Mutation, Status> {
         Some(Op::Replace(w)) => write(WriteKind::Replace, w),
         Some(Op::Delete(d)) => cat.lookup_table(&d.table).and_then(|t| {
             let tm = cat.table(t);
-            let ks = convert::keyset(d.key_set.as_ref(), &tm.key_types(), &tm.name)?;
+            let ks = convert::keyset(d.key_set.as_ref(), &tm.key_types(), &tm.name, prod_messages)?;
             Mutation::delete(cat, &d.table, ks)
         }),
         Some(_) => return Err(unimplemented("Queue mutations (send/ack)")),

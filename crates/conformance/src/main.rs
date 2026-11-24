@@ -1,11 +1,10 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use spanbolt_conformance::case::{self, Case, Corpus, Oracle, SpannerExpect, Step};
-use spanbolt_conformance::observe;
+use spanbolt_conformance::case::{self, Case, Corpus, Oracle, SpannerExpect};
+use spanbolt_conformance::record::{Disagreement, Recorder};
 use spanbolt_conformance::report::{self, Report, Status};
 use spanbolt_conformance::runner::{CaseRun, SpannerOracle, Target};
 
@@ -162,8 +161,14 @@ fn select<'a>(corpus: &'a Corpus, c: &Common) -> Vec<&'a Case> {
         .collect()
 }
 
-/// Runs the non-skipped cases in parallel; results keep the input order.
-async fn run_all(target: Arc<Target>, cases: &[&Case], jobs: usize) -> Vec<Option<CaseRun>> {
+/// Runs the non-skipped cases in parallel; results keep the input order. `on_done` sees each case as
+/// it finishes (on this task, one at a time), so `record` can save it before the run ends.
+async fn run_all(
+    target: Arc<Target>,
+    cases: &[&Case],
+    jobs: usize,
+    mut on_done: impl FnMut(&Case, &CaseRun),
+) -> Vec<Option<CaseRun>> {
     let sem = Arc::new(tokio::sync::Semaphore::new(jobs.max(1)));
     let mut set = tokio::task::JoinSet::new();
     for (i, case) in cases.iter().enumerate() {
@@ -195,7 +200,10 @@ async fn run_all(target: Arc<Target>, cases: &[&Case], jobs: usize) -> Vec<Optio
         };
         let Some(r) = r else { break };
         match r {
-            Ok((i, run)) => out[i] = Some(run),
+            Ok((i, run)) => {
+                on_done(cases[i], &run);
+                out[i] = Some(run);
+            }
             Err(e) => eprintln!("case task failed: {e}"),
         }
         done += 1;
@@ -254,53 +262,9 @@ async fn record(r: RecordArgs) -> Result<ExitCode, String> {
     let c = r.common;
     let (corpus, target) = prepare(&c).await?;
     let cases = select(&corpus, &c);
-    let runs = run_all(target, &cases, c.jobs).await;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or_default();
-    let mut per_file: BTreeMap<usize, Vec<(&Step, Vec<String>)>> = BTreeMap::new();
-    let (mut recorded, mut problems) = (0, 0);
-    for (case, run) in cases.iter().zip(&runs) {
-        let Some(run) = run else { continue };
-        if let Err(e) = &run.setup {
-            eprintln!("SETUP {}: {}", case.name, e.message);
-            problems += 1;
-            continue;
-        }
-        let mut updates = Vec::new();
-        let mut ok = true;
-        for (step, obs) in case.steps.iter().zip(&run.steps) {
-            match obs {
-                Err(e) => {
-                    eprintln!("ERROR {} line {}: {e}", case.name, step.line + 1);
-                    ok = false;
-                }
-                Ok(obs) => {
-                    if obs.is_ok() && step.expect.is_none() {
-                        continue;
-                    }
-                    let obs = obs
-                        .clone()
-                        .with_placeholders(now)
-                        .merge_manual(step.expect.as_ref());
-                    updates.push((step, obs.to_lines()));
-                }
-            }
-        }
-        if !ok {
-            problems += 1;
-            continue;
-        }
-        recorded += 1;
-        per_file.entry(case.file).or_default().extend(updates);
-    }
-    for (file, updates) in per_file {
-        let f = &corpus.files[file];
-        let mut text = case::rewrite(&f.lines, &updates).join("\n");
-        text.push('\n');
-        std::fs::write(&f.path, text).map_err(|e| format!("{}: {e}", f.path.display()))?;
-    }
+    let mut rec = Recorder::new(&corpus, Oracle::Emulator, unix_now());
+    run_all(target, &cases, c.jobs, |case, run| rec.finish(case, run)).await;
+    let (recorded, problems) = (rec.recorded, rec.problems);
     eprintln!("recorded {recorded} cases, {problems} with setup or harness problems");
     Ok(if problems == 0 {
         ExitCode::SUCCESS
@@ -312,7 +276,7 @@ async fn record(r: RecordArgs) -> Result<ExitCode, String> {
 async fn check(a: CheckArgs) -> Result<ExitCode, String> {
     let (corpus, target) = prepare(&a.common).await?;
     let cases = select(&corpus, &a.common);
-    let runs = run_all(target, &cases, a.common.jobs).await;
+    let runs = run_all(target, &cases, a.common.jobs, |_, _| {}).await;
     let results = cases
         .iter()
         .zip(&runs)
@@ -351,35 +315,6 @@ fn unix_now() -> i64 {
         .unwrap_or_default()
 }
 
-/// One step where real Spanner and the emulator expectation disagree.
-struct Disagreement {
-    case: String,
-    line: usize,
-    sql: String,
-    emulator: Vec<String>,
-    spanner: Vec<String>,
-}
-
-impl Disagreement {
-    fn markdown(&self) -> String {
-        let block = |lines: &[String]| {
-            if lines.is_empty() {
-                "(no expectation: must succeed)".to_string()
-            } else {
-                lines.join("\n")
-            }
-        };
-        format!(
-            "### `{}` (line {})\n\n```sql\n{}\n```\n\nEmulator:\n\n```text\n{}\n```\n\nSpanner:\n\n```text\n{}\n```\n",
-            self.case,
-            self.line,
-            self.sql.trim_end(),
-            block(&self.emulator),
-            block(&self.spanner),
-        )
-    }
-}
-
 fn disagreement_report(title: &str, items: &[Disagreement]) -> String {
     let mut out = format!("# {title}\n\n{} steps disagree.\n\n", items.len());
     for d in items {
@@ -411,76 +346,9 @@ async fn record_spanner(r: RecordArgs) -> Result<ExitCode, String> {
         cases.iter().filter(|c| c.skip.is_none()).count(),
         r.db_log.display()
     );
-    let runs = run_all(target, &cases, c.jobs).await;
-    let now = unix_now();
-    let mut per_file: BTreeMap<usize, Vec<(&Step, Vec<String>)>> = BTreeMap::new();
-    let mut disagreements = Vec::new();
-    let (mut recorded, mut problems) = (0, 0);
-    for (case, run) in cases.iter().zip(&runs) {
-        let Some(run) = run else { continue };
-        if let Err(e) = &run.setup {
-            eprintln!("SETUP {}: {}", case.name, e.message);
-            problems += 1;
-            continue;
-        }
-        let mut updates = Vec::new();
-        let mut found = Vec::new();
-        let mut ok = true;
-        for (step, obs) in case.steps.iter().zip(&run.steps) {
-            let obs = match obs {
-                Err(e) => {
-                    eprintln!("ERROR {} line {}: {e}", case.name, step.line + 1);
-                    ok = false;
-                    continue;
-                }
-                Ok(obs) => obs,
-            };
-            let agrees = match &step.expect {
-                None => obs.is_ok(),
-                Some(exp) => observe::compare(exp, obs, report::ordered(step)).is_ok(),
-            };
-            if agrees {
-                if step.expect.is_some() || step.expect_spanner.is_some() {
-                    updates.push((step, vec!["same".to_string()]));
-                }
-                continue;
-            }
-            let previous = match &step.expect_spanner {
-                Some(SpannerExpect::Differs(o)) => Some(o),
-                _ => step.expect.as_ref(),
-            };
-            let lines = obs
-                .clone()
-                .with_placeholders(now)
-                .merge_manual(previous)
-                .to_lines();
-            found.push(Disagreement {
-                case: case.name.clone(),
-                line: step.line + 1,
-                sql: step.body.join("\n"),
-                emulator: step
-                    .expect
-                    .as_ref()
-                    .map(|e| e.to_lines())
-                    .unwrap_or_default(),
-                spanner: lines.clone(),
-            });
-            updates.push((step, lines));
-        }
-        if !ok {
-            problems += 1;
-            continue;
-        }
-        recorded += 1;
-        disagreements.extend(found);
-        per_file.entry(case.file).or_default().extend(updates);
-    }
-    for (file, updates) in per_file {
-        let f = &corpus.files[file];
-        let mut text = case::rewrite_spanner(&f.lines, &updates).join("\n");
-        text.push('\n');
-        std::fs::write(&f.path, text).map_err(|e| format!("{}: {e}", f.path.display()))?;
-    }
+    let mut rec = Recorder::new(&corpus, Oracle::Spanner, unix_now());
+    run_all(target, &cases, c.jobs, |case, run| rec.finish(case, run)).await;
+    let (recorded, problems, disagreements) = (rec.recorded, rec.problems, rec.disagreements);
     for d in &disagreements {
         eprintln!("DIFFERS {} line {}", d.case, d.line);
     }

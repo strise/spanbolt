@@ -1,0 +1,587 @@
+# DDL forms Spanner accepts that are easy to miss: optional COLUMN, PRIMARY KEY inside the table
+# body, IF [NOT] EXISTS on more statements, ALTER SEARCH INDEX; and INTERLEAVE IN (without PARENT)
+# with ON DELETE, which Spanner rejects.
+tags: ddl
+schema:
+  CREATE TABLE A (
+    K INT64 NOT NULL,
+    V STRING(MAX),
+    W INT64,
+    T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,
+    U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,
+  ) PRIMARY KEY (K);
+  CREATE SEARCH INDEX AS1 ON A(T)
+
+case add_without_column
+ddl:
+  ALTER TABLE A ADD X INT64 NOT NULL DEFAULT (0)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  X INT64 NOT NULL DEFAULT (0),\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case add_without_column_if_not_exists
+ddl:
+  ALTER TABLE A ADD IF NOT EXISTS W INT64
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER TABLE A ADD IF NOT EXISTS W INT64 : Syntax error on line 1, column 19: Encountered 'IF' while parsing: identifier
+expect@spanner:
+  same
+
+case drop_without_column
+ddl:
+  ALTER TABLE A DROP W
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case drop_without_column_missing
+ddl:
+  ALTER TABLE A DROP Nope
+expect:
+  error: NOT_FOUND
+  message: Column not found in table A: Nope
+expect@spanner:
+  same
+
+case alter_without_column
+ddl:
+  ALTER TABLE A ALTER W INT64 NOT NULL
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64 NOT NULL,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_without_column_set_default
+ddl:
+  ALTER TABLE A ALTER W SET DEFAULT (7)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64 DEFAULT (7),\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_without_column_drop_default
+ddl:
+  ALTER TABLE A ALTER W SET DEFAULT (7);
+  ALTER TABLE A ALTER W DROP DEFAULT
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case add_constraint_still_parses
+ddl:
+  ALTER TABLE A ADD CONSTRAINT CkW CHECK (W > 0);
+  ALTER TABLE A ADD CHECK (W < 100)
+insert A cols=K,W:
+  [1, 0]
+expect:
+  error: OUT_OF_RANGE
+  message: Check constraint `A`.`CkW` is violated for key {Int64(1)}
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Check constraint `A`.`CkW` is violated for key (1)
+
+case pk_on_column
+ddl:
+  CREATE TABLE X (Id INT64 NOT NULL PRIMARY KEY, V STRING(MAX))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case pk_on_nullable_column
+ddl:
+  CREATE TABLE X (Id INT64 PRIMARY KEY, V STRING(MAX))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id INT64,\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case pk_on_column_after_default
+ddl:
+  CREATE TABLE X (Id INT64 DEFAULT (1) PRIMARY KEY)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id INT64 DEFAULT (1),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case pk_on_column_with_options
+ddl:
+  CREATE TABLE X (Id TIMESTAMP NOT NULL PRIMARY KEY OPTIONS (allow_commit_timestamp = true))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id TIMESTAMP NOT NULL OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case pk_element
+ddl:
+  CREATE TABLE X (Id INT64, V STRING(MAX), PRIMARY KEY (Id, V DESC))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id INT64,\n  V STRING(MAX),\n) PRIMARY KEY(Id, V DESC)"
+expect@spanner:
+  same
+
+case pk_element_first
+ddl:
+  CREATE TABLE X (PRIMARY KEY (Id), Id INT64)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id INT64,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case pk_element_empty
+ddl:
+  CREATE TABLE X (Id INT64, PRIMARY KEY ())
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  Id INT64,\n) PRIMARY KEY()"
+expect@spanner:
+  same
+
+case pk_element_interleave
+ddl:
+  CREATE TABLE X (K INT64 NOT NULL, Id INT64 NOT NULL, PRIMARY KEY (K, Id)), INTERLEAVE IN PARENT A ON DELETE CASCADE
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE X (\n  K INT64 NOT NULL,\n  Id INT64 NOT NULL,\n) PRIMARY KEY(K, Id),\n  INTERLEAVE IN PARENT A ON DELETE CASCADE"
+expect@spanner:
+  same
+
+case pk_element_and_trailing
+ddl:
+  CREATE TABLE X (Id INT64, PRIMARY KEY (Id)) PRIMARY KEY (Id)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (Id INT64, PRIMARY KEY (Id)) PRIMARY KEY (Id) : Can only specify PRIMARY KEY once.
+expect@spanner:
+  same
+
+case pk_two_columns
+ddl:
+  CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64 PRIMARY KEY)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64 PRIMARY KEY) : Multiple columns declared as PRIMARY KEY
+expect@spanner:
+  same
+
+case pk_column_and_element
+ddl:
+  CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64, PRIMARY KEY (J))
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64, PRIMARY KEY (J)) : Can only specify PRIMARY KEY once.
+expect@spanner:
+  same
+
+case pk_column_and_trailing
+ddl:
+  CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64) PRIMARY KEY (J)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (Id INT64 PRIMARY KEY, J INT64) PRIMARY KEY (J) : Can only specify PRIMARY KEY once.
+expect@spanner:
+  same
+
+case pk_two_elements
+ddl:
+  CREATE TABLE X (Id INT64, PRIMARY KEY (Id), PRIMARY KEY (Id))
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (Id INT64, PRIMARY KEY (Id), PRIMARY KEY (Id)) : Can only specify PRIMARY KEY once.
+expect@spanner:
+  same
+
+case pk_missing_column
+ddl:
+  CREATE TABLE X (Id INT64, PRIMARY KEY (Nope))
+expect:
+  error: FAILED_PRECONDITION
+  message: Table X references nonexistent key column Nope.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: table X references nonexistent key column Nope.
+
+case pk_on_column_in_alter
+ddl:
+  ALTER TABLE A ADD COLUMN X INT64 PRIMARY KEY
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER TABLE A ADD COLUMN X INT64 PRIMARY KEY : Unexpected PRIMARY KEY clause
+expect@spanner:
+  same
+
+case alter_table_if_exists_missing
+ddl:
+  ALTER TABLE IF EXISTS Nope ADD COLUMN X INT64
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_table_if_exists_present
+ddl:
+  ALTER TABLE IF EXISTS A ADD COLUMN X INT64
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  X INT64,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_table_if_exists_missing_drop
+ddl:
+  ALTER TABLE IF EXISTS Nope DROP COLUMN X
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_table_if_exists_present_error
+ddl:
+  ALTER TABLE IF EXISTS A DROP COLUMN Nope
+expect:
+  error: NOT_FOUND
+  message: Column not found in table A: Nope
+expect@spanner:
+  same
+
+case change_stream_if_not_exists
+ddl:
+  CREATE CHANGE STREAM S FOR ALL;
+  CREATE CHANGE STREAM IF NOT EXISTS S FOR A;
+  CREATE CHANGE STREAM IF NOT EXISTS S2 FOR A
+query:
+  SELECT CHANGE_STREAM_NAME, `ALL` FROM INFORMATION_SCHEMA.CHANGE_STREAMS ORDER BY CHANGE_STREAM_NAME
+expect:
+  columns: CHANGE_STREAM_NAME STRING, ALL BOOL
+  ["S",true]
+  ["S2",false]
+expect@spanner:
+  same
+
+case search_index_if_not_exists_existing
+ddl:
+  CREATE SEARCH INDEX IF NOT EXISTS AS1 ON A(U)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE SEARCH INDEX IF NOT EXISTS AS1 ON A(U) : Syntax error on line 1, column 21: Encountered 'IF' while parsing: identifier
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case search_index_if_not_exists_new
+ddl:
+  CREATE SEARCH INDEX IF NOT EXISTS AS2 ON A(U)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE SEARCH INDEX IF NOT EXISTS AS2 ON A(U) : Syntax error on line 1, column 21: Encountered 'IF' while parsing: identifier
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_search_index_add_column
+ddl:
+  ALTER SEARCH INDEX AS1 ADD COLUMN U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD COLUMN U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T, U)"
+
+case alter_search_index_add_stored_column
+ddl:
+  ALTER SEARCH INDEX AS1 ADD STORED COLUMN V
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD STORED COLUMN V : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T) STORING (V)"
+
+case alter_search_index_drop_stored_column
+ddl:
+  ALTER SEARCH INDEX AS1 ADD STORED COLUMN V
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD STORED COLUMN V : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+ddl:
+  ALTER SEARCH INDEX AS1 DROP STORED COLUMN V
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 DROP STORED COLUMN V : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_search_index_drop_column
+ddl:
+  ALTER SEARCH INDEX AS1 ADD COLUMN U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD COLUMN U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+ddl:
+  ALTER SEARCH INDEX AS1 DROP COLUMN U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 DROP COLUMN U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+expect@spanner:
+  same
+
+case alter_search_index_drop_last_column
+ddl:
+  ALTER SEARCH INDEX AS1 DROP COLUMN T
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 DROP COLUMN T : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop the only key T in search index AS1. You can use DROP SEARCH INDEX to completely drop this search index.
+
+case alter_search_index_add_existing_column
+ddl:
+  ALTER SEARCH INDEX AS1 ADD COLUMN T
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD COLUMN T : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Index AS1 specifies key column T twice.
+
+case alter_search_index_add_missing_column
+ddl:
+  ALTER SEARCH INDEX AS1 ADD COLUMN Nope
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD COLUMN Nope : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index AS1 specifies key column Nope which does not exist in the index's base table.
+
+case alter_search_index_add_non_tokenlist
+ddl:
+  ALTER SEARCH INDEX AS1 ADD COLUMN W
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD COLUMN W : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot alter non-TOKENLIST key column W in search index AS1. You can use STORED COLUMN in ALTER SEARCH INDEX statement if you want to modify a stored column in this search index.
+
+case alter_search_index_drop_unindexed_column
+ddl:
+  ALTER SEARCH INDEX AS1 DROP COLUMN U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 DROP COLUMN U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: NOT_FOUND
+  message: Column not found in table AS1: U
+
+case alter_search_index_add_stored_twice
+ddl:
+  ALTER SEARCH INDEX AS1 ADD STORED COLUMN V
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD STORED COLUMN V : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+ddl:
+  ALTER SEARCH INDEX AS1 ADD STORED COLUMN V
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD STORED COLUMN V : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Index AS1 specifies stored column V twice.
+
+case alter_search_index_drop_missing_stored
+ddl:
+  ALTER SEARCH INDEX AS1 DROP STORED COLUMN V
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 DROP STORED COLUMN V : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: NOT_FOUND
+  message: Column not found in table AS1: V
+
+case alter_search_index_missing
+ddl:
+  ALTER SEARCH INDEX Nope ADD COLUMN U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX Nope ADD COLUMN U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: NOT_FOUND
+  message: Index not found: Nope
+
+case alter_search_index_without_column_keyword
+ddl:
+  ALTER SEARCH INDEX AS1 ADD U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD U : Syntax error on line 1, column 24: Encountered 'ADD' while parsing: alter_search_index_statement
+
+case alter_search_index_used_by_search
+ddl:
+  ALTER SEARCH INDEX AS1 ADD COLUMN U
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: ALTER SEARCH INDEX AS1 ADD COLUMN U : Syntax error on line 1, column 7: Encountered 'SEARCH' while parsing: alter_statement
+expect@spanner:
+  ok
+insert A cols=K,V:
+  [1, "hello world"]
+query:
+  SELECT K FROM A WHERE SEARCH(U, 'hello')
+expect:
+  columns: K INT64
+  ["1"]
+expect@spanner:
+  same
+
+case interleave_in_on_delete_cascade
+ddl:
+  CREATE TABLE C (K INT64 NOT NULL, C INT64 NOT NULL) PRIMARY KEY (K, C), INTERLEAVE IN A ON DELETE CASCADE
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot SET ON DELETE on an INTERLEAVE IN table C.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table C uses INTERLEAVE IN and ON DELETE, which is not allowed since there is no parent/child relationship between rows of the two tables. Did you mean to use INTERLEAVE IN PARENT?
+
+case interleave_in_on_delete_no_action
+ddl:
+  CREATE TABLE C (K INT64 NOT NULL, C INT64 NOT NULL) PRIMARY KEY (K, C), INTERLEAVE IN A ON DELETE NO ACTION
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot SET ON DELETE on an INTERLEAVE IN table C.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: table C uses INTERLEAVE IN and ON DELETE, which is not allowed since there is no parent/child relationship between rows of the two tables. Did you mean to use INTERLEAVE IN PARENT?
+
+case interleave_in_set_on_delete
+ddl:
+  CREATE TABLE C (K INT64 NOT NULL, C INT64 NOT NULL) PRIMARY KEY (K, C), INTERLEAVE IN A;
+  ALTER TABLE C SET ON DELETE CASCADE
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot SET ON DELETE on an INTERLEAVE IN table C.
+expect@spanner:
+  same
+
+case interleave_in_without_on_delete
+ddl:
+  CREATE TABLE C (K INT64 NOT NULL, C INT64 NOT NULL) PRIMARY KEY (K, C), INTERLEAVE IN A
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n  W INT64,\n  T TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n  U TOKENLIST AS (TOKENIZE_FULLTEXT(V)) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE SEARCH INDEX AS1 ON A(T)"
+  "CREATE TABLE C (\n  K INT64 NOT NULL,\n  C INT64 NOT NULL,\n) PRIMARY KEY(K, C),\n  INTERLEAVE IN A"
+expect@spanner:
+  same

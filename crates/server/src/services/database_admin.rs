@@ -108,7 +108,7 @@ fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
                 .map_err(to_status);
         }
         Statement::CreateTable { table, .. } => (&table.name, None),
-        Statement::AlterTable { table, action } => match action {
+        Statement::AlterTable { table, action, .. } => match action {
             AlterTable::AddColumn { column, .. } | AlterTable::AlterColumn { column } => {
                 (table, Some(column.name.as_str()))
             }
@@ -177,7 +177,12 @@ fn apply_schema(
     emulator_compat: bool,
 ) -> Result<Vec<DataCheck>, Status> {
     let ddl = |e: spanbolt_ddl::DdlError| to_status(e.into());
-    let stmt = spanbolt_ddl::parse_statement(sql).map_err(ddl)?;
+    let stmt = if emulator_compat {
+        spanbolt_ddl::parse_statement_emulator_compat(sql)
+    } else {
+        spanbolt_ddl::parse_statement(sql)
+    }
+    .map_err(ddl)?;
     let checks = schema.data_checks(&stmt);
     for check in &checks {
         if let DataCheck::TableEmpty { message, .. } = check

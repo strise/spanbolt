@@ -8,12 +8,27 @@ pub(crate) struct Parser<'a> {
     src: &'a str,
     toks: Vec<Token>,
     pos: usize,
+    /// Follow the official emulator's grammar where it differs from production Spanner.
+    emulator: bool,
+    /// Set by `column_rest_in` when the column carries `PRIMARY KEY`.
+    column_pk: bool,
 }
 
 type R<T> = Result<T, DdlError>;
 
 pub fn parse_statement(sql: &str) -> R<Statement> {
+    parse(sql, false)
+}
+
+/// `parse_statement` with the official emulator's grammar (`--emulator-compat`), which lacks
+/// some production statements (ALTER SEARCH INDEX) and words some errors differently.
+pub fn parse_statement_emulator_compat(sql: &str) -> R<Statement> {
+    parse(sql, true)
+}
+
+fn parse(sql: &str, emulator: bool) -> R<Statement> {
     let mut p = Parser::new(sql)?;
+    p.emulator = emulator;
     let stmt = p.statement()?;
     p.expect_eof()?;
     Ok(stmt)
@@ -40,6 +55,8 @@ impl<'a> Parser<'a> {
             src,
             toks: tokenize(src)?,
             pos: 0,
+            emulator: false,
+            column_pk: false,
         })
     }
 
@@ -148,6 +165,18 @@ impl<'a> Parser<'a> {
             self.toks[self.pos].start,
             &format!("Expecting '{}' but found '{}'", what, self.found()),
         )
+    }
+
+    /// An error about the whole statement, in the emulator's wording.
+    fn statement_error(&self, msg: &str) -> DdlError {
+        DdlError::Syntax(format!(
+            "Error parsing Spanner DDL statement: {} : {msg}",
+            self.src
+        ))
+    }
+
+    fn pk_once(&self) -> DdlError {
+        self.statement_error("Can only specify PRIMARY KEY once.")
     }
 
     fn encountered(&self, what: &str) -> DdlError {
@@ -482,14 +511,15 @@ impl<'a> Parser<'a> {
             });
         }
         if self.eat_kws(&["CHANGE", "STREAM"]) {
+            let if_not_exists = self.if_not_exists();
             let name = self.path()?;
             let cs = self.change_stream_body(ChangeStream::new(name))?;
-            return Ok(opaque(
-                "CHANGE STREAM",
-                &cs.name.clone(),
-                cs.to_ddl(),
-                false,
-            ));
+            let mut ddl = cs.to_ddl();
+            if if_not_exists {
+                // `apply` reads IF NOT EXISTS back from the text and stores the canonical form.
+                ddl = ddl.replacen("CHANGE STREAM ", "CHANGE STREAM IF NOT EXISTS ", 1);
+            }
+            return Ok(opaque("CHANGE STREAM", &cs.name.clone(), ddl, false));
         }
         if self.eat_kw("ROLE") {
             let name = self.ident()?;
@@ -535,9 +565,20 @@ impl<'a> Parser<'a> {
             row_deletion_policy: None,
             synonym: None,
         };
+        // A PRIMARY KEY given inside the parentheses, on a column or as an element.
+        let mut inline_pk: Option<Vec<KeyPart>> = None;
+        let mut pk_column = false;
         self.expect_sym("(")?;
         while !self.eat_sym(")") {
-            if self.is_kw("CONSTRAINT")
+            if self.is_kw("PRIMARY") && self.kw_at(1, "KEY") {
+                self.bump();
+                self.bump();
+                let key = self.key_parts()?;
+                if inline_pk.is_some() {
+                    return Err(self.pk_once());
+                }
+                inline_pk = Some(key);
+            } else if self.is_kw("CONSTRAINT")
                 || (self.is_kw("FOREIGN") && self.kw_at(1, "KEY"))
                 || (self.is_kw("CHECK") && matches!(self.tok_at(1), Tok::Sym("(")))
             {
@@ -551,14 +592,35 @@ impl<'a> Parser<'a> {
                 table.synonym = Some(self.path()?);
                 self.expect_sym(")")?;
             } else {
-                table.columns.push(self.column_def()?);
+                let col = self.column_def()?;
+                if std::mem::take(&mut self.column_pk) {
+                    if pk_column {
+                        return Err(
+                            self.statement_error("Multiple columns declared as PRIMARY KEY")
+                        );
+                    }
+                    if inline_pk.is_some() {
+                        return Err(self.pk_once());
+                    }
+                    pk_column = true;
+                    inline_pk = Some(vec![KeyPart {
+                        column: col.name.clone(),
+                        order: SortOrder::Asc,
+                    }]);
+                }
+                table.columns.push(col);
             }
             if !self.eat_sym(",") {
                 self.expect_sym(")")?;
                 break;
             }
         }
-        if matches!(self.tok(), Tok::Eof) {
+        if let Some(key) = inline_pk {
+            if self.is_kw("PRIMARY") {
+                return Err(self.pk_once());
+            }
+            table.primary_key = key;
+        } else if matches!(self.tok(), Tok::Eof) {
             // No PRIMARY KEY: the emulator keys the table on a hidden identity column.
             table.columns.push(Column {
                 name: ROWID_COLUMN.into(),
@@ -581,19 +643,31 @@ impl<'a> Parser<'a> {
                 table,
                 if_not_exists,
             });
+        } else {
+            self.expect_kw("PRIMARY")?;
+            self.expect_kw("KEY")?;
+            table.primary_key = self.key_parts()?;
         }
-        self.expect_kw("PRIMARY")?;
-        self.expect_kw("KEY")?;
-        table.primary_key = self.key_parts()?;
         while self.eat_sym(",") {
             if self.eat_kw("INTERLEAVE") {
                 self.expect_kw("IN")?;
                 let in_parent = self.eat_kw("PARENT");
                 let parent = self.path()?;
-                let on_delete = self.on_delete()?.unwrap_or(OnDelete::NoAction);
+                let on_delete = self.on_delete()?;
+                if on_delete.is_some() && !in_parent {
+                    // Rows of an INTERLEAVE IN table have no parent row to follow.
+                    let t = &table.name;
+                    return Err(DdlError::Syntax(if self.emulator {
+                        format!("Cannot SET ON DELETE on an INTERLEAVE IN table {t}.")
+                    } else {
+                        format!(
+                            "table {t} uses INTERLEAVE IN and ON DELETE, which is not allowed since there is no parent/child relationship between rows of the two tables. Did you mean to use INTERLEAVE IN PARENT?"
+                        )
+                    }));
+                }
                 table.interleave = Some(Interleave {
                     parent,
-                    on_delete,
+                    on_delete: on_delete.unwrap_or(OnDelete::NoAction),
                     in_parent,
                 });
             } else if self.is_kw("ROW") {
@@ -738,6 +812,10 @@ impl<'a> Parser<'a> {
                 let expr = self.paren_text()?;
                 let stored = self.eat_kw("STORED");
                 col.generated = Some(Generated::Expr { expr, stored });
+            } else if self.is_kw("PRIMARY") && self.kw_at(1, "KEY") {
+                self.bump();
+                self.bump();
+                self.column_pk = true;
             } else if self.eat_kw("HIDDEN") {
                 col.hidden = true;
                 options_seen = true;
@@ -1011,9 +1089,41 @@ impl<'a> Parser<'a> {
 
     fn alter(&mut self) -> R<Statement> {
         if self.eat_kw("TABLE") {
+            let if_exists = self.if_exists();
             let table = self.path()?;
             let action = self.alter_table_action()?;
-            return Ok(Statement::AlterTable { table, action });
+            return Ok(Statement::AlterTable {
+                table,
+                action,
+                if_exists,
+            });
+        }
+        // The emulator's grammar has no ALTER SEARCH INDEX.
+        if self.is_kw("SEARCH") && self.kw_at(1, "INDEX") && !self.emulator {
+            self.bump();
+            self.bump();
+            let name = self.path()?;
+            let at = self.pos;
+            let add = if self.eat_kw("ADD") {
+                true
+            } else if self.eat_kw("DROP") {
+                false
+            } else {
+                return Err(self.encountered("alter_search_index_statement"));
+            };
+            let stored = self.eat_kw("STORED");
+            if !self.eat_kw("COLUMN") {
+                self.pos = at;
+                return Err(self.encountered("alter_search_index_statement"));
+            }
+            let column = self.ident()?;
+            let action = match (add, stored) {
+                (true, false) => AlterSearchIndex::AddColumn(column),
+                (false, false) => AlterSearchIndex::DropColumn(column),
+                (true, true) => AlterSearchIndex::AddStoredColumn(column),
+                (false, true) => AlterSearchIndex::DropStoredColumn(column),
+            };
+            return Ok(Statement::AlterSearchIndex { name, action });
         }
         if self.eat_kw("INDEX") {
             let name = self.path()?;
@@ -1077,17 +1187,28 @@ impl<'a> Parser<'a> {
         Err(self.encountered("alter_statement"))
     }
 
+    /// A column definition in ALTER TABLE, where PRIMARY KEY can't go.
+    fn alter_column_def(&mut self, column: R<Column>) -> R<Column> {
+        let column = column?;
+        if std::mem::take(&mut self.column_pk) {
+            return Err(self.statement_error("Unexpected PRIMARY KEY clause"));
+        }
+        Ok(column)
+    }
+
     fn alter_table_action(&mut self) -> R<AlterTable> {
         if self.eat_kw("ADD") {
+            // COLUMN is optional: anything that isn't another kind of ADD is a column.
             if self.eat_kw("COLUMN") {
                 let if_not_exists = self.if_not_exists();
-                let column = self.column_def()?;
+                let def = self.column_def();
+                let column = self.alter_column_def(def)?;
                 return Ok(AlterTable::AddColumn {
                     column,
                     if_not_exists,
                 });
             }
-            if self.is_kw("ROW") {
+            if self.is_kw("ROW") && self.kw_at(1, "DELETION") {
                 return Ok(AlterTable::AddRowDeletionPolicy(
                     self.row_deletion_policy()?,
                 ));
@@ -1095,9 +1216,20 @@ impl<'a> Parser<'a> {
             if self.eat_kw("SYNONYM") {
                 return Ok(AlterTable::AddSynonym(self.path()?));
             }
-            return Ok(match self.constraint()? {
-                Constraint::Fk(fk) => AlterTable::AddForeignKey(fk),
-                Constraint::Check(c) => AlterTable::AddCheck(c),
+            if self.is_kw("CONSTRAINT")
+                || (self.is_kw("FOREIGN") && self.kw_at(1, "KEY"))
+                || (self.is_kw("CHECK") && matches!(self.tok_at(1), Tok::Sym("(")))
+            {
+                return Ok(match self.constraint()? {
+                    Constraint::Fk(fk) => AlterTable::AddForeignKey(fk),
+                    Constraint::Check(c) => AlterTable::AddCheck(c),
+                });
+            }
+            let def = self.column_def();
+            let column = self.alter_column_def(def)?;
+            return Ok(AlterTable::AddColumn {
+                column,
+                if_not_exists: false,
             });
         }
         if self.eat_kw("DROP") {
@@ -1117,7 +1249,9 @@ impl<'a> Parser<'a> {
             if self.eat_kw("SYNONYM") {
                 return Ok(AlterTable::DropSynonym(self.path()?));
             }
-            return Err(self.expecting("COLUMN"));
+            return Ok(AlterTable::DropColumn {
+                name: self.ident()?,
+            });
         }
         if self.eat_kw("REPLACE") {
             return Ok(AlterTable::ReplaceRowDeletionPolicy(
@@ -1125,7 +1259,7 @@ impl<'a> Parser<'a> {
             ));
         }
         if self.eat_kw("ALTER") {
-            self.expect_kw("COLUMN")?;
+            self.eat_kw("COLUMN");
             let name = self.ident()?;
             if self.eat_kw("SET") {
                 if self.eat_kw("DEFAULT") {
@@ -1164,7 +1298,8 @@ impl<'a> Parser<'a> {
                     on_update: None,
                 });
             }
-            let column = self.column_rest_in(name, "column_def_alter_attrs")?;
+            let def = self.column_rest_in(name, "column_def_alter_attrs");
+            let column = self.alter_column_def(def)?;
             return Ok(AlterTable::AlterColumn { column });
         }
         if self.eat_kw("SET") {
@@ -1268,6 +1403,7 @@ impl<'a> Parser<'a> {
             return Ok(Statement::AlterTable {
                 table,
                 action: AlterTable::Rename { to },
+                if_exists: false,
             });
         }
         Ok(Statement::RenameTables { renames })

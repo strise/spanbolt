@@ -1052,9 +1052,14 @@ impl Schema {
                 t.checks.retain(|c| !c.name.eq_ignore_ascii_case(name));
             }
             AlterTable::SetOnDelete(o) => {
-                if t.interleave.is_none() {
+                let Some(il) = &t.interleave else {
                     return Err(inv(format!(
                         "Cannot SET ON DELETE on table {tname} that does not have an INTERLEAVE clause."
+                    )));
+                };
+                if !il.in_parent {
+                    return Err(inv(format!(
+                        "Cannot SET ON DELETE on an INTERLEAVE IN table {tname}."
                     )));
                 }
                 if let Some(il) = self.table_mut(&k)?.interleave.as_mut() {
@@ -1366,6 +1371,71 @@ impl Schema {
         Ok(())
     }
 
+    /// Production's ALTER SEARCH INDEX (the emulator doesn't parse it).
+    fn alter_search_index(&mut self, name: &str, action: &AlterSearchIndex) -> R<()> {
+        let k = key(name);
+        let Some(idx) = self.search_indexes.get(&k) else {
+            return Err(DdlError::NotFound(format!("Index not found: {name}")));
+        };
+        let t = self
+            .resolve_table(&idx.table)
+            .ok_or_else(|| table_not_found(&idx.table))?;
+        let n = &idx.name;
+        let has = |list: &[String], c: &str| list.iter().any(|x| x.eq_ignore_ascii_case(c));
+        let not_found = |c: &str| DdlError::NotFound(format!("Column not found in table {n}: {c}"));
+        let mut next = idx.clone();
+        match action {
+            AlterSearchIndex::AddColumn(c) => {
+                if has(&idx.columns, c) {
+                    return Err(inv(format!("Index {n} specifies key column {c} twice.")));
+                }
+                let Some(col) = t.column(c) else {
+                    return Err(pre(format!(
+                        "Index {n} specifies key column {c} which does not exist in the index's base table."
+                    )));
+                };
+                if col.ty != ColumnType::TokenList {
+                    return Err(pre(format!(
+                        "Cannot alter non-TOKENLIST key column {} in search index {n}. You can use STORED COLUMN in ALTER SEARCH INDEX statement if you want to modify a stored column in this search index.",
+                        col.name
+                    )));
+                }
+                next.columns.push(col.name.clone());
+            }
+            AlterSearchIndex::DropColumn(c) => {
+                if !has(&idx.columns, c) {
+                    return Err(not_found(c));
+                }
+                if idx.columns.len() == 1 {
+                    return Err(pre(format!(
+                        "Cannot drop the only key {} in search index {n}. You can use DROP SEARCH INDEX to completely drop this search index.",
+                        idx.columns[0]
+                    )));
+                }
+                next.columns.retain(|x| !x.eq_ignore_ascii_case(c));
+            }
+            AlterSearchIndex::AddStoredColumn(c) => {
+                if has(&idx.storing, c) {
+                    return Err(inv(format!("Index {n} specifies stored column {c} twice.")));
+                }
+                let Some(col) = t.column(c) else {
+                    return Err(pre(format!(
+                        "Index {n} specifies stored column {c} which does not exist in the index's base table."
+                    )));
+                };
+                next.storing.push(col.name.clone());
+            }
+            AlterSearchIndex::DropStoredColumn(c) => {
+                if !has(&idx.storing, c) {
+                    return Err(not_found(c));
+                }
+                next.storing.retain(|x| !x.eq_ignore_ascii_case(c));
+            }
+        }
+        self.search_indexes.insert(k, next);
+        Ok(())
+    }
+
     fn alter_index(&mut self, name: &str, action: &AlterIndex, emulator_compat: bool) -> R<()> {
         let k = key(name);
         let Some(idx) = self.indexes.get(&k) else {
@@ -1455,10 +1525,18 @@ impl Schema {
         }
         match kind {
             "CHANGE STREAM" => {
+                let (_, if_not_exists, ddl) = normalize_create_head(&object.ddl, kind);
+                if if_not_exists && self.opaque_find(kind, name).is_some() {
+                    return Ok(());
+                }
                 self.check_new_name(name)?;
-                let cs = ChangeStream::parse(&object.ddl)?;
+                let cs = ChangeStream::parse(&ddl)?;
                 self.validate_change_stream(&cs)?;
-                self.opaque.push(object.clone());
+                self.opaque.push(OpaqueObject {
+                    kind: kind.to_string(),
+                    name: name.to_string(),
+                    ddl,
+                });
             }
             "ALTER CHANGE STREAM" => {
                 let Some(i) = self.opaque_find("CHANGE STREAM", name) else {
@@ -1620,7 +1698,16 @@ impl Schema {
                 if_not_exists,
             } => self.create_table(table, *if_not_exists, compat)?,
             Statement::DropTable { name, if_exists } => self.drop_table(name, *if_exists)?,
-            Statement::AlterTable { table, action } => self.alter_table(table, action, compat)?,
+            Statement::AlterTable {
+                table,
+                action,
+                if_exists,
+            } => {
+                if *if_exists && self.resolve_table(table).is_none() {
+                    return Ok(());
+                }
+                self.alter_table(table, action, compat)?
+            }
             Statement::RenameTables { renames } => {
                 let mut next = self.clone();
                 for (from, to) in renames {
@@ -1642,6 +1729,9 @@ impl Schema {
             }
             Statement::AlterIndex { name, action } => self.alter_index(name, action, false)?,
             Statement::CreateSearchIndex { index } => self.create_search_index(index)?,
+            Statement::AlterSearchIndex { name, action } => {
+                self.alter_search_index(name, action)?
+            }
             Statement::DropSearchIndex { name, if_exists } => {
                 if self.search_indexes.remove(&key(name)).is_none() && !if_exists {
                     return Err(DdlError::NotFound(format!("Index not found: {name}")));
@@ -1749,7 +1839,7 @@ impl Schema {
     pub fn data_checks(&self, stmt: &Statement) -> Vec<DataCheck> {
         let mut out = Vec::new();
         match stmt {
-            Statement::AlterTable { table, action } => {
+            Statement::AlterTable { table, action, .. } => {
                 let Some(t) = self.resolve_table(table) else {
                     return out;
                 };

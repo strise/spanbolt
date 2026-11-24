@@ -1,0 +1,69 @@
+tags: sql information_schema oracle
+# `expect:` is recorded from the emulator 1.5.59; `expect@spanner:` from real Spanner (spanbolt #40).
+
+# GoogleCloudPlatform/cloud-spanner-emulator#353: INFORMATION_SCHEMA for foreign keys onto a unique
+# index in a named schema, referenced by two keys (the issue's DDL).
+case fk_onto_named_schema_unique_index
+schema:
+  CREATE SCHEMA other_schema;
+  CREATE TABLE other_schema.referenced_table (
+    id INT64 NOT NULL,
+    unique_val INT64 NOT NULL,
+  ) PRIMARY KEY (id);
+  CREATE UNIQUE INDEX other_schema.referenced_table_unique_val_idx ON other_schema.referenced_table (unique_val);
+  CREATE TABLE referring_table (
+    id INT64 NOT NULL,
+    ref_val INT64 NOT NULL,
+    CONSTRAINT fk_ref_val FOREIGN KEY (ref_val) REFERENCES other_schema.referenced_table (unique_val) NOT ENFORCED,
+  ) PRIMARY KEY (id);
+  CREATE TABLE referring_table_2 (
+    id INT64 NOT NULL,
+    ref_val INT64 NOT NULL,
+    CONSTRAINT fk_ref_val_2 FOREIGN KEY (ref_val) REFERENCES other_schema.referenced_table (unique_val) NOT ENFORCED,
+  ) PRIMARY KEY (id)
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, UNIQUE_CONSTRAINT_SCHEMA, UNIQUE_CONSTRAINT_NAME FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS ORDER BY CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, UNIQUE_CONSTRAINT_SCHEMA STRING, UNIQUE_CONSTRAINT_NAME STRING
+  ["","fk_ref_val","other_schema","IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+  ["","fk_ref_val_2","other_schema","IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_TYPE FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_TYPE != 'CHECK' AND TABLE_SCHEMA != 'INFORMATION_SCHEMA' ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_TYPE STRING
+  ["","PK_referring_table","","referring_table","PRIMARY KEY"]
+  ["","fk_ref_val","","referring_table","FOREIGN KEY"]
+  ["","PK_referring_table_2","","referring_table_2","PRIMARY KEY"]
+  ["","fk_ref_val_2","","referring_table_2","FOREIGN KEY"]
+  ["other_schema","PK_referenced_table","other_schema","referenced_table","PRIMARY KEY"]
+  ["","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","UNIQUE"]
+  ["","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","UNIQUE"]
+query:
+  SELECT CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, POSITION_IN_UNIQUE_CONSTRAINT FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA' ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION
+expect:
+  columns: CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING, TABLE_SCHEMA STRING, TABLE_NAME STRING, COLUMN_NAME STRING, ORDINAL_POSITION INT64, POSITION_IN_UNIQUE_CONSTRAINT INT64
+  ["","PK_referring_table","","referring_table","id","1",null]
+  ["","fk_ref_val","","referring_table","ref_val","1","1"]
+  ["","PK_referring_table_2","","referring_table_2","id","1",null]
+  ["","fk_ref_val_2","","referring_table_2","ref_val","1","1"]
+  ["","IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","unique_val","1",null]
+  ["","IDX_referenced_table_unique_val_U_6279FBB6083F67DA","other_schema","referenced_table","unique_val","1",null]
+  ["other_schema","PK_referenced_table","other_schema","referenced_table","id","1",null]
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_SCHEMA, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.CONSTRAINT_TABLE_USAGE WHERE TABLE_SCHEMA != 'INFORMATION_SCHEMA' AND CONSTRAINT_NAME NOT LIKE 'CK_IS_NOT_NULL_%' ORDER BY CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, CONSTRAINT_SCHEMA STRING, CONSTRAINT_NAME STRING
+  ["","referring_table","","PK_referring_table"]
+  ["","referring_table_2","","PK_referring_table_2"]
+  ["other_schema","referenced_table","","fk_ref_val"]
+  ["other_schema","referenced_table","","fk_ref_val_2"]
+  ["other_schema","referenced_table","","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+  ["other_schema","referenced_table","","other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA"]
+  ["other_schema","referenced_table","other_schema","PK_referenced_table"]
+query:
+  SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, INDEX_TYPE, IS_UNIQUE, SPANNER_IS_MANAGED FROM INFORMATION_SCHEMA.INDEXES WHERE TABLE_SCHEMA = 'other_schema' ORDER BY INDEX_NAME
+expect:
+  columns: TABLE_SCHEMA STRING, TABLE_NAME STRING, INDEX_NAME STRING, INDEX_TYPE STRING, IS_UNIQUE BOOL, SPANNER_IS_MANAGED BOOL
+  ["other_schema","referenced_table","IDX_referenced_table_unique_val_U_6279FBB6083F67DA","INDEX",true,true]
+  ["other_schema","referenced_table","PRIMARY_KEY","PRIMARY_KEY",true,false]
+  ["other_schema","referenced_table","referenced_table_unique_val_idx","INDEX",true,false]

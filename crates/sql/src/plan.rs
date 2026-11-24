@@ -2081,11 +2081,22 @@ impl<'c> Planner<'c> {
                     .value
                     .as_ref()
                     .ok_or_else(|| Error::internal("literal without value"))?;
-                let ty = types::from_proto(
-                    v.r#type
-                        .as_ref()
-                        .ok_or_else(|| Error::internal("literal without type"))?,
-                )?;
+                let tp = v
+                    .r#type
+                    .as_ref()
+                    .ok_or_else(|| Error::internal("literal without type"))?;
+                // The emulator's query validator: a NULL ARRAY<STRUCT> literal, as in
+                // `CASE ... ELSE NULL END` around an array of structs.
+                if v.value.as_ref().is_none_or(|x| x.value.is_none())
+                    && crate::struct_shape::is_struct_array(tp)
+                {
+                    return Err(Error::new(
+                        Code::Unimplemented,
+                        "Unsupported query shape: Spanner does not support array constructor \
+                         syntax for a null-valued array of struct.",
+                    ));
+                }
+                let ty = types::from_proto(tp)?;
                 let val = crate::literal::value(v.value.as_ref(), &ty)?;
                 Arc::new(move |_: &Cx, _: &Env| Ok(val.clone()))
             }

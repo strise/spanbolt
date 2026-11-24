@@ -1,0 +1,33 @@
+tags: sql graph oracle
+# `expect:` is recorded from the emulator 1.5.59; `expect@spanner:` from real Spanner (spanbolt #40).
+
+# GoogleCloudPlatform/cloud-spanner-emulator#325: a property graph whose element tables are views
+# (the graph-with-views how-to). The emulator used to crash on it.
+case property_graph_over_views
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Active BOOL) PRIMARY KEY (Id);
+  CREATE TABLE Knows (Id STRING(MAX) NOT NULL, Src STRING(MAX), Dst STRING(MAX)) PRIMARY KEY (Id);
+  CREATE VIEW ActivePerson SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p WHERE p.Active;
+  CREATE VIEW KnowsView SQL SECURITY INVOKER AS SELECT k.Id, k.Src, k.Dst FROM Knows k
+insert Person cols=Id,Name,Active:
+  ["p1", "Ola", true]
+  ["p2", "Kari", true]
+  ["p3", "Nils", false]
+insert Knows cols=Id,Src,Dst:
+  ["k1", "p1", "p2"]
+  ["k2", "p2", "p3"]
+ddl:
+  CREATE PROPERTY GRAPH Social NODE TABLES (ActivePerson KEY (Id) LABEL Person PROPERTIES (Id, Name)) EDGE TABLES (KnowsView KEY (Id) SOURCE KEY (Src) REFERENCES ActivePerson (Id) DESTINATION KEY (Dst) REFERENCES ActivePerson (Id) LABEL Knows PROPERTIES (Id))
+expect:
+  ok
+query:
+  GRAPH Social MATCH (a:Person)-[k:Knows]->(b:Person) RETURN a.Name AS a, b.Name AS b ORDER BY a
+expect:
+  columns: a STRING, b STRING
+  ["Ola","Kari"]
+query:
+  GRAPH Social MATCH (p:Person) RETURN p.Id AS id ORDER BY id
+expect:
+  columns: id STRING
+  ["p2"]
+  ["p1"]

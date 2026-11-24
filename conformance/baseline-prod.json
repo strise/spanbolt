@@ -56,6 +56,14 @@
       "total": 6,
       "unimplemented": 0
     },
+    "change_stream": {
+      "error": 0,
+      "fail": 0,
+      "pass": 16,
+      "skipped": 0,
+      "total": 16,
+      "unimplemented": 0
+    },
     "date": {
       "error": 0,
       "fail": 0,
@@ -74,10 +82,10 @@
     },
     "ddl": {
       "error": 0,
-      "fail": 2,
-      "pass": 248,
+      "fail": 1,
+      "pass": 288,
       "skipped": 1,
-      "total": 263,
+      "total": 302,
       "unimplemented": 12
     },
     "diverges-from-emulator": {
@@ -91,10 +99,10 @@
     "dml": {
       "error": 0,
       "fail": 0,
-      "pass": 131,
+      "pass": 155,
       "skipped": 0,
-      "total": 131,
-      "unimplemented": 0
+      "total": 159,
+      "unimplemented": 4
     },
     "expression": {
       "error": 0,
@@ -133,7 +141,15 @@
       "fail": 0,
       "pass": 16,
       "skipped": 0,
-      "total": 16,
+      "total": 17,
+      "unimplemented": 1
+    },
+    "hints": {
+      "error": 0,
+      "fail": 0,
+      "pass": 120,
+      "skipped": 1,
+      "total": 121,
       "unimplemented": 0
     },
     "index": {
@@ -146,10 +162,10 @@
     },
     "information_schema": {
       "error": 0,
-      "fail": 0,
-      "pass": 41,
+      "fail": 2,
+      "pass": 40,
       "skipped": 0,
-      "total": 41,
+      "total": 42,
       "unimplemented": 0
     },
     "int64": {
@@ -187,9 +203,9 @@
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 101,
+      "pass": 111,
       "skipped": 0,
-      "total": 101,
+      "total": 111,
       "unimplemented": 0
     },
     "net": {
@@ -210,11 +226,11 @@
     },
     "oracle": {
       "error": 0,
-      "fail": 0,
-      "pass": 143,
+      "fail": 2,
+      "pass": 153,
       "skipped": 0,
-      "total": 143,
-      "unimplemented": 0
+      "total": 156,
+      "unimplemented": 1
     },
     "oracle2": {
       "error": 0,
@@ -226,11 +242,11 @@
     },
     "oracle3": {
       "error": 0,
-      "fail": 10,
+      "fail": 6,
       "pass": 52,
       "skipped": 0,
       "total": 62,
-      "unimplemented": 0
+      "unimplemented": 4
     },
     "oracle4": {
       "error": 0,
@@ -250,8 +266,8 @@
     },
     "read": {
       "error": 0,
-      "fail": 5,
-      "pass": 46,
+      "fail": 2,
+      "pass": 49,
       "skipped": 0,
       "total": 51,
       "unimplemented": 0
@@ -264,13 +280,21 @@
       "total": 13,
       "unimplemented": 0
     },
+    "roles": {
+      "error": 0,
+      "fail": 0,
+      "pass": 9,
+      "skipped": 0,
+      "total": 9,
+      "unimplemented": 0
+    },
     "search": {
       "error": 0,
       "fail": 18,
-      "pass": 264,
-      "skipped": 0,
-      "total": 282,
-      "unimplemented": 0
+      "pass": 274,
+      "skipped": 1,
+      "total": 311,
+      "unimplemented": 18
     },
     "select": {
       "error": 0,
@@ -282,11 +306,11 @@
     },
     "sql": {
       "error": 0,
-      "fail": 21,
-      "pass": 3559,
-      "skipped": 1,
-      "total": 3588,
-      "unimplemented": 7
+      "fail": 23,
+      "pass": 3722,
+      "skipped": 3,
+      "total": 3778,
+      "unimplemented": 30
     },
     "string": {
       "error": 0,
@@ -299,9 +323,9 @@
     "struct": {
       "error": 0,
       "fail": 0,
-      "pass": 136,
+      "pass": 142,
       "skipped": 0,
-      "total": 136,
+      "total": 142,
       "unimplemented": 0
     },
     "subquery": {
@@ -480,6 +504,215 @@
       "status": "pass",
       "tags": [
         "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/alter_not_null_index/alter_not_null_on_indexed_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/schema_error_in_second_statement",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/duplicate_name_in_third_statement",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/schema_error_in_first_statement",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/syntax_error_in_second_statement",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/unique_index_on_duplicates_in_second_statement",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/not_null_on_nulls_in_second_statement",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/batch_failure/drop_then_missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_limits/four_for_all",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_limits/all_then_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_limits/columns_then_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_limits/key_columns_only",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_limits/alter_set_for",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/unknown_option",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/string_option_types",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/bool_option_types",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/value_capture_type",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/retention_period",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/retention_period_upper_bound",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/retention_checked_before_value_capture_type",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_options/alter_options_merge",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_rename/rename_to",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_rename/rename_with_synonym",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/change_stream_rename/rename_swap",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
       ]
     },
     {
@@ -753,9 +986,9 @@
       ]
     },
     {
-      "detail": null,
+      "detail": "line 92:\n  message:\n    - Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_1` is violated for key (1)\n    + Check constraint `Others`.`CK_Others_B1162681556A2BED_1` is violated for key (1)\nline 100:\n  message:\n    - Check constraint `Others`.`CK_Others_F2C1E75C528B8DC9_2` is violated for key (1)\n    + Check constraint `Others`.`CK_Others_B1162681556A2BED_2` is violated for key (1)\nline 108:\n  message:\n    - Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_1` is violated on table `Others`. Cannot find referenced values in Parents(ParentId).\n    + Foreign key `FK_Others_Parents_77D2EFE8327295FC_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(7)}` in table `Parents`.\nline 116:\n  message:\n    - Foreign key constraint `FK_Others_Parents_4D5643D1305918EF_2` is violated on table `Others`. Cannot find referenced values in Parents(Code).\n    + Foreign key `FK_Others_Parents_77D2EFE8327295FC_2` constraint violation on table `Others`. Cannot find referenced key `{String(\"x\")}` in table `Parents`.\nline 124:\n  message:\n    - Foreign key constraint `FK_Others_Others_0B7AAFB6B52B8DB3_1` is violated on table `Others`. Cannot find referenced values in Others(OtherId).\n    + Foreign key `FK_Others_Others_9A67C58514E55A35_1` constraint violation on table `Others`. Cannot find referenced key `{Int64(9)}` in table `Others`.\nline 132:\n  message:\n    - Foreign key constraint `FK_Items_Parents_8C31E00338286717_1` is violated on table `sch.Items`. Cannot find referenced values in Parents(ParentId).\n    + Foreign key `sch.FK_Items_Parents_7EC0040F058CA24C_1` constraint violation on table `sch.Items`. Cannot find referenced key `{Int64(7)}` in table `Parents`.",
       "name": "ddl/generated_names/violations_name_the_constraint",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "ddl",
         "information_schema"
@@ -847,6 +1080,54 @@
     {
       "detail": null,
       "name": "ddl/generated_not_null/virtual_key",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/index_nullability/unique_index_add_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/index_nullability/unique_index_drop_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/index_nullability/non_unique_index_add_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/index_nullability/null_filtered_index_add_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/index_nullability/storing_column_add_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/index_nullability/unique_index_same_nullability",
       "status": "pass",
       "tags": [
         "ddl"
@@ -1243,6 +1524,87 @@
     },
     {
       "detail": null,
+      "name": "ddl/roles/grants_in_ddl",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/column_grants",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/role_errors",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/drop_role_with_privileges",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/drop_table_drops_grants",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/rename_rewrites_grants",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/drop_role_member_of",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/drop_objects_with_grants",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/grant_unknown_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
       "name": "ddl/schema/schema_print_canonical",
       "status": "pass",
       "tags": [
@@ -1433,9 +1795,9 @@
       ]
     },
     {
-      "detail": "line 93:\n  message:\n    - Check constraint `A`.`CkW` is violated for key (1)\n    + Check constraint `A`.`CkW` is violated for key {Int64(1)}",
+      "detail": null,
       "name": "ddl/syntax/add_constraint_still_parses",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "ddl"
       ]
@@ -1545,9 +1907,9 @@
       ]
     },
     {
-      "detail": "line 244:\n  message:\n    - table X references nonexistent key column Nope.\n    + Table X references nonexistent key column Nope.",
+      "detail": null,
       "name": "ddl/syntax/pk_missing_column",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "ddl"
       ]
@@ -2722,6 +3084,86 @@
     },
     {
       "detail": null,
+      "name": "mutations/error_wording/duplicate_composite_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/duplicate_composite_key_nulls",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/duplicate_after_insert_or_update_in_txn",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/insert_delete_insert_in_txn",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/check_composite_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/check_composite_key_nulls",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/add_check_composite_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/delete_wrong_key_arity_mixed",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/delete_wrong_key_arity_null",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/error_wording/read_wrong_key_arity_too_long",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
       "name": "mutations/filtered_index/unique_ignores_filtered_rows",
       "status": "pass",
       "tags": [
@@ -3420,9 +3862,9 @@
       ]
     },
     {
-      "detail": "line 264:\n  message:\n    - Wrong number of key parts for T. Expected: 2. Got: [\"1\",\"a\",\"extra\"]\n    + Wrong number of key parts for T. Expected 2 key parts, found 3 key parts. Supplied key: values { string_value: \"1\" } values { string_value: \"a\" } values { string_value: \"extra\" }",
+      "detail": null,
       "name": "read/keysets/no_columns_in_key_too_long",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "read"
       ]
@@ -3468,9 +3910,9 @@
       ]
     },
     {
-      "detail": "line 328:\n  message:\n    - Wrong number of key parts for TByV. Expected: 1. Got: [\"10\",\"2\",\"a\"]\n    + Wrong number of key parts for TByV. Expected 1 key parts, found 3 key parts. Supplied key: values { string_value: \"10\" } values { string_value: \"2\" } values { string_value: \"a\" }",
+      "detail": null,
       "name": "read/keysets/index_full_key_point",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "read"
       ]
@@ -3524,9 +3966,9 @@
       ]
     },
     {
-      "detail": "line 406:\n  message:\n    - Wrong number of key parts for TByWV. Expected: 2. Got: [null]\n    + Wrong number of key parts for TByWV. Expected 2 key parts, found 1 key parts. Supplied key: values { null_value: NULL_VALUE }",
+      "detail": null,
       "name": "read/keysets/index_composite_prefix",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "read"
       ]
@@ -4986,6 +5428,132 @@
       ]
     },
     {
+      "detail": "line 40: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/fulltext",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 58: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/ngrams",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 76: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/ngrams_2_3",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 94: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/substring",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 112: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/substring_2_3",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 130: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/number",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 148: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/bool",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 166: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/token",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 184: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/json",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 202: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/fulltext_array",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 220: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/substring_array",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 238: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/concat",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 256: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/in_query",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 266: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "name": "sql/debug_tokenlist/string_arg",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
       "detail": null,
       "name": "sql/dml/insert_values",
       "status": "pass",
@@ -5271,6 +5839,294 @@
       "tags": [
         "sql",
         "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_lower_case",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_key_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_composite_key_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_composite_key_target_reordered",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_partial_key_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_non_key_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_duplicate_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_key_target_duplicate_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_select",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_all_conflict",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_sees_buffered_insert",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_insert_or_ignore",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/do_nothing_batch",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": "line 274: UNIMPLEMENTED: INSERT ... ON CONFLICT DO UPDATE is not supported by spanbolt yet.",
+      "name": "sql/dml_on_conflict/do_update_unimplemented",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/unique_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/unique_constraint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/unique_no_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/unique_violation_key_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/unique_existing_null_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": "line 373: UNIMPLEMENTED: ON CONFLICT DO NOTHING with two rows that have the same key in unique index U1ByU is not supported by spanbolt yet.",
+      "name": "sql/dml_on_conflict/unique_shared_key_in_statement",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": "line 381: UNIMPLEMENTED: ON CONFLICT DO NOTHING with two rows that have the same key in unique index U1ByU is not supported by spanbolt yet.",
+      "name": "sql/dml_on_conflict/unique_shared_null_key_in_statement",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": "line 390: UNIMPLEMENTED: ON CONFLICT DO NOTHING with two rows that have the same key in unique index U1ByU is not supported by spanbolt yet.",
+      "name": "sql/dml_on_conflict/unique_shared_key_with_skipped_row",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/null_filtered_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/null_filtered_constraint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/null_filtered_no_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_on_conflict/null_filtered_key_target",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/emulator_issues/null_array_of_struct",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/emulator_issues/with_in_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "line 155:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Id INT64\n    + (none)\n  rows (ordered): expected 3, got 0\n    - [\"1\"]\n    - [\"2\"]\n    - [\"4\"]\nline 165:\n  message:\n    - Unrecognized name: Grp [at 1:36]\n    + Pipe query syntax not supported [at 1:27]\nline 173:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Grp STRING, n INT64\n    + (none)\n  rows (ordered): expected 3, got 0\n    - [null,\"1\"]\n    - [\"a\",\"2\"]\n    - [\"b\",\"1\"]",
+      "name": "sql/emulator_issues/pipe_syntax",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/emulator_issues/force_index_primary_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
       ]
     },
     {
@@ -30701,6 +31557,1105 @@
       ]
     },
     {
+      "detail": "line 19: UNIMPLEMENTED: Property graph element tables over views (ActivePerson) is not supported by spanbolt yet.",
+      "name": "sql/graph_views/property_graph_over_views",
+      "status": "unimplemented",
+      "tags": [
+        "sql",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_allow_distributed_merge",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_execution_method",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_use_unenforced_foreign_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_allow_timestamp_predicate_pushdown",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_statistics_package",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_latest",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_scan_method_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_scan_method_row",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_force_index_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_force_index_base_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_force_index_named",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_method_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_method_hash",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_build_side_without_hash_join",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_build_side_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_force_join_order_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_hash_join_execution_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/group_method_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/index_strategy_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_parameter_sensitive_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_lock_scanned_ranges_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_enhance_query_timeout_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_use_additional_parallelism_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/duplicate_hint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_optimizer_version",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_lock_scanned_ranges",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_lock_scanned_ranges_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_insert_optimizer_version",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_use_additional_parallelism",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_pdml_max_parallelism_on_delete",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_unknown_statement_hint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/delete_force_index",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/delete_force_index_unknown",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/update_force_index_unknown",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/update_force_index",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/delete_unknown_table_hint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/delete_scan_method_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_query",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_statement",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_join",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_emulator_hint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_false",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_still_checks_values",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_dml",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/ignore_unknown_hints_dml_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/unknown_emulator_hint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/other_engine_hint",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_scan_method_unknown_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_scan_method_columnar",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method_row",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_allow_distributed_merge_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_use_unenforced_foreign_key_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_allow_timestamp_predicate_pushdown_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_bool",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_statistics_package_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_parameter_sensitive_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_zero",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_seekable_key_size",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_allow_distributed_merge",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/duplicate_hint_mixed_case",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_optimizer_statistics_package",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_allow_distributed_merge",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_execution_method",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_use_unenforced_foreign_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_allow_timestamp_predicate_pushdown",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_scan_method",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_force_index_base_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_constant_folding",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_join_method",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_pdml_max_parallelism_on_insert",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_pdml_max_parallelism_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": "Cloud Spanner rejects a quoted OPTIMIZER_VERSION string but accepts the same text as an identifier; the resolved AST doesn't tell them apart",
+      "name": "sql/hint_validation/dml_optimizer_version_string",
+      "status": "skipped",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_lock_scanned_ranges_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/query_pdml_max_parallelism",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/update_table_scan_method_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/update_table_seekable_key_size",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/delete_force_index_int",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_latest_ident",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_zero",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_too_big",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_optimizer_version_latest_version",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/dml_optimizer_version_latest",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_statistics_package_any",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_whole_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_whole_index_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_beyond_key",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_without_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_seekable_key_size_negative",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method_mixed_case",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_execution_method_default_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_scan_method_columnar_lower",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/table_scan_method_auto",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_parameter_sensitive_always",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_lock_scanned_ranges_shared",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/group_type_hash_group",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_type_loop_join",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_method_nested_loop_join",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_method_push_broadcast_hash_join",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_build_side_with_apply_join",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_build_side_with_join_type",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/duplicate_hint_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/unknown_hint_before_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_unknown_hint_before_table_bad_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/index_strategy_force_index_union",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/groupby_scan_optimization_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/disable_inline_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/batch_mode_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/join_hash_join_execution_lower",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_use_additional_parallelism_null",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_7",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_9",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_10",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_mixed_case",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/hint_validation/stmt_optimizer_version_negative",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "hints"
+      ]
+    },
+    {
       "detail": null,
       "name": "sql/hints/force_index",
       "status": "pass",
@@ -30993,6 +32948,16 @@
       "tags": [
         "sql",
         "information_schema"
+      ]
+    },
+    {
+      "detail": "line 24:\n  rows (ordered): expected 2, got 2\n    - [\"\",\"fk_ref_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"\",\"fk_ref_val\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    - [\"\",\"fk_ref_val_2\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"\",\"fk_ref_val_2\",\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\nline 34:\n  rows (ordered): expected 6, got 7\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"PRIMARY KEY\"]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"FOREIGN KEY\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"PRIMARY KEY\"]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"FOREIGN KEY\"]\n    - [\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\n    + [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"PRIMARY KEY\"]\n    - [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"PRIMARY KEY\"]\n    + [\"\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\n    + [\"\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"UNIQUE\"]\nline 53:\n  rows (ordered): expected 6, got 7\n      [\"\",\"PK_referring_table\",\"\",\"referring_table\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val\",\"\",\"referring_table\",\"ref_val\",\"1\",\"1\"]\n      [\"\",\"PK_referring_table_2\",\"\",\"referring_table_2\",\"id\",\"1\",null]\n      [\"\",\"fk_ref_val_2\",\"\",\"referring_table_2\",\"ref_val\",\"1\",\"1\"]\n    - [\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    - [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"id\",\"1\",null]\n    + [\"other_schema\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"other_schema\",\"referenced_table\",\"unique_val\",\"1\",null]\n    + [\"other_schema\",\"PK_referenced_table\",\"other_schema\",\"referenced_table\",\"id\",\"1\",null]\nline 72:\n  rows (ordered): expected 6, got 7\n      [\"\",\"referring_table\",\"\",\"PK_referring_table\"]\n      [\"\",\"referring_table_2\",\"\",\"PK_referring_table_2\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val\"]\n      [\"other_schema\",\"referenced_table\",\"\",\"fk_ref_val_2\"]\n    - [\"other_schema\",\"referenced_table\",\"other_schema\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\n    - [\"other_schema\",\"referenced_table\",\"other_schema\",\"PK_referenced_table\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\n    + [\"other_schema\",\"referenced_table\",\"other_schema\",\"other_schema.IDX_referenced_table_unique_val_U_6279FBB6083F67DA\"]\nline 91:\n  rows (ordered): expected 3, got 3\n    - [\"other_schema\",\"referenced_table\",\"IDX_referenced_table_unique_val_U_D60AC6CF8E211785\",\"INDEX\",true,true]\n    + [\"other_schema\",\"referenced_table\",\"IDX_referenced_table_unique_val_U_6279FBB6083F67DA\",\"INDEX\",true,true]\n      [\"other_schema\",\"referenced_table\",\"PRIMARY_KEY\",\"PRIMARY_KEY\",true,false]\n      [\"other_schema\",\"referenced_table\",\"referenced_table_unique_val_idx\",\"INDEX\",true,false]",
+      "name": "sql/information_schema_fk_named/fk_onto_named_schema_unique_index",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "information_schema",
+        "oracle"
       ]
     },
     {
@@ -33877,9 +35842,9 @@
       ]
     },
     {
-      "detail": "line 1356:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Id INT64, t STRING\n    + (none)\n  rows (ordered): expected 3, got 0\n    - [\"1\",\"[A, AB, ABC, B, BC, C]\"]\n    - [\"4\",\"[-, -1, -12, /, /x, 1, 12, 123, 2, 23, 23/, 3, 3/, 3/x, A, AB, ABC, ABC-, B, BC, BC-, C, C-, C-1, x], BC-1, C-12, -123, 123/, 23/x\"]\n    - [\"7\",\"[A, Ab, AbC, AbCd, C, Cd, CdE, E, Ef, b, bC, bCd, d, dE, dEf, f], bCdE, CdEf\"]",
+      "detail": "line 1356: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_ngrams",
-      "status": "fail",
+      "status": "unimplemented",
       "tags": [
         "sql",
         "search",
@@ -33887,9 +35852,9 @@
       ]
     },
     {
-      "detail": "line 1368:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Id INT64, t STRING\n    + (none)\n  rows (ordered): expected 2, got 0\n    - [\"1\",\"alp, lph, pha\"]\n    - [\"5\",\"alp, lph, pha, \\\"ha \\\", \\\"a b\\\", \\\" be\\\", bet, eta\"]",
+      "detail": "line 1368: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_tri",
-      "status": "fail",
+      "status": "unimplemented",
       "tags": [
         "sql",
         "search",
@@ -33897,9 +35862,9 @@
       ]
     },
     {
-      "detail": "line 1379:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Id INT64, t STRING\n    + (none)\n  rows (ordered): expected 2, got 0\n    - [\"1\",\"[a, al, alp, h, ha, l, lp, lph, p, ph, pha], alph, lpha\"]\n    - [\"5\",\"[a, al, alp, b, be, bet, e, et, eta, h, ha, l, lp, lph, p, ph, pha, t, ta], alph, lpha, <gap(1)>, beta\"]",
+      "detail": "line 1379: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_substring",
-      "status": "fail",
+      "status": "unimplemented",
       "tags": [
         "sql",
         "search",
@@ -33907,9 +35872,9 @@
       ]
     },
     {
-      "detail": "line 1390:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - Id INT64, t STRING\n    + (none)\n  rows (ordered): expected 2, got 0\n    - [\"2\",\"alpha(boundary), alpha(end_boundary)\"]\n    - [\"5\",\"alpha(boundary), beta(end_boundary)\"]",
+      "detail": "line 1390: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_fulltext",
-      "status": "fail",
+      "status": "unimplemented",
       "tags": [
         "sql",
         "search",
@@ -34721,6 +36686,141 @@
     },
     {
       "detail": null,
+      "name": "sql/snippet_whitespace/literal_issue",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/runs",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/leading_trailing",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/tabs_newlines",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/many_runs",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/many_runs_width",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 86:\n  rows (unordered): expected 1, got 1\n    - [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\"]\n    + [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":16}]}\"]",
+      "name": "sql/snippet_whitespace/many_runs_width_start",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "Cloud Spanner collapses the two NO-BREAK SPACEs but then loses the space before z and its highlight, which looks like a byte/character offset slip on multi-byte whitespace",
+      "name": "sql/snippet_whitespace/nbsp",
+      "status": "skipped",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/html",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/plain_tags",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/no_match",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 144:\n  rows (unordered): expected 1, got 1\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\"]",
+      "name": "sql/snippet_whitespace/single_spaced_width_start",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 154:\n  rows (ordered): expected 2, got 2\n    - [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":11,\\\"source_end\\\":24}]}\"]\n    + [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":33}]}\"]\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\"]",
+      "name": "sql/snippet_whitespace/single_spaced_width_mid",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 166:\n  rows (ordered): expected 2, got 2\n    - [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\"]\n    + [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\"]\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\"]",
+      "name": "sql/snippet_whitespace/width_start_wider",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_first_word",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/strings/concat_and_operator",
       "status": "pass",
       "tags": [
@@ -34843,6 +36943,66 @@
       "tags": [
         "sql",
         "string"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_array_results/nullable_sources",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_array_results/non_null_sources",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_array_results/array_constructor",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_array_results/nullable_flow",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_array_results/scalar_subquery_and_aggregates",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_array_results/grouped_aggregates",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
       ]
     },
     {
@@ -37764,14 +39924,14 @@
       ]
     }
   ],
-  "target": "127.0.0.1:32088",
+  "target": "127.0.0.1:37555",
   "totals": {
     "error": 0,
-    "fail": 28,
-    "pass": 4041,
-    "skipped": 7,
-    "total": 4095,
-    "unimplemented": 19
+    "fail": 26,
+    "pass": 4257,
+    "skipped": 9,
+    "total": 4334,
+    "unimplemented": 42
   },
   "unimplemented": "skip"
 }

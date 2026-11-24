@@ -10,6 +10,10 @@ import csv
 
 KINDS = ["point", "index", "search", "dml", "commit", "create_db", "clone", "drop_db"]
 BARS = " ▁▂▃▄▅▆▇█"
+# Memory columns: rust_heap_mb (live bytes in mimalloc) and malloc_mb (system malloc zones, the
+# GoogleSQL shim) since soak runs on mimalloc; heap_mb (all malloc zones, the whole live heap) in
+# older runs on the system allocator.
+MEM = ("rss_mb", "footprint_mb", "rust_heap_mb", "malloc_mb", "heap_mb")
 
 
 def spark(vals):
@@ -23,7 +27,13 @@ def svg(rows, path):
     t = [float(r["elapsed_s"]) for r in rows]
     series = [
         (c, c.replace("_mb", " MB"), color, 0)
-        for c, color in [("rss_mb", "#94a3b8"), ("footprint_mb", "#2563eb"), ("heap_mb", "#7c3aed")]
+        for c, color in [
+            ("rss_mb", "#94a3b8"),
+            ("footprint_mb", "#2563eb"),
+            ("rust_heap_mb", "#7c3aed"),
+            ("malloc_mb", "#0891b2"),
+            ("heap_mb", "#7c3aed"),
+        ]
         if c in rows[0]
     ] + [
         (f"{k}_p99_us", f"{k} p99 µs", c, 1)
@@ -63,7 +73,7 @@ def main():
     if not rows:
         raise SystemExit("empty csv")
 
-    mem = [c for c in ("rss_mb", "footprint_mb", "heap_mb") if c in rows[0]]
+    mem = [c for c in MEM if c in rows[0]]
     cols = ["min"] + [c.replace("_mb", " MB") for c in mem] + ["ops/s"] + [f"{k} p50/p99 µs" for k in ("point", "search", "dml", "commit")] + [
         "dbs",
         "operations",

@@ -59,9 +59,9 @@
     "change_stream": {
       "error": 0,
       "fail": 0,
-      "pass": 16,
+      "pass": 19,
       "skipped": 0,
-      "total": 16,
+      "total": 19,
       "unimplemented": 0
     },
     "date": {
@@ -82,10 +82,10 @@
     },
     "ddl": {
       "error": 0,
-      "fail": 1,
-      "pass": 288,
+      "fail": 2,
+      "pass": 372,
       "skipped": 1,
-      "total": 302,
+      "total": 387,
       "unimplemented": 12
     },
     "diverges-from-emulator": {
@@ -139,10 +139,10 @@
     "graph": {
       "error": 0,
       "fail": 0,
-      "pass": 16,
+      "pass": 20,
       "skipped": 0,
-      "total": 17,
-      "unimplemented": 1
+      "total": 20,
+      "unimplemented": 0
     },
     "hints": {
       "error": 0,
@@ -162,10 +162,10 @@
     },
     "information_schema": {
       "error": 0,
-      "fail": 11,
-      "pass": 33,
+      "fail": 12,
+      "pass": 34,
       "skipped": 0,
-      "total": 44,
+      "total": 46,
       "unimplemented": 0
     },
     "int64": {
@@ -203,9 +203,9 @@
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 114,
+      "pass": 123,
       "skipped": 0,
-      "total": 114,
+      "total": 123,
       "unimplemented": 0
     },
     "net": {
@@ -227,10 +227,10 @@
     "oracle": {
       "error": 0,
       "fail": 3,
-      "pass": 160,
+      "pass": 162,
       "skipped": 0,
-      "total": 165,
-      "unimplemented": 2
+      "total": 166,
+      "unimplemented": 1
     },
     "oracle2": {
       "error": 0,
@@ -291,17 +291,17 @@
     "roles": {
       "error": 0,
       "fail": 0,
-      "pass": 9,
+      "pass": 11,
       "skipped": 0,
-      "total": 9,
+      "total": 11,
       "unimplemented": 0
     },
     "search": {
       "error": 0,
-      "fail": 18,
-      "pass": 274,
+      "fail": 32,
+      "pass": 291,
       "skipped": 1,
-      "total": 311,
+      "total": 342,
       "unimplemented": 18
     },
     "select": {
@@ -314,11 +314,11 @@
     },
     "sql": {
       "error": 0,
-      "fail": 31,
-      "pass": 3722,
+      "fail": 47,
+      "pass": 3755,
       "skipped": 3,
-      "total": 3787,
-      "unimplemented": 31
+      "total": 3835,
+      "unimplemented": 30
     },
     "string": {
       "error": 0,
@@ -355,9 +355,9 @@
     "txn": {
       "error": 0,
       "fail": 0,
-      "pass": 57,
+      "pass": 68,
       "skipped": 6,
-      "total": 63,
+      "total": 74,
       "unimplemented": 0
     },
     "values": {
@@ -1095,6 +1095,214 @@
     },
     {
       "detail": null,
+      "name": "ddl/identifiers/table_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/column_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/add_column_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_quoted_hyphen",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/column_quoted_space",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_quoted_leading_digit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_quoted_non_ascii",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_name_128_chars",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_name_129_chars",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/column_name_129_chars",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/index_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/index_quoted_hyphen",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/foreign_key_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/check_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/view_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/sequence_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/change_stream_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/rename_table_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/synonym_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/schema_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/search_index_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/underscore_inside_name",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_string_key",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_timestamp_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_float_add_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_int64_ok",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
       "name": "ddl/index_nullability/unique_index_add_not_null",
       "status": "pass",
       "tags": [
@@ -1136,6 +1344,166 @@
     {
       "detail": null,
       "name": "ddl/index_nullability/unique_index_same_nullability",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/key_columns_16",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/key_columns_17",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/index_key_columns_17",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/index_key_columns_16",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/index_key_columns_shared_with_table_key",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/columns_1024",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/columns_1025",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/add_column_1025",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/indexes_per_table_128",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/indexes_per_table_129",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_at_limit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_over_limit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_string",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_json",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_array",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_key_columns_free",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_add_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_add_fixed_width_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_alter_column_wider",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_alter_column_narrower",
       "status": "pass",
       "tags": [
         "ddl"
@@ -1415,6 +1783,305 @@
     },
     {
       "detail": null,
+      "name": "ddl/name_case/alter_table_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_table_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_column_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/alter_column_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/set_default_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/set_options_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/add_column_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/create_table_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/duplicate_column_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/primary_key_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_on_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_on_wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_storing_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_index_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/alter_index_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/alter_index_stored_column_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/interleave_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/interleave_key_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/foreign_key_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/foreign_key_wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/foreign_key_wrong_case_own_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_constraint_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/row_deletion_policy_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/change_stream_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/change_stream_wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_view_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 272:\n  status: expected INVALID_ARGUMENT, got OK",
+      "name": "ddl/name_case/view_body_ignores_case",
+      "status": "fail",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/rename_table_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/check_expression_ignores_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/generated_expression_ignores_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/create_search_index_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_sequence_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_streams",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_altered",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/check_order",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_option_order",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
       "name": "ddl/retention/default_retention",
       "status": "pass",
       "tags": [
@@ -1605,6 +2272,24 @@
     {
       "detail": null,
       "name": "ddl/roles/grant_unknown_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/list_roles",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/list_roles_none",
       "status": "pass",
       "tags": [
         "ddl",
@@ -3614,6 +4299,78 @@
     {
       "detail": null,
       "name": "mutations/keys/delete_wrong_key_arity",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/key_size_at_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/key_size_over_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/index_key_size_over_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/key_size_dml",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_at_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_over_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_over_limit_update",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_over_limit_across_statements",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_delete_counts_one",
       "status": "pass",
       "tags": [
         "mutations"
@@ -31590,7 +32347,7 @@
     },
     {
       "detail": null,
-      "name": "sql/graph/optional_match_ordered",
+      "name": "sql/graph/quantified_path_ordered",
       "status": "pass",
       "tags": [
         "sql",
@@ -31599,7 +32356,7 @@
     },
     {
       "detail": null,
-      "name": "sql/graph/quantified_path_ordered",
+      "name": "sql/graph/optional_match_ordered",
       "status": "pass",
       "tags": [
         "sql",
@@ -33158,6 +33915,24 @@
       ]
     },
     {
+      "detail": "line 743:\n  columns:\n    - CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, PROTO_BUNDLE PROTO<proto2.FileDescriptorSet>, SCHEMA_OWNER STRING\n    + CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, SCHEMA_OWNER STRING\n  rows (ordered): expected 4, got 4\n    - [\"\",\"\",\"0\",null,\"spanner_admin\"]\n    + [\"\",\"\",\"0\",\"spanner_admin\"]\n    - [\"\",\"INFORMATION_SCHEMA\",null,null,\"spanner_system\"]\n    + [\"\",\"INFORMATION_SCHEMA\",null,\"spanner_system\"]\n    - [\"\",\"SPANNER_SYS\",null,null,\"spanner_system\"]\n    + [\"\",\"SPANNER_SYS\",null,\"spanner_system\"]\n    - [\"\",\"app\",\"0\",null,\"spanner_admin\"]\n    + [\"\",\"app\",\"0\",\"spanner_admin\"]",
+      "name": "sql/information_schema_objects/schemata_proto_bundle",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/schemata_effective_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
       "detail": null,
       "name": "sql/information_schema_objects/new_index_columns",
       "status": "pass",
@@ -33429,6 +34204,102 @@
     },
     {
       "detail": null,
+      "name": "sql/limits/joins_20",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/joins_21",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/joins_21_cross",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/in_list_10000",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/in_list_10001",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": "line 59:\n  status: expected RESOURCE_EXHAUSTED, got INVALID_ARGUMENT",
+      "name": "sql/limits/functions_1001",
+      "status": "fail",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/unions_201",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/unions_200",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/parameters_951",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/group_by_1001",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/nested_subqueries_26",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/select_list_501",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/literals/numeric_edges",
       "status": "pass",
       "tags": [
@@ -33605,6 +34476,87 @@
       "tags": [
         "sql",
         "values"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/trigram_half_character",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/min_ngrams_counts_characters",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/percent_counts_characters",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/typo_non_ascii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/single_character",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/score_non_ascii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/score_tri_non_ascii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/substring_half_character",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/substring_min_ngrams_counts_characters",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
       ]
     },
     {
@@ -35602,7 +36554,7 @@
       ]
     },
     {
-      "detail": "line 294:\n  rows (ordered): expected 9, got 9\n      [\"1\",2.5408987998962402]\n    - [\"2\",3.937390089035034]\n    + [\"2\",4.073043346405029]\n    - [\"3\",4.867130756378174]\n    + [\"3\",4.716744422912598]\n    - [\"4\",5.574248313903809]\n    + [\"4\",5.25230073928833]\n      [\"5\",2.5408987998962402]\n      [\"6\",2.5408987998962402]\n      [\"7\",2.5408987998962402]\n      [\"8\",2.5408987998962402]\n      [\"13\",2.5408987998962402]",
+      "detail": "line 295:\n  rows (ordered): expected 9, got 9\n      [\"1\",2.5408987998962402]\n    - [\"2\",3.937390089035034]\n    + [\"2\",4.073043346405029]\n    - [\"3\",4.867130756378174]\n    + [\"3\",4.716744422912598]\n    - [\"4\",5.574248313903809]\n    + [\"4\",5.25230073928833]\n      [\"5\",2.5408987998962402]\n      [\"6\",2.5408987998962402]\n      [\"7\",2.5408987998962402]\n      [\"8\",2.5408987998962402]\n      [\"13\",2.5408987998962402]",
       "name": "sql/search_score/score_repeated_query_term",
       "status": "fail",
       "tags": [
@@ -35612,7 +36564,7 @@
       ]
     },
     {
-      "detail": "line 320:\n  rows (ordered): expected 9, got 9\n      [\"1\",3.838944911956787]\n    - [\"2\",6.309773921966553]\n    + [\"2\",6.59030818939209]\n    - [\"3\",7.899704933166504]\n    + [\"3\",7.5887017250061035]\n    - [\"4\",9.08515739440918]\n    + [\"4\",8.419360160827637]\n      [\"5\",3.838944911956787]\n      [\"6\",3.838944911956787]\n      [\"7\",3.838944911956787]\n      [\"8\",3.838944911956787]\n      [\"13\",3.838944911956787]",
+      "detail": "line 321:\n  rows (ordered): expected 9, got 9\n      [\"1\",3.838944911956787]\n    - [\"2\",6.309773921966553]\n    + [\"2\",6.59030818939209]\n    - [\"3\",7.899704933166504]\n    + [\"3\",7.5887017250061035]\n    - [\"4\",9.08515739440918]\n    + [\"4\",8.419360160827637]\n      [\"5\",3.838944911956787]\n      [\"6\",3.838944911956787]\n      [\"7\",3.838944911956787]\n      [\"8\",3.838944911956787]\n      [\"13\",3.838944911956787]",
       "name": "sql/search_score/score_repeated_query_term_three",
       "status": "fail",
       "tags": [
@@ -35662,7 +36614,7 @@
       ]
     },
     {
-      "detail": "line 420:\n  rows (ordered): expected 9, got 9\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2588917016983032]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.6450823545455933]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.9531786441802979]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.2095134258270264]\n    - [\"5\",0.5597055554389954]\n    + [\"5\",1.2588917016983032]\n    - [\"6\",0.5597055554389954]\n    + [\"6\",1.2588917016983032]\n    - [\"7\",0.5597055554389954]\n    + [\"7\",1.2588917016983032]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2588917016983032]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2588917016983032]",
+      "detail": "line 421:\n  rows (ordered): expected 9, got 9\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2588917016983032]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.6450823545455933]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.9531786441802979]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.2095134258270264]\n    - [\"5\",0.5597055554389954]\n    + [\"5\",1.2588917016983032]\n    - [\"6\",0.5597055554389954]\n    + [\"6\",1.2588917016983032]\n    - [\"7\",0.5597055554389954]\n    + [\"7\",1.2588917016983032]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2588917016983032]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2588917016983032]",
       "name": "sql/search_score/score_enhance_query",
       "status": "fail",
       "tags": [
@@ -35672,7 +36624,7 @@
       ]
     },
     {
-      "detail": "line 446:\n  rows (ordered): expected 3, got 3\n    - [\"5\",1.3116873502731323]\n    + [\"5\",3.2661805152893066]\n    - [\"6\",1.4584637880325317]\n    + [\"6\",3.669611930847168]\n    - [\"7\",1.3116873502731323]\n    + [\"7\",3.2661805152893066]",
+      "detail": "line 447:\n  rows (ordered): expected 3, got 3\n    - [\"5\",1.3116873502731323]\n    + [\"5\",3.2661805152893066]\n    - [\"6\",1.4584637880325317]\n    + [\"6\",3.669611930847168]\n    - [\"7\",1.3116873502731323]\n    + [\"7\",3.2661805152893066]",
       "name": "sql/search_score/score_enhance_query_two_terms",
       "status": "fail",
       "tags": [
@@ -35992,7 +36944,7 @@
       ]
     },
     {
-      "detail": "line 1356: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "detail": "line 1357: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_ngrams",
       "status": "unimplemented",
       "tags": [
@@ -36002,7 +36954,7 @@
       ]
     },
     {
-      "detail": "line 1368: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "detail": "line 1369: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_tri",
       "status": "unimplemented",
       "tags": [
@@ -36012,7 +36964,7 @@
       ]
     },
     {
-      "detail": "line 1379: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "detail": "line 1380: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_substring",
       "status": "unimplemented",
       "tags": [
@@ -36022,7 +36974,7 @@
       ]
     },
     {
-      "detail": "line 1390: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
+      "detail": "line 1391: UNIMPLEMENTED: DEBUG_TOKENLIST is not supported by spanbolt yet.",
       "name": "sql/search_score/debug_tokenlist_fulltext",
       "status": "unimplemented",
       "tags": [
@@ -36087,7 +37039,7 @@
       ]
     },
     {
-      "detail": "line 3289:\n  rows (ordered): expected 4, got 4\n    - [\"5\",0.5812535285949707]\n    + [\"5\",1.2588917016983032]\n    - [\"6\",0.7122135758399963]\n    + [\"6\",1.6450823545455933]\n    - [\"7\",0.5812535285949707]\n    + [\"7\",1.2588917016983032]\n    - [\"9\",0.5812535285949707]\n    + [\"9\",1.2588917016983032]\nline 3303:\n  rows (ordered): expected 2, got 2\n    - [\"10\",0.6314595937728882]\n    + [\"10\",1.2588917016983032]\n    - [\"11\",0.6314595937728882]\n    + [\"11\",1.2588917016983032]\nline 3313:\n  rows (ordered): expected 9, got 9\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2704493999481201]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.673880696296692]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.995731234550476]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.263509511947632]\n    - [\"5\",0.5597055554389954]\n    + [\"5\",1.2704493999481201]\n    - [\"6\",0.5597055554389954]\n    + [\"6\",1.2704493999481201]\n    - [\"7\",0.5597055554389954]\n    + [\"7\",1.2704493999481201]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2704493999481201]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2704493999481201]\nline 3337:\n  rows (ordered): expected 10, got 10\n    - [\"1\",0.5479043126106262]\n    + [\"1\",1.2704493999481201]\n    - [\"2\",0.6839828491210938]\n    + [\"2\",1.673880696296692]\n    - [\"3\",0.7925440073013306]\n    + [\"3\",1.995731234550476]\n    - [\"4\",0.882866382598877]\n    + [\"4\",2.263509511947632]\n    - [\"5\",1.1033092737197876]\n    + [\"5\",2.5408987998962402]\n    - [\"6\",1.2423532009124756]\n    + [\"6\",2.9443299770355225]\n    - [\"7\",1.1033092737197876]\n    + [\"7\",2.5408987998962402]\n    - [\"8\",0.5479043126106262]\n    + [\"8\",1.2704493999481201]\n    - [\"9\",0.5554050207138062]\n    + [\"9\",1.2704493999481201]\n    - [\"13\",0.5479043126106262]\n    + [\"13\",1.2704493999481201]\nline 3363:\n  rows (ordered): expected 1, got 1\n    - [\"7\",2.1981441974639893]\n    + [\"7\",5.338847637176514]\nline 3371:\n  rows (ordered): expected 3, got 3\n    - [\"5\",1.3858588933944702]\n    + [\"5\",3.2661805152893066]\n    - [\"6\",1.5168190002441406]\n    + [\"6\",3.669611930847168]\n    - [\"7\",1.3858588933944702]\n    + [\"7\",3.2661805152893066]\nline 3383:\n  rows (ordered): expected 6, got 6\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2588917016983032]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.6450823545455933]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.9531786441802979]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.2095134258270264]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2588917016983032]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2588917016983032]\nline 3401:\n  rows (ordered): expected 9, got 9\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2588917016983032]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.6450823545455933]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.9531786441802979]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.2095134258270264]\n    - [\"5\",0.5597055554389954]\n    + [\"5\",1.2588917016983032]\n    - [\"6\",0.5597055554389954]\n    + [\"6\",1.2588917016983032]\n    - [\"7\",0.5597055554389954]\n    + [\"7\",1.2588917016983032]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2588917016983032]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2588917016983032]",
+      "detail": "line 3290:\n  rows (ordered): expected 4, got 4\n    - [\"5\",0.5812535285949707]\n    + [\"5\",1.2588917016983032]\n    - [\"6\",0.7122135758399963]\n    + [\"6\",1.6450823545455933]\n    - [\"7\",0.5812535285949707]\n    + [\"7\",1.2588917016983032]\n    - [\"9\",0.5812535285949707]\n    + [\"9\",1.2588917016983032]\nline 3304:\n  rows (ordered): expected 2, got 2\n    - [\"10\",0.6314595937728882]\n    + [\"10\",1.2588917016983032]\n    - [\"11\",0.6314595937728882]\n    + [\"11\",1.2588917016983032]\nline 3314:\n  rows (ordered): expected 9, got 9\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2704493999481201]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.673880696296692]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.995731234550476]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.263509511947632]\n    - [\"5\",0.5597055554389954]\n    + [\"5\",1.2704493999481201]\n    - [\"6\",0.5597055554389954]\n    + [\"6\",1.2704493999481201]\n    - [\"7\",0.5597055554389954]\n    + [\"7\",1.2704493999481201]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2704493999481201]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2704493999481201]\nline 3338:\n  rows (ordered): expected 10, got 10\n    - [\"1\",0.5479043126106262]\n    + [\"1\",1.2704493999481201]\n    - [\"2\",0.6839828491210938]\n    + [\"2\",1.673880696296692]\n    - [\"3\",0.7925440073013306]\n    + [\"3\",1.995731234550476]\n    - [\"4\",0.882866382598877]\n    + [\"4\",2.263509511947632]\n    - [\"5\",1.1033092737197876]\n    + [\"5\",2.5408987998962402]\n    - [\"6\",1.2423532009124756]\n    + [\"6\",2.9443299770355225]\n    - [\"7\",1.1033092737197876]\n    + [\"7\",2.5408987998962402]\n    - [\"8\",0.5479043126106262]\n    + [\"8\",1.2704493999481201]\n    - [\"9\",0.5554050207138062]\n    + [\"9\",1.2704493999481201]\n    - [\"13\",0.5479043126106262]\n    + [\"13\",1.2704493999481201]\nline 3364:\n  rows (ordered): expected 1, got 1\n    - [\"7\",2.1981441974639893]\n    + [\"7\",5.338847637176514]\nline 3372:\n  rows (ordered): expected 3, got 3\n    - [\"5\",1.3858588933944702]\n    + [\"5\",3.2661805152893066]\n    - [\"6\",1.5168190002441406]\n    + [\"6\",3.669611930847168]\n    - [\"7\",1.3858588933944702]\n    + [\"7\",3.2661805152893066]\nline 3384:\n  rows (ordered): expected 6, got 6\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2588917016983032]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.6450823545455933]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.9531786441802979]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.2095134258270264]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2588917016983032]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2588917016983032]\nline 3402:\n  rows (ordered): expected 9, got 9\n    - [\"1\",0.5597055554389954]\n    + [\"1\",1.2588917016983032]\n    - [\"2\",0.6922320127487183]\n    + [\"2\",1.6450823545455933]\n    - [\"3\",0.7979593276977539]\n    + [\"3\",1.9531786441802979]\n    - [\"4\",0.8859239816665649]\n    + [\"4\",2.2095134258270264]\n    - [\"5\",0.5597055554389954]\n    + [\"5\",1.2588917016983032]\n    - [\"6\",0.5597055554389954]\n    + [\"6\",1.2588917016983032]\n    - [\"7\",0.5597055554389954]\n    + [\"7\",1.2588917016983032]\n    - [\"8\",0.5597055554389954]\n    + [\"8\",1.2588917016983032]\n    - [\"13\",0.5597055554389954]\n    + [\"13\",1.2588917016983032]",
       "name": "sql/search_score/score_enhance_query_more",
       "status": "fail",
       "tags": [
@@ -36098,7 +37050,7 @@
       ]
     },
     {
-      "detail": "line 3457:\n  rows (ordered): expected 8, got 8\n      [\"1\",2.5408987998962402]\n    - [\"2\",3.937390089035034]\n    + [\"2\",4.073043346405029]\n    - [\"3\",4.867130756378174]\n    + [\"3\",4.716744422912598]\n    - [\"4\",5.574248313903809]\n    + [\"4\",5.25230073928833]\n      [\"450\",3.347761392593384]\n      [\"451\",3.347761392593384]\n    - [\"452\",3.937390089035034]\n    + [\"452\",4.073043346405029]\n    - [\"453\",5.29515266418457]\n    + [\"453\",5.25230073928833]\nline 3479:\n  rows (ordered): expected 2, got 2\n    - [\"450\",6.0328874588012695]\n    + [\"450\",6.173154354095459]\n    - [\"452\",6.309773921966553]\n    + [\"452\",6.59030818939209]\nline 3489:\n  rows (ordered): expected 2, got 2\n    - [\"450\",5.282936096191406]\n    + [\"450\",5.423202991485596]\n    - [\"452\",6.309773921966553]\n    + [\"452\",6.59030818939209]\nline 3499:\n  rows (ordered): expected 8, got 8\n    - [\"1\",1.2588917016983032]\n    + [\"1\",2.5408987998962402]\n    - [\"2\",1.6450823545455933]\n    + [\"2\",3.347761392593384]\n    - [\"3\",1.9531786441802979]\n    + [\"3\",3.991462469100952]\n    - [\"4\",2.2095134258270264]\n    + [\"4\",4.527019023895264]\n    - [\"450\",1.6450823545455933]\n    + [\"450\",3.347761392593384]\n    - [\"451\",1.6450823545455933]\n    + [\"451\",3.347761392593384]\n    - [\"452\",1.6450823545455933]\n    + [\"452\",3.347761392593384]\n    - [\"453\",2.2095134258270264]\n    + [\"453\",4.527019023895264]\nline 3521:\n  rows (ordered): expected 5, got 5\n    - [\"2\",3.937390089035034]\n    + [\"2\",4.073043346405029]\n    - [\"3\",4.867130756378174]\n    + [\"3\",4.716744422912598]\n    - [\"4\",5.574248313903809]\n    + [\"4\",5.25230073928833]\n    - [\"452\",3.937390089035034]\n    + [\"452\",4.073043346405029]\n    - [\"453\",5.29515266418457]\n    + [\"453\",5.25230073928833]\nline 3537:\n  rows (ordered): expected 2, got 2\n    - [\"451\",6.0328874588012695]\n    + [\"451\",6.173154354095459]\n    - [\"453\",7.0869622230529785]\n    + [\"453\",7.392522811889648]\nline 3547:\n  rows (ordered): expected 8, got 8\n      [\"1\",5.1485748291015625]\n    - [\"2\",8.739990234375]\n    + [\"2\",9.172069549560547]\n    - [\"3\",11.017950057983398]\n    + [\"3\",10.538941383361816]\n    - [\"4\",12.701635360717773]\n    + [\"4\",11.676172256469727]\n      [\"450\",6.861912727355957]\n      [\"451\",6.861912727355957]\n    - [\"452\",8.739990234375]\n    + [\"452\",9.172069549560547]\n    - [\"453\",11.812663078308105]\n    + [\"453\",11.676172256469727]",
+      "detail": "line 3458:\n  rows (ordered): expected 8, got 8\n      [\"1\",2.5408987998962402]\n    - [\"2\",3.937390089035034]\n    + [\"2\",4.073043346405029]\n    - [\"3\",4.867130756378174]\n    + [\"3\",4.716744422912598]\n    - [\"4\",5.574248313903809]\n    + [\"4\",5.25230073928833]\n      [\"450\",3.347761392593384]\n      [\"451\",3.347761392593384]\n    - [\"452\",3.937390089035034]\n    + [\"452\",4.073043346405029]\n    - [\"453\",5.29515266418457]\n    + [\"453\",5.25230073928833]\nline 3480:\n  rows (ordered): expected 2, got 2\n    - [\"450\",6.0328874588012695]\n    + [\"450\",6.173154354095459]\n    - [\"452\",6.309773921966553]\n    + [\"452\",6.59030818939209]\nline 3490:\n  rows (ordered): expected 2, got 2\n    - [\"450\",5.282936096191406]\n    + [\"450\",5.423202991485596]\n    - [\"452\",6.309773921966553]\n    + [\"452\",6.59030818939209]\nline 3500:\n  rows (ordered): expected 8, got 8\n    - [\"1\",1.2588917016983032]\n    + [\"1\",2.5408987998962402]\n    - [\"2\",1.6450823545455933]\n    + [\"2\",3.347761392593384]\n    - [\"3\",1.9531786441802979]\n    + [\"3\",3.991462469100952]\n    - [\"4\",2.2095134258270264]\n    + [\"4\",4.527019023895264]\n    - [\"450\",1.6450823545455933]\n    + [\"450\",3.347761392593384]\n    - [\"451\",1.6450823545455933]\n    + [\"451\",3.347761392593384]\n    - [\"452\",1.6450823545455933]\n    + [\"452\",3.347761392593384]\n    - [\"453\",2.2095134258270264]\n    + [\"453\",4.527019023895264]\nline 3522:\n  rows (ordered): expected 5, got 5\n    - [\"2\",3.937390089035034]\n    + [\"2\",4.073043346405029]\n    - [\"3\",4.867130756378174]\n    + [\"3\",4.716744422912598]\n    - [\"4\",5.574248313903809]\n    + [\"4\",5.25230073928833]\n    - [\"452\",3.937390089035034]\n    + [\"452\",4.073043346405029]\n    - [\"453\",5.29515266418457]\n    + [\"453\",5.25230073928833]\nline 3538:\n  rows (ordered): expected 2, got 2\n    - [\"451\",6.0328874588012695]\n    + [\"451\",6.173154354095459]\n    - [\"453\",7.0869622230529785]\n    + [\"453\",7.392522811889648]\nline 3548:\n  rows (ordered): expected 8, got 8\n      [\"1\",5.1485748291015625]\n    - [\"2\",8.739990234375]\n    + [\"2\",9.172069549560547]\n    - [\"3\",11.017950057983398]\n    + [\"3\",10.538941383361816]\n    - [\"4\",12.701635360717773]\n    + [\"4\",11.676172256469727]\n      [\"450\",6.861912727355957]\n      [\"451\",6.861912727355957]\n    - [\"452\",8.739990234375]\n    + [\"452\",9.172069549560547]\n    - [\"453\",11.812663078308105]\n    + [\"453\",11.676172256469727]",
       "name": "sql/search_score/score_repeated_terms_more",
       "status": "fail",
       "tags": [
@@ -36889,9 +37841,9 @@
       ]
     },
     {
-      "detail": "line 86:\n  rows (unordered): expected 1, got 1\n    - [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\"]\n    + [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":16}]}\"]",
+      "detail": null,
       "name": "sql/snippet_whitespace/many_runs_width_start",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
@@ -36934,27 +37886,27 @@
       ]
     },
     {
-      "detail": "line 144:\n  rows (unordered): expected 1, got 1\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\"]",
+      "detail": null,
       "name": "sql/snippet_whitespace/single_spaced_width_start",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
       ]
     },
     {
-      "detail": "line 154:\n  rows (ordered): expected 2, got 2\n    - [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":11,\\\"source_end\\\":24}]}\"]\n    + [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":33}]}\"]\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\"]",
+      "detail": null,
       "name": "sql/snippet_whitespace/single_spaced_width_mid",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
       ]
     },
     {
-      "detail": "line 166:\n  rows (ordered): expected 2, got 2\n    - [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\"]\n    + [\"4\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\"]\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\"]",
+      "detail": null,
       "name": "sql/snippet_whitespace/width_start_wider",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
@@ -36964,6 +37916,204 @@
       "detail": null,
       "name": "sql/snippet_whitespace/width_first_word",
       "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_exact_fit",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_exact_fit_no_match",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_last_word",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_last_word_wider",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 235:\n  rows (unordered): expected 1, got 1\n    - [\"10\",\"{\\\"snippets\\\":[]}\"]\n    + [\"10\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"x y z w\\\",\\\"source_begin\\\":14,\\\"source_end\\\":21}]}\"]",
+      "name": "sql/snippet_whitespace/width_left_blocked",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 245:\n  rows (unordered): expected 1, got 1\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8},{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]",
+      "name": "sql/snippet_whitespace/width_two_terms",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 255:\n  rows (unordered): expected 1, got 1\n    - [\"10\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"xyzw, then\\\",\\\"source_begin\\\":14,\\\"source_end\\\":27}]}\"]\n    + [\"10\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"z w, then more\\\",\\\"source_begin\\\":18,\\\"source_end\\\":32}]}\"]",
+      "name": "sql/snippet_whitespace/width_punctuation",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 265:\n  rows (unordered): expected 1, got 1\n    - [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\"]\n    + [\"9\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\"]",
+      "name": "sql/snippet_whitespace/width_odd_sizes",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 19:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]",
+      "name": "sql/snippet_width/one",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 29:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"two\\\",\\\"source_begin\\\":5,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":8}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]",
+      "name": "sql/snippet_width/two",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 39:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]\n    + [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"three\\\",\\\"source_begin\\\":9,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three\\\",\\\"source_begin\\\":5,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":14}],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]",
+      "name": "sql/snippet_width/three",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 49:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five six\\\",\\\"source_begin\\\":5,\\\"source_end\\\":28}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four\\\",\\\"source_begin\\\":15,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four\\\",\\\"source_begin\\\":9,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four\\\",\\\"source_begin\\\":5,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":11}],\\\"snippet\\\":\\\"three four five\\\",\\\"source_begin\\\":9,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":15}],\\\"snippet\\\":\\\"two three four five\\\",\\\"source_begin\\\":5,\\\"source_end\\\":24}]}\"]",
+      "name": "sql/snippet_width/four",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 59:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":20}],\\\"snippet\\\":\\\"two three four five six\\\",\\\"source_begin\\\":5,\\\"source_end\\\":28}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five\\\",\\\"source_begin\\\":20,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five\\\",\\\"source_begin\\\":15,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":16}],\\\"snippet\\\":\\\"three four five six\\\",\\\"source_begin\\\":9,\\\"source_end\\\":28}]}\"]",
+      "name": "sql/snippet_width/five",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 69:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"six\\\",\\\"source_begin\\\":25,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"six\\\",\\\"source_begin\\\":25,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"six\\\",\\\"source_begin\\\":25,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"six\\\",\\\"source_begin\\\":25,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"six\\\",\\\"source_begin\\\":25,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":4}],\\\"snippet\\\":\\\"six\\\",\\\"source_begin\\\":25,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six\\\",\\\"source_begin\\\":20,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six\\\",\\\"source_begin\\\":15,\\\"source_end\\\":28}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":9}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":14}],\\\"snippet\\\":\\\"four five six seven\\\",\\\"source_begin\\\":15,\\\"source_end\\\":34}]}\"]",
+      "name": "sql/snippet_width/six",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 79:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\"]\n    + [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"seven\\\",\\\"source_begin\\\":29,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven\\\",\\\"source_begin\\\":25,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven\\\",\\\"source_begin\\\":20,\\\"source_end\\\":34}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":10}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":15}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\"]",
+      "name": "sql/snippet_width/seven",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 89:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\"]\n    + [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"eight\\\",\\\"source_begin\\\":35,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":12}],\\\"snippet\\\":\\\"seven eight\\\",\\\"source_begin\\\":29,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":11,\\\"end\\\":16}],\\\"snippet\\\":\\\"six seven eight\\\",\\\"source_begin\\\":25,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":16,\\\"end\\\":21}],\\\"snippet\\\":\\\"five six seven eight\\\",\\\"source_begin\\\":20,\\\"source_end\\\":40}]}\"]",
+      "name": "sql/snippet_width/eight",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 99:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one\\\",\\\"source_begin\\\":1,\\\"source_end\\\":4}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two\\\",\\\"source_begin\\\":1,\\\"source_end\\\":8}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three\\\",\\\"source_begin\\\":1,\\\"source_end\\\":14}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[],\\\"snippet\\\":\\\"one two three four\\\",\\\"source_begin\\\":1,\\\"source_end\\\":19}]}\"]",
+      "name": "sql/snippet_width/zzz",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 109:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"dddd\\\",\\\"source_begin\\\":12,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd eeeee\\\",\\\"source_begin\\\":10,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd eeeee f\\\",\\\"source_begin\\\":10,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd eeeee f\\\",\\\"source_begin\\\":10,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee\\\",\\\"source_begin\\\":7,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee\\\",\\\"source_begin\\\":7,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f\\\",\\\"source_begin\\\":7,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f\\\",\\\"source_begin\\\":7,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f\\\",\\\"source_begin\\\":7,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f gg\\\",\\\"source_begin\\\":7,\\\"source_end\\\":27}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"dddd\\\",\\\"source_begin\\\":12,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"dddd\\\",\\\"source_begin\\\":12,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd\\\",\\\"source_begin\\\":10,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd\\\",\\\"source_begin\\\":7,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd eeeee\\\",\\\"source_begin\\\":10,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd eeeee\\\",\\\"source_begin\\\":10,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":7}],\\\"snippet\\\":\\\"c dddd eeeee f\\\",\\\"source_begin\\\":10,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee\\\",\\\"source_begin\\\":7,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee\\\",\\\"source_begin\\\":7,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f\\\",\\\"source_begin\\\":7,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f\\\",\\\"source_begin\\\":7,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f\\\",\\\"source_begin\\\":7,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f gg\\\",\\\"source_begin\\\":7,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f gg\\\",\\\"source_begin\\\":7,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":6,\\\"end\\\":10}],\\\"snippet\\\":\\\"bb c dddd eeeee f gg\\\",\\\"source_begin\\\":7,\\\"source_end\\\":27}]}\"]",
+      "name": "sql/snippet_width/r11_dddd",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 119:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"f gg\\\",\\\"source_begin\\\":23,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"f gg\\\",\\\"source_begin\\\":23,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"f gg\\\",\\\"source_begin\\\":23,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg hhh\\\",\\\"source_begin\\\":17,\\\"source_end\\\":31}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg hhh\\\",\\\"source_begin\\\":17,\\\"source_end\\\":31}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg\\\",\\\"source_begin\\\":12,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg\\\",\\\"source_begin\\\":12,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg\\\",\\\"source_begin\\\":10,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg\\\",\\\"source_begin\\\":10,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg\\\",\\\"source_begin\\\":10,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg hhh\\\",\\\"source_begin\\\":12,\\\"source_end\\\":31}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"f gg\\\",\\\"source_begin\\\":23,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"f gg\\\",\\\"source_begin\\\":23,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":2}],\\\"snippet\\\":\\\"f gg\\\",\\\"source_begin\\\":23,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f\\\",\\\"source_begin\\\":17,\\\"source_end\\\":24}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg\\\",\\\"source_begin\\\":17,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":7,\\\"end\\\":8}],\\\"snippet\\\":\\\"eeeee f gg hhh\\\",\\\"source_begin\\\":17,\\\"source_end\\\":31}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg\\\",\\\"source_begin\\\":12,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg\\\",\\\"source_begin\\\":12,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg\\\",\\\"source_begin\\\":10,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg\\\",\\\"source_begin\\\":10,\\\"source_end\\\":27}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg hhh\\\",\\\"source_begin\\\":12,\\\"source_end\\\":31}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":12,\\\"end\\\":13}],\\\"snippet\\\":\\\"dddd eeeee f gg hhh\\\",\\\"source_begin\\\":12,\\\"source_end\\\":31}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg hhh\\\",\\\"source_begin\\\":10,\\\"source_end\\\":31}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":15}],\\\"snippet\\\":\\\"c dddd eeeee f gg hhh\\\",\\\"source_begin\\\":10,\\\"source_end\\\":31}]}\"]",
+      "name": "sql/snippet_width/r11_f",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 129:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"iiii\\\",\\\"source_begin\\\":32,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"iiii jjjjj\\\",\\\"source_begin\\\":32,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii jjjjj\\\",\\\"source_begin\\\":28,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii jjjjj\\\",\\\"source_begin\\\":28,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii jjjjj k\\\",\\\"source_begin\\\":28,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj\\\",\\\"source_begin\\\":25,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj\\\",\\\"source_begin\\\":23,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj k\\\",\\\"source_begin\\\":25,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k\\\",\\\"source_begin\\\":23,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"iiii\\\",\\\"source_begin\\\":32,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"iiii\\\",\\\"source_begin\\\":32,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"iiii\\\",\\\"source_begin\\\":32,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":5}],\\\"snippet\\\":\\\"iiii\\\",\\\"source_begin\\\":32,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii\\\",\\\"source_begin\\\":28,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii\\\",\\\"source_begin\\\":25,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii\\\",\\\"source_begin\\\":25,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii\\\",\\\"source_begin\\\":23,\\\"source_end\\\":36}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii jjjjj\\\",\\\"source_begin\\\":28,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii jjjjj\\\",\\\"source_begin\\\":28,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":5,\\\"end\\\":9}],\\\"snippet\\\":\\\"hhh iiii jjjjj k\\\",\\\"source_begin\\\":28,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj\\\",\\\"source_begin\\\":25,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj\\\",\\\"source_begin\\\":25,\\\"source_end\\\":42}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj k\\\",\\\"source_begin\\\":25,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":8,\\\"end\\\":12}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj k\\\",\\\"source_begin\\\":25,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k\\\",\\\"source_begin\\\":23,\\\"source_end\\\":44}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":10,\\\"end\\\":14}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k\\\",\\\"source_begin\\\":23,\\\"source_end\\\":44}]}\"]",
+      "name": "sql/snippet_width/r11_iiii",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 139:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb\\\",\\\"source_begin\\\":1,\\\"source_end\\\":9}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\"]\n    + [\"{\\\"snippets\\\":[]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha\\\",\\\"source_begin\\\":1,\\\"source_end\\\":6}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb\\\",\\\"source_begin\\\":1,\\\"source_end\\\":9}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb\\\",\\\"source_begin\\\":1,\\\"source_end\\\":9}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c\\\",\\\"source_begin\\\":1,\\\"source_end\\\":11}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd\\\",\\\"source_begin\\\":1,\\\"source_end\\\":16}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd eeeee\\\",\\\"source_begin\\\":1,\\\"source_end\\\":22}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":1,\\\"end\\\":6}],\\\"snippet\\\":\\\"alpha bb c dddd eeeee\\\",\\\"source_begin\\\":1,\\\"source_end\\\":22}]}\"]",
+      "name": "sql/snippet_width/r11_alpha",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": "line 149:\n  rows (unordered): expected 1, got 1\n    - [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":18,\\\"end\\\":20}],\\\"snippet\\\":\\\"hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":28,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":18,\\\"end\\\":20}],\\\"snippet\\\":\\\"hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":28,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":18,\\\"end\\\":20}],\\\"snippet\\\":\\\"hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":28,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":21,\\\"end\\\":23}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":25,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":23,\\\"end\\\":25}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":23,\\\"end\\\":25}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":23,\\\"end\\\":25}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":23,\\\"end\\\":25}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":23,\\\"end\\\":25}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":23,\\\"end\\\":25}],\\\"snippet\\\":\\\"f gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":23,\\\"source_end\\\":47}]}\"]\n    + [\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":3,\\\"end\\\":5}],\\\"snippet\\\":\\\"k ll\\\",\\\"source_begin\\\":43,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":9,\\\"end\\\":11}],\\\"snippet\\\":\\\"jjjjj k ll\\\",\\\"source_begin\\\":37,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":14,\\\"end\\\":16}],\\\"snippet\\\":\\\"iiii jjjjj k ll\\\",\\\"source_begin\\\":32,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":18,\\\"end\\\":20}],\\\"snippet\\\":\\\"hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":28,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":18,\\\"end\\\":20}],\\\"snippet\\\":\\\"hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":28,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":18,\\\"end\\\":20}],\\\"snippet\\\":\\\"hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":28,\\\"source_end\\\":47}]}\",\"{\\\"snippets\\\":[{\\\"highlights\\\":[{\\\"begin\\\":21,\\\"end\\\":23}],\\\"snippet\\\":\\\"gg hhh iiii jjjjj k ll\\\",\\\"source_begin\\\":25,\\\"source_end\\\":47}]}\"]",
+      "name": "sql/snippet_width/r11_ll",
+      "status": "fail",
       "tags": [
         "sql",
         "search"
@@ -38979,6 +40129,94 @@
     },
     {
       "detail": null,
+      "name": "txn/stale_before_database/read_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/query_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/read_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/query_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/read_200h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/ro_txn_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/ro_txn_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/table_added_later_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/table_added_later_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/missing_table_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/max_staleness_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
       "name": "txn/transactions/mutations_not_visible_before_commit",
       "status": "pass",
       "tags": [
@@ -40074,14 +41312,14 @@
       ]
     }
   ],
-  "target": "127.0.0.1:32375",
+  "target": "127.0.0.1:33410",
   "totals": {
     "error": 0,
-    "fail": 34,
-    "pass": 4260,
+    "fail": 51,
+    "pass": 4397,
     "skipped": 9,
-    "total": 4346,
-    "unimplemented": 43
+    "total": 4499,
+    "unimplemented": 42
   },
   "unimplemented": "skip"
 }

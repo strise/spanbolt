@@ -58,10 +58,10 @@
     },
     "change_stream": {
       "error": 0,
-      "fail": 0,
-      "pass": 16,
+      "fail": 1,
+      "pass": 18,
       "skipped": 0,
-      "total": 16,
+      "total": 19,
       "unimplemented": 0
     },
     "date": {
@@ -82,10 +82,10 @@
     },
     "ddl": {
       "error": 0,
-      "fail": 5,
-      "pass": 284,
+      "fail": 6,
+      "pass": 368,
       "skipped": 1,
-      "total": 302,
+      "total": 387,
       "unimplemented": 12
     },
     "diverges-from-emulator": {
@@ -138,11 +138,11 @@
     },
     "graph": {
       "error": 0,
-      "fail": 0,
-      "pass": 16,
+      "fail": 1,
+      "pass": 19,
       "skipped": 0,
-      "total": 17,
-      "unimplemented": 1
+      "total": 20,
+      "unimplemented": 0
     },
     "hints": {
       "error": 0,
@@ -162,10 +162,10 @@
     },
     "information_schema": {
       "error": 0,
-      "fail": 0,
-      "pass": 44,
+      "fail": 1,
+      "pass": 45,
       "skipped": 0,
-      "total": 44,
+      "total": 46,
       "unimplemented": 0
     },
     "int64": {
@@ -203,9 +203,9 @@
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 114,
+      "pass": 123,
       "skipped": 0,
-      "total": 114,
+      "total": 123,
       "unimplemented": 0
     },
     "net": {
@@ -226,11 +226,11 @@
     },
     "oracle": {
       "error": 0,
-      "fail": 4,
-      "pass": 160,
+      "fail": 5,
+      "pass": 161,
       "skipped": 0,
-      "total": 165,
-      "unimplemented": 1
+      "total": 166,
+      "unimplemented": 0
     },
     "oracle2": {
       "error": 0,
@@ -242,8 +242,8 @@
     },
     "oracle3": {
       "error": 0,
-      "fail": 1,
-      "pass": 61,
+      "fail": 0,
+      "pass": 62,
       "skipped": 0,
       "total": 62,
       "unimplemented": 0
@@ -291,17 +291,17 @@
     "roles": {
       "error": 0,
       "fail": 0,
-      "pass": 9,
+      "pass": 11,
       "skipped": 0,
-      "total": 9,
+      "total": 11,
       "unimplemented": 0
     },
     "search": {
       "error": 0,
-      "fail": 1,
-      "pass": 309,
+      "fail": 0,
+      "pass": 341,
       "skipped": 1,
-      "total": 311,
+      "total": 342,
       "unimplemented": 0
     },
     "select": {
@@ -314,11 +314,11 @@
     },
     "sql": {
       "error": 0,
-      "fail": 20,
-      "pass": 3754,
+      "fail": 21,
+      "pass": 3802,
       "skipped": 3,
-      "total": 3787,
-      "unimplemented": 10
+      "total": 3835,
+      "unimplemented": 9
     },
     "string": {
       "error": 0,
@@ -353,11 +353,11 @@
       "unimplemented": 0
     },
     "txn": {
-      "error": 0,
-      "fail": 0,
-      "pass": 57,
+      "error": 1,
+      "fail": 2,
+      "pass": 65,
       "skipped": 6,
-      "total": 63,
+      "total": 74,
       "unimplemented": 0
     },
     "values": {
@@ -1095,6 +1095,214 @@
     },
     {
       "detail": null,
+      "name": "ddl/identifiers/table_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/column_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/add_column_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_quoted_hyphen",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/column_quoted_space",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_quoted_leading_digit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_quoted_non_ascii",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_name_128_chars",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/table_name_129_chars",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/column_name_129_chars",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/index_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/index_quoted_hyphen",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/foreign_key_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/check_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/view_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/sequence_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/change_stream_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/rename_table_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/synonym_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/schema_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/search_index_leading_underscore",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identifiers/underscore_inside_name",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_string_key",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_timestamp_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_float_add_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/identity/identity_int64_ok",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
       "name": "ddl/index_nullability/unique_index_add_not_null",
       "status": "pass",
       "tags": [
@@ -1136,6 +1344,166 @@
     {
       "detail": null,
       "name": "ddl/index_nullability/unique_index_same_nullability",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/key_columns_16",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/key_columns_17",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/index_key_columns_17",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/index_key_columns_16",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/index_key_columns_shared_with_table_key",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/columns_1024",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/columns_1025",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/add_column_1025",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/indexes_per_table_128",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/indexes_per_table_129",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_at_limit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_over_limit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_string",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_json",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_array",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_key_columns_free",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_add_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_add_fixed_width_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_alter_column_wider",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/limits/non_key_size_alter_column_narrower",
       "status": "pass",
       "tags": [
         "ddl"
@@ -1415,6 +1783,305 @@
     },
     {
       "detail": null,
+      "name": "ddl/name_case/alter_table_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_table_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_column_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/alter_column_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/set_default_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/set_options_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/add_column_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/create_table_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/duplicate_column_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/primary_key_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_on_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_on_wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_storing_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/index_differs_in_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_index_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/alter_index_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/alter_index_stored_column_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/interleave_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/interleave_key_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/foreign_key_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/foreign_key_wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/foreign_key_wrong_case_own_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_constraint_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/row_deletion_policy_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/change_stream_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/change_stream_wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_view_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/view_body_ignores_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/rename_table_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/check_expression_ignores_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/generated_expression_ignores_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/create_search_index_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/name_case/drop_sequence_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_streams",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_altered",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/check_order",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 94:\n  statements:\n    - CREATE TABLE T (\n    K INT64 NOT NULL,\n    A INT64,\n    B STRING(MAX),\n  ) PRIMARY KEY(K)\n      CREATE TABLE U (\n    K INT64 NOT NULL,\n    C INT64,\n  ) PRIMARY KEY(K)\n      CREATE CHANGE STREAM bLower FOR U, T(B, A) OPTIONS ( allow_txn_exclusion = true, exclude_delete = true, exclude_update = false, exclude_insert = true, exclude_ttl_deletes = false, retention_period = '1d', value_capture_type = 'OLD_AND_NEW_VALUES' )\n      CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( retention_period = NULL, exclude_update = true )\n      CREATE CHANGE STREAM cLast FOR T()\n    + CREATE TABLE T (\n    K INT64 NOT NULL,\n    A INT64,\n    B STRING(MAX),\n  ) PRIMARY KEY(K)\n      CREATE TABLE U (\n    K INT64 NOT NULL,\n    C INT64,\n  ) PRIMARY KEY(K)\n      CREATE CHANGE STREAM bLower FOR U, T(B, A) OPTIONS ( allow_txn_exclusion = true, exclude_delete = true, exclude_update = false, exclude_insert = true, exclude_ttl_deletes = false, retention_period = '1d', value_capture_type = 'OLD_AND_NEW_VALUES' )\n      CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( exclude_delete = true, exclude_update = true )\n      CREATE CHANGE STREAM cLast FOR T()",
+      "name": "ddl/printing/change_stream_option_order",
+      "status": "fail",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
       "name": "ddl/retention/default_retention",
       "status": "pass",
       "tags": [
@@ -1605,6 +2272,24 @@
     {
       "detail": null,
       "name": "ddl/roles/grant_unknown_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/list_roles",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "roles"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/roles/list_roles_none",
       "status": "pass",
       "tags": [
         "ddl",
@@ -2667,7 +3352,7 @@
       ]
     },
     {
-      "detail": "line 479:\n  rows (ordered): expected 1, got 2\n      [\"1\",\"10\",\"1000\"]\n    + [\"2\",\"20\",\"2000\"]\nline 497:\n  rows (ordered): expected 2, got 3\n      [\"1\",\"10\",\"1000\"]\n    - [\"3\",\"30\",\"3000\"]\n    + [\"2\",\"20\",\"2000\"]\n    + [\"3\",\"30\",\"3000\"]",
+      "detail": "line 485:\n  rows (ordered): expected 1, got 2\n      [\"1\",\"10\",\"1000\"]\n    + [\"2\",\"20\",\"2000\"]\nline 503:\n  rows (ordered): expected 2, got 3\n      [\"1\",\"10\",\"1000\"]\n    - [\"3\",\"30\",\"3000\"]\n    + [\"2\",\"20\",\"2000\"]\n    + [\"3\",\"30\",\"3000\"]",
       "name": "ddl/validation/alter_index_drop_stored_filter_column_data",
       "status": "fail",
       "tags": [
@@ -3614,6 +4299,78 @@
     {
       "detail": null,
       "name": "mutations/keys/delete_wrong_key_arity",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/key_size_at_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/key_size_over_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/index_key_size_over_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/key_size_dml",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_at_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_over_limit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_over_limit_update",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_over_limit_across_statements",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/limits/mutations_delete_counts_one",
       "status": "pass",
       "tags": [
         "mutations"
@@ -4825,7 +5582,7 @@
       ]
     },
     {
-      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T22:43:01.877675Z\"]",
+      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T23:06:10.086666Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_on_update",
       "status": "fail",
       "tags": [
@@ -5035,7 +5792,7 @@
       ]
     },
     {
-      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T22:43:01.883081Z\"]",
+      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T23:06:10.092569Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_default_pending",
       "status": "fail",
       "tags": [
@@ -5055,7 +5812,7 @@
       ]
     },
     {
-      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T22:43:01.884409Z\"]",
+      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T23:06:10.093771Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert",
       "status": "fail",
       "tags": [
@@ -5064,7 +5821,7 @@
       ]
     },
     {
-      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T22:43:01.88449Z\"]",
+      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T23:06:10.093746Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert_or_update",
       "status": "fail",
       "tags": [
@@ -31590,7 +32347,7 @@
     },
     {
       "detail": null,
-      "name": "sql/graph/optional_match_ordered",
+      "name": "sql/graph/quantified_path_ordered",
       "status": "pass",
       "tags": [
         "sql",
@@ -31599,7 +32356,7 @@
     },
     {
       "detail": null,
-      "name": "sql/graph/quantified_path_ordered",
+      "name": "sql/graph/optional_match_ordered",
       "status": "pass",
       "tags": [
         "sql",
@@ -33158,6 +33915,24 @@
       ]
     },
     {
+      "detail": "line 743:\n  columns:\n    - CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, SCHEMA_OWNER STRING, PROTO_BUNDLE PROTO<google.protobuf.FileDescriptorSet>\n    + CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, SCHEMA_OWNER STRING\n  rows (ordered): expected 4, got 4\n    - [\"\",\"\",\"0\",\"\",null]\n    + [\"\",\"\",\"0\",\"\"]\n    - [\"\",\"INFORMATION_SCHEMA\",\"0\",\"\",null]\n    + [\"\",\"INFORMATION_SCHEMA\",\"0\",\"\"]\n    - [\"\",\"SPANNER_SYS\",\"0\",\"\",null]\n    + [\"\",\"SPANNER_SYS\",\"0\",\"\"]\n    - [\"\",\"app\",\"0\",\"\",null]\n    + [\"\",\"app\",\"0\",\"\"]",
+      "name": "sql/information_schema_objects/schemata_proto_bundle",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/schemata_effective_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
       "detail": null,
       "name": "sql/information_schema_objects/new_index_columns",
       "status": "pass",
@@ -33429,6 +34204,102 @@
     },
     {
       "detail": null,
+      "name": "sql/limits/joins_20",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/joins_21",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/joins_21_cross",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/in_list_10000",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/in_list_10001",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/functions_1001",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/unions_201",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/unions_200",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/parameters_951",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/group_by_1001",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/nested_subqueries_26",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/limits/select_list_501",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/literals/numeric_edges",
       "status": "pass",
       "tags": [
@@ -33605,6 +34476,87 @@
       "tags": [
         "sql",
         "values"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/trigram_half_character",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/min_ngrams_counts_characters",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/percent_counts_characters",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/typo_non_ascii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/single_character",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/score_non_ascii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/score_tri_non_ascii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/substring_half_character",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/ngrams_chars/substring_min_ngrams_counts_characters",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
       ]
     },
     {
@@ -35502,9 +36454,9 @@
       ]
     },
     {
-      "detail": "line 77:\n  rows (ordered): expected 0, got 1\n    + [\"12\",1.0]",
+      "detail": null,
       "name": "sql/search_score/score_one_term_unique",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search",
@@ -36963,6 +37915,204 @@
     {
       "detail": null,
       "name": "sql/snippet_whitespace/width_first_word",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_exact_fit",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_exact_fit_no_match",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_last_word",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_last_word_wider",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_left_blocked",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_two_terms",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_punctuation",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_whitespace/width_odd_sizes",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/one",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/two",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/three",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/four",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/five",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/six",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/seven",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/eight",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/zzz",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/r11_dddd",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/r11_f",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/r11_iiii",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/r11_alpha",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_width/r11_ll",
       "status": "pass",
       "tags": [
         "sql",
@@ -38979,6 +40129,94 @@
     },
     {
       "detail": null,
+      "name": "txn/stale_before_database/read_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/query_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/read_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/query_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/read_200h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": "line 61: no open transaction `ro`",
+      "name": "txn/stale_before_database/ro_txn_2h",
+      "status": "error",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/ro_txn_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": "line 88:\n  status: expected NOT_FOUND, got FAILED_PRECONDITION\nline 95:\n  status: expected INVALID_ARGUMENT, got FAILED_PRECONDITION",
+      "name": "txn/stale_before_database/table_added_later_2h",
+      "status": "fail",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/table_added_later_30s",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": "line 115:\n  status: expected NOT_FOUND, got FAILED_PRECONDITION",
+      "name": "txn/stale_before_database/missing_table_2h",
+      "status": "fail",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/max_staleness_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
       "name": "txn/transactions/mutations_not_visible_before_commit",
       "status": "pass",
       "tags": [
@@ -40074,14 +41312,14 @@
       ]
     }
   ],
-  "target": "127.0.0.1:30626",
+  "target": "127.0.0.1:28844",
   "totals": {
-    "error": 0,
-    "fail": 24,
-    "pass": 4291,
+    "error": 1,
+    "fail": 28,
+    "pass": 4440,
     "skipped": 9,
-    "total": 4346,
-    "unimplemented": 22
+    "total": 4499,
+    "unimplemented": 21
   },
   "unimplemented": "skip"
 }

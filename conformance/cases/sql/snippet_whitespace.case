@@ -1,0 +1,187 @@
+# SNIPPET over text with runs of whitespace: Cloud Spanner collapses them, and the highlight and
+# source offsets follow (GoogleCloudPlatform/cloud-spanner-emulator#356).
+tags: sql search
+schema:
+  CREATE TABLE W (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX WSearch ON W(Body_Tokens)
+insert W cols=Id,Body:
+  [1, "test       123\n abc"]
+  [2, "  leading and trailing   "]
+  [3, "tabs\t\tand\nnew\r\nlines here"]
+  [4, "one two   three    four     five      six       seven        eight"]
+  [5, "x  y z"]
+  [6, "a  <b>bold</b>   c"]
+  [7, "word"]
+  [8, "     "]
+  [9, "one two three four five six seven eight"]
+
+case literal_issue
+query:
+  SELECT SNIPPET("test       123\n abc", "123") AS s
+expect:
+  columns: s JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":15,\"start_position\":12}],\"snippet\":\"test       123\\n abc\"}]}"]
+expect@spanner:
+  columns: s JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":6,\"end\":9}],\"snippet\":\"test 123 abc\",\"source_begin\":1,\"source_end\":20}]}"]
+
+case runs
+query:
+  SELECT Id, SNIPPET(Body, '123') AS s FROM W WHERE Id = 1
+expect:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"end_position\":15,\"start_position\":12}],\"snippet\":\"test       123\\n abc\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"begin\":6,\"end\":9}],\"snippet\":\"test 123 abc\",\"source_begin\":1,\"source_end\":20}]}"]
+
+case leading_trailing
+query:
+  SELECT Id, SNIPPET(Body, 'trailing') AS s FROM W WHERE Id = 2
+expect:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[{\"end_position\":23,\"start_position\":15}],\"snippet\":\"  leading and trailing   \"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["2","{\"snippets\":[{\"highlights\":[{\"begin\":13,\"end\":21}],\"snippet\":\"leading and trailing\",\"source_begin\":3,\"source_end\":23}]}"]
+
+case tabs_newlines
+query:
+  SELECT Id, SNIPPET(Body, 'here') AS s FROM W WHERE Id = 3
+expect:
+  columns: Id INT64, s JSON
+  ["3","{\"snippets\":[{\"highlights\":[{\"end_position\":26,\"start_position\":22}],\"snippet\":\"tabs\\t\\tand\\nnew\\r\\nlines here\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["3","{\"snippets\":[{\"highlights\":[{\"begin\":20,\"end\":24}],\"snippet\":\"tabs and new lines here\",\"source_begin\":1,\"source_end\":26}]}"]
+
+case many_runs
+query:
+  SELECT Id, SNIPPET(Body, 'seven') AS s FROM W WHERE Id = 4
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":54,\"start_position\":49}],\"snippet\":\"one two   three    four     five      six       seven        eight\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":29,\"end\":34}],\"snippet\":\"one two three four five six seven eight\",\"source_begin\":1,\"source_end\":67}]}"]
+
+case many_runs_width
+query:
+  SELECT Id, SNIPPET(Body, 'seven', max_snippet_width => 20) AS s FROM W WHERE Id = 4
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":6,\"start_position\":1}],\"snippet\":\"seven        eight\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":10}],\"snippet\":\"six seven eight\",\"source_begin\":39,\"source_end\":67}]}"]
+
+# When the match is near the start and the text is wider than max_snippet_width, Cloud Spanner
+# keeps the words before the match ("one two", not "two three"). It does so on single-spaced text
+# too, so this is spanbolt's width cut rather than whitespace: these cases are the target for it.
+case many_runs_width_start
+query:
+  SELECT Id, SNIPPET(Body, 'two', max_snippet_width => 12) AS s FROM W WHERE Id = 4
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"two   three\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":8}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
+
+case nbsp
+skip: Cloud Spanner collapses the two NO-BREAK SPACEs but then loses the space before z and its highlight, which looks like a byte/character offset slip on multi-byte whitespace
+query:
+  SELECT Id, SNIPPET(Body, 'z') AS s FROM W WHERE Id = 5
+expect:
+  columns: Id INT64, s JSON
+  ["5","{\"snippets\":[{\"highlights\":[{\"end_position\":9,\"start_position\":8}],\"snippet\":\"x  y z\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["5","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case html
+query:
+  SELECT Id, SNIPPET(Body, 'c', content_type => 'text/html') AS s FROM W WHERE Id = 6
+expect:
+  columns: Id INT64, s JSON
+  ["6","{\"snippets\":[{\"highlights\":[{\"end_position\":19,\"start_position\":18}],\"snippet\":\"a  <b>bold</b>   c\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["6","{\"snippets\":[{\"highlights\":[{\"begin\":8,\"end\":9}],\"snippet\":\"a bold c\",\"source_begin\":1,\"source_end\":19}]}"]
+
+case plain_tags
+query:
+  SELECT Id, SNIPPET(Body, 'c') AS s FROM W WHERE Id = 6
+expect:
+  columns: Id INT64, s JSON
+  ["6","{\"snippets\":[{\"highlights\":[{\"end_position\":19,\"start_position\":18}],\"snippet\":\"a  <b>bold</b>   c\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["6","{\"snippets\":[{\"highlights\":[{\"begin\":15,\"end\":16}],\"snippet\":\"a <b>bold</b> c\",\"source_begin\":1,\"source_end\":19}]}"]
+
+case no_match
+query:
+  SELECT Id, SNIPPET(Body, 'zzz') AS s FROM W WHERE Id IN (1, 4, 7, 8) ORDER BY Id
+expect:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[],\"snippet\":\"test       123\\n abc\"}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[],\"snippet\":\"one two   three    four     five      six       seven        eight\"}]}"]
+  ["7","{\"snippets\":[{\"highlights\":[],\"snippet\":\"word\"}]}"]
+  ["8","{\"snippets\":[{\"highlights\":[],\"snippet\":\"     \"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[],\"snippet\":\"test 123 abc\",\"source_begin\":1,\"source_end\":20}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[],\"snippet\":\"one two three four five six seven eight\",\"source_begin\":1,\"source_end\":67}]}"]
+  ["7","{\"snippets\":[{\"highlights\":[],\"snippet\":\"word\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["8","{\"snippets\":[]}"]
+
+# Same cut on single-spaced text (row 9) next to the spaced row 4.
+case single_spaced_width_start
+query:
+  SELECT Id, SNIPPET(Body, 'two', max_snippet_width => 12) AS s FROM W WHERE Id = 9
+expect:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"two three\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":8}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
+
+case single_spaced_width_mid
+query:
+  SELECT Id, SNIPPET(Body, 'four', max_snippet_width => 12) AS s FROM W WHERE Id IN (4, 9) ORDER BY Id
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":1}],\"snippet\":\"four\"}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":1}],\"snippet\":\"four five\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":11}],\"snippet\":\"three four\",\"source_begin\":11,\"source_end\":24}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":11}],\"snippet\":\"three four\",\"source_begin\":9,\"source_end\":19}]}"]
+
+case width_start_wider
+query:
+  SELECT Id, SNIPPET(Body, 'two', max_snippet_width => 16) AS s FROM W WHERE Id IN (4, 9) ORDER BY Id
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":8,\"start_position\":5}],\"snippet\":\"one two   three\"}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"two three four\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":8}],\"snippet\":\"one two three\",\"source_begin\":1,\"source_end\":16}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":8}],\"snippet\":\"one two three\",\"source_begin\":1,\"source_end\":14}]}"]
+
+case width_first_word
+query:
+  SELECT Id, SNIPPET(Body, 'one', max_snippet_width => 10) AS s FROM W WHERE Id IN (4, 9) ORDER BY Id
+expect:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"one two\"}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"one two\"}]}"]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"one two\",\"source_begin\":1,\"source_end\":8}]}"]

@@ -179,7 +179,7 @@ fn returning(
 
 fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fields)> {
     if let Some(b) = &ins.parent {
-        crate::validate::hints(Node::Insert, &b.hint_list)?;
+        p.statement_hints(Node::Insert, &b.hint_list)?;
     }
     if ins.on_conflict_clause.is_some() {
         return Err(unimplemented("INSERT ... ON CONFLICT"));
@@ -251,7 +251,7 @@ fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fi
 
 fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fields)> {
     if let Some(b) = &up.parent {
-        crate::validate::hints(Node::Update, &b.hint_list)?;
+        p.statement_hints(Node::Update, &b.hint_list)?;
     }
     if up.from_scan.is_some() || up.array_offset_column.is_some() {
         return Err(unimplemented("UPDATE with FROM or nested updates"));
@@ -320,7 +320,7 @@ fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fie
 
 fn delete(p: &mut Planner, del: &ResolvedDeleteStmtProto) -> Result<(DmlPlan, Fields)> {
     if let Some(b) = &del.parent {
-        crate::validate::hints(Node::Delete, &b.hint_list)?;
+        p.statement_hints(Node::Delete, &b.hint_list)?;
     }
     if del.using_scan.is_some() || del.array_offset_column.is_some() {
         return Err(unimplemented("DELETE with USING or nested deletes"));

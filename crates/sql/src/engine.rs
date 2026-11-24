@@ -172,7 +172,7 @@ impl Engine {
                     .as_ref()
                     .map(|p| p.hint_list.as_slice())
                     .unwrap_or(&[]);
-                crate::validate::hints(crate::validate::Node::Query, hints)?;
+                planner.statement_hints(crate::validate::Node::Query, hints)?;
                 planner.stmt_disable_nf_check = hint_bool(
                     hints,
                     "spanner_emulator",

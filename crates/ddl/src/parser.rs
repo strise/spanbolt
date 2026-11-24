@@ -541,6 +541,7 @@ impl<'a> Parser<'a> {
                 ty: ColumnType::Int64,
                 not_null: true,
                 default: None,
+                on_update: None,
                 generated: Some(Generated::Identity {
                     options: Some("BIT_REVERSED_POSITIVE".into()),
                 }),
@@ -668,22 +669,45 @@ impl<'a> Parser<'a> {
     }
 
     fn column_rest(&mut self, name: String) -> R<Column> {
+        self.column_rest_in(name, "column_def")
+    }
+
+    /// `ctx` names the grammar rule in the emulator's syntax errors.
+    fn column_rest_in(&mut self, name: String, ctx: &str) -> R<Column> {
         let (ty, vector_length) = self.column_type()?;
         let mut col = Column {
             name,
             ty,
             not_null: false,
             default: None,
+            on_update: None,
             generated: None,
             allow_commit_timestamp: false,
             hidden: false,
             vector_length,
         };
+        // ON UPDATE can't follow HIDDEN or OPTIONS.
+        let mut options_seen = false;
         loop {
             if self.eat_kws(&["NOT", "NULL"]) {
                 col.not_null = true;
             } else if self.eat_kw("DEFAULT") {
                 col.default = Some(self.paren_text()?);
+            } else if self.is_kw("ON")
+                && self.kw_at(1, "UPDATE")
+                && col.on_update.is_none()
+                && col.generated.is_none()
+                && !options_seen
+            {
+                // ON UPDATE goes with a DEFAULT, before or after it.
+                let on = self.pos;
+                self.bump();
+                self.bump();
+                col.on_update = Some(self.paren_text()?);
+                if col.default.is_none() && !self.is_kw("DEFAULT") {
+                    self.pos = on;
+                    return Err(self.encountered(ctx));
+                }
             } else if self.is_kw("AS") && col.default.is_some() {
                 return Err(self.expecting(")"));
             } else if self.eat_kw("AS") {
@@ -692,7 +716,9 @@ impl<'a> Parser<'a> {
                 col.generated = Some(Generated::Expr { expr, stored });
             } else if self.eat_kw("HIDDEN") {
                 col.hidden = true;
+                options_seen = true;
             } else if self.is_kw("OPTIONS") {
+                options_seen = true;
                 for (k, v) in self.options()? {
                     if k.eq_ignore_ascii_case("allow_commit_timestamp") {
                         col.allow_commit_timestamp = v == "true";
@@ -1062,6 +1088,10 @@ impl<'a> Parser<'a> {
                     let default = Some(self.paren_text()?);
                     return Ok(AlterTable::SetColumnDefault { name, default });
                 }
+                if self.eat_kws(&["ON", "UPDATE"]) {
+                    let on_update = Some(self.paren_text()?);
+                    return Ok(AlterTable::SetColumnOnUpdate { name, on_update });
+                }
                 let opts = self.options()?;
                 let mut act = None;
                 for (k, v) in opts {
@@ -1084,7 +1114,13 @@ impl<'a> Parser<'a> {
                     default: None,
                 });
             }
-            let column = self.column_rest(name)?;
+            if self.eat_kws(&["DROP", "ON", "UPDATE"]) {
+                return Ok(AlterTable::SetColumnOnUpdate {
+                    name,
+                    on_update: None,
+                });
+            }
+            let column = self.column_rest_in(name, "column_def_alter_attrs")?;
             return Ok(AlterTable::AlterColumn { column });
         }
         if self.eat_kw("SET") {

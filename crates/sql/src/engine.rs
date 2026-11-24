@@ -220,6 +220,7 @@ impl Engine {
                         ..planner.search
                     },
                     subplans: planner.subplans,
+                    reads: planner.reads,
                 })
             }
             Some(node) => {
@@ -232,6 +233,7 @@ impl Engine {
                     fields,
                     search: planner.search,
                     subplans: planner.subplans,
+                    reads: planner.reads,
                 })
             }
             None => Err(Error::internal("empty statement")),
@@ -341,6 +343,7 @@ impl Engine {
                 let cat = self.catalog(&state)?;
                 let p = self.prepare(&cat, &st)?;
                 p.search.check_read_write()?;
+                p.check_pending_reads(rw, &state.catalog, self.opts.emulator_compat)?;
                 let params = self.bind(&p, &st)?;
                 match &p.body {
                     Body::Query { .. } => self.run_query(
@@ -478,6 +481,7 @@ impl Engine {
                 let cat = self.catalog(&state)?;
                 let p = self.prepare(&cat, &st)?;
                 p.search.check_read_write()?;
+                p.check_pending_reads(rw, &state.catalog, self.opts.emulator_compat)?;
                 let params = self.bind(&p, &st)?;
                 match &p.body {
                     Body::Dml(d) => crate::dml::execute(

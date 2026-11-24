@@ -62,6 +62,9 @@ pub(crate) fn column_sql(c: &Column) -> String {
     if let Some(d) = &c.default {
         s.push_str(&format!(" DEFAULT ({d})"));
     }
+    if let Some(e) = &c.on_update {
+        s.push_str(&format!(" ON UPDATE ({e})"));
+    }
     match &c.generated {
         Some(Generated::Expr { expr, stored }) => {
             s.push_str(&format!(" AS ({expr})"));
@@ -363,6 +366,10 @@ fn alter_table_sql(table: &str, action: &AlterTable) -> String {
         AlterTable::SetColumnDefault { name, default } => match default {
             Some(d) => format!("ALTER COLUMN {} SET DEFAULT ({d})", q(name)),
             None => format!("ALTER COLUMN {} DROP DEFAULT", q(name)),
+        },
+        AlterTable::SetColumnOnUpdate { name, on_update } => match on_update {
+            Some(e) => format!("ALTER COLUMN {} SET ON UPDATE ({e})", q(name)),
+            None => format!("ALTER COLUMN {} DROP ON UPDATE", q(name)),
         },
         AlterTable::SetColumnOptions {
             name,

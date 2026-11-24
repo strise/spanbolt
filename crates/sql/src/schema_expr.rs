@@ -114,6 +114,21 @@ impl ExprEvaluator for SchemaExprs {
             Ok(s) => s,
             Err(e) => return Err(wrap(&e.message)),
         };
+        // PENDING_COMMIT_TIMESTAMP() analyses anywhere; as a DEFAULT it must be the whole value.
+        if let ExprKind::Default { column, .. } = kind
+            && !spanbolt_ddl::is_pending_commit_timestamp(expr)
+            && spanbolt_storage::expr::mentions(expr, "pending_commit_timestamp")
+        {
+            let msg = crate::plan::PENDING_COMMIT_TIMESTAMP_USE;
+            return Err(if self.engine.opts.emulator_compat {
+                wrap(msg)
+            } else {
+                Error::invalid_argument(format!(
+                    "Error parsing default value expression '{expr}' from column '{column}' in table '{}': {msg}",
+                    table.name
+                ))
+            });
+        }
         if let ExprKind::Default { ty, .. } = kind
             && !expr.trim().eq_ignore_ascii_case("NULL")
         {

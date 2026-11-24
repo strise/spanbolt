@@ -122,3 +122,38 @@ fn table_without_primary_key_gets_hidden_rowid() {
     let again = parse_statement(expected).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(print_statement(&again), expected);
 }
+
+#[test]
+fn on_update_prints_after_default_and_round_trips() {
+    let expected = "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(Id)";
+    let mut schema = Schema::default();
+    // ON UPDATE may come before DEFAULT; it is printed after it.
+    let stmt = parse_statement(
+        "CREATE TABLE T (Id INT64 NOT NULL, Updated TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP()) DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (Id)",
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
+    schema.apply(&stmt).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(schema.to_ddl(), vec![expected.to_string()]);
+    let again = parse_statement(expected).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(print_statement(&again), expected);
+    for s in [
+        "ALTER TABLE T ALTER COLUMN Updated SET ON UPDATE (PENDING_COMMIT_TIMESTAMP())",
+        "ALTER TABLE T ALTER COLUMN Updated DROP ON UPDATE",
+    ] {
+        let stmt = parse_statement(s).unwrap_or_else(|e| panic!("{s}: {e}"));
+        assert_eq!(print_statement(&stmt), s);
+    }
+}
+
+#[test]
+fn on_update_needs_a_default() {
+    let err = parse_statement(
+        "CREATE TABLE T (Id INT64 NOT NULL, U TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP())) PRIMARY KEY (Id)",
+    )
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Encountered 'ON' while parsing: column_def"),
+        "{err}"
+    );
+}

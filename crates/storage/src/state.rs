@@ -543,6 +543,68 @@ fn backfill(state: &DbState, ix: IndexId) -> Result<RowMap> {
     Ok(entries)
 }
 
+/// Production's limit on the size of a table or index key.
+const MAX_KEY_BYTES: usize = 8 << 10;
+
+/// Production's limit on the mutations of one commit or DML statement.
+const MAX_MUTATIONS: usize = 80_000;
+
+/// The size a key column value counts towards `MAX_KEY_BYTES` (the emulator's
+/// `Key::LogicalSizeInBytes`): string and bytes lengths, fixed sizes for the rest, 2 for NULL.
+fn logical_key_bytes(v: &Value) -> usize {
+    match v {
+        Value::Null => 2,
+        Value::Bool(_) => 1,
+        Value::Date(_) => 4,
+        Value::Int64(_) | Value::Float64(_) => 8,
+        Value::Timestamp(_) => 12,
+        Value::String(s) => s.len(),
+        Value::Bytes(b) => b.len(),
+        Value::Numeric(_) => 25,
+        _ => 0,
+    }
+}
+
+/// The size of a key made of `columns` of `row`. Production counts one byte more per nullable
+/// column (inferred from a recording: an index key of a nullable STRING and a NOT NULL one counted
+/// a byte more than their lengths).
+fn key_bytes(
+    tm: &TableMeta,
+    columns: impl Iterator<Item = usize>,
+    row: &[Value],
+    prod: bool,
+) -> usize {
+    columns
+        .map(|c| logical_key_bytes(&row[c]) + usize::from(prod && !tm.columns[c].not_null))
+        .sum()
+}
+
+fn key_too_large(table: &str, index: Option<&str>, size: usize, prod: bool) -> Error {
+    let what = match (index, prod) {
+        (None, true) => format!("Number of bytes in key of table {table}"),
+        (Some(i), true) => format!("Number of bytes in key of table {table}, index {i}"),
+        (None, false) => format!("Number of bytes for key of table {table}"),
+        (Some(i), false) => format!("Number of bytes for key of index {i}"),
+    };
+    Error::invalid_argument(format!(
+        "{what} is {size} which exceeds the maximum of {MAX_KEY_BYTES}."
+    ))
+}
+
+/// An index entry's key is the index columns followed by the base table's other key columns.
+fn check_index_key_size(im: &IndexMeta, tm: &TableMeta, row: &[Value], prod: bool) -> Result<()> {
+    let columns = im
+        .key
+        .iter()
+        .chain(tm.pk.iter().filter(|c| !im.key.contains(c)))
+        .copied();
+    let size = key_bytes(tm, columns, row, prod);
+    if size > MAX_KEY_BYTES {
+        return Err(key_too_large(&tm.name, Some(&im.name), size, prod));
+    }
+    Ok(())
+}
+
 /// Writes the entry key of `row` into `buf`; returns the length of the index-column prefix, or
 /// `None` when the index leaves the row out (a NULL in a `null_filter` column).
 fn index_key(
@@ -889,6 +951,17 @@ impl Writer {
         self.mutations
     }
 
+    /// Production rejects a DML statement or a commit's mutations that count more than 80,000
+    /// mutations; `since` is the count before them. The emulator has no such limit.
+    pub fn check_mutation_limit(&self, since: usize) -> Result<()> {
+        if self.state.prod_messages && self.mutations - since > MAX_MUTATIONS {
+            return Err(Error::invalid_argument(format!(
+                "The transaction contains too many mutations. Insert and update operations count with the multiplicity of the number of columns they affect. For example, inserting values into one key column and four non-key columns count as five mutations total for the insert. Delete and delete range operations count as one mutation regardless of the number of columns affected. The total mutation count includes any changes to indexes that the transaction generates. Please reduce the number of writes, or use fewer indexes. (Maximum number: {MAX_MUTATIONS})"
+            )));
+        }
+        Ok(())
+    }
+
     /// Checks the deferred constraints (unique indexes, foreign keys) on the final state and
     /// returns it with the keys written.
     pub fn finish(self) -> Result<(DbState, Vec<(Target, Key)>)> {
@@ -1084,6 +1157,22 @@ impl Writer {
                 (None, None) => &Value::Null,
             };
             encode_part(&mut self.buf, v, desc)?;
+        }
+        let prod = self.state.prod_messages;
+        let size: usize = key_pos
+            .iter()
+            .zip(&tm.pk)
+            .map(|(kp, &c)| {
+                let v = match (kp, &computed_row) {
+                    (Some(p), _) => &values[*p],
+                    (None, Some(row)) => &row[c],
+                    (None, None) => &Value::Null,
+                };
+                logical_key_bytes(v) + usize::from(prod && !tm.columns[c].not_null)
+            })
+            .sum();
+        if size > MAX_KEY_BYTES {
+            return Err(key_too_large(&tm.name, None, size, prod));
         }
         let key: Key = Arc::from(&self.buf[..]);
         let existing = self.state.tables[t].get(&key).cloned();
@@ -1284,6 +1373,9 @@ impl Writer {
                 None => None,
             };
             let new_prefix = index_key(im, &new, &key, &mut new_key)?;
+            if new_prefix.is_some() && !im.managed {
+                check_index_key_size(im, tm, &new, self.state.prod_messages)?;
+            }
             let new_row = new_prefix.map(|_| index_row(im, &new));
             if let (Some(ok), Some(_)) = (&old_entry, new_prefix)
                 && **ok == new_key[..]

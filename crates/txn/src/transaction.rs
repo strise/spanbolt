@@ -148,12 +148,18 @@ impl ReadWriteTxn {
 
     /// Applies DML effects to the transaction's private view; they are re-applied at commit.
     pub fn apply_dml(&self, ops: Vec<Mutation>) -> Result<()> {
-        self.apply_dml_checked(ops, &|_| Ok(()))
+        self.apply_dml_checked(ops, &|_| Ok(()), true)
     }
 
     /// Like [`Self::apply_dml`], but first hands `check` the `(table, column)`s that would be
     /// pending a commit timestamp afterwards; an error leaves the transaction as it was.
-    pub fn apply_dml_checked(&self, ops: Vec<Mutation>, check: &PendingCheck) -> Result<()> {
+    /// `limit_mutations` applies production's per-statement mutation limit (not to partitioned DML).
+    pub fn apply_dml_checked(
+        &self,
+        ops: Vec<Mutation>,
+        check: &PendingCheck,
+        limit_mutations: bool,
+    ) -> Result<()> {
         let mut inner = self.inner.lock();
         Self::active(&inner)?;
         let (state, ts) = self.view(&mut inner);
@@ -164,6 +170,9 @@ impl ReadWriteTxn {
             .with_now(clock.now());
         for m in &ops {
             w.apply(m)?;
+        }
+        if limit_mutations {
+            w.check_mutation_limit(0)?;
         }
         let mut pending = inner.pending.clone();
         for &p in w.pending_commit_ts() {
@@ -198,6 +207,7 @@ impl ReadWriteTxn {
             return Ok(c);
         }
         Self::active(&inner)?;
+        let dml_ops = inner.dml.len();
         let all: Vec<Mutation>;
         let muts = if inner.dml.is_empty() {
             mutations
@@ -210,6 +220,7 @@ impl ReadWriteTxn {
             reads: &inner.reads,
             catalog,
             mutations: muts,
+            dml_ops,
         });
         match &result {
             Ok(c) => {

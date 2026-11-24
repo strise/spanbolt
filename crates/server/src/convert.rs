@@ -47,12 +47,22 @@ pub fn spanner_type(t: &ColumnType) -> pb::Type {
     }
 }
 
-/// `name` (table or index) is used in key-arity errors, worded as production Spanner does with
-/// `prod_messages`.
+/// The key columns a Read or delete key set is decoded against, for its error messages.
+pub struct KeyColumns<'a> {
+    /// The table or index, as named in key-arity errors.
+    pub name: &'a str,
+    /// The table production Spanner names in a value error: the table, or `_Index_<index>`.
+    pub table: String,
+    pub names: Vec<&'a str>,
+    pub types: Vec<ColumnType>,
+}
+
+/// Decodes a Read or delete key set. With `prod_messages`, errors are worded as production
+/// Spanner words them: key arity with the key as JSON, and a value that doesn't decode as its
+/// key column's type as `Invalid value for column C in table T: Expected <type>.`.
 pub fn keyset(
     ks: Option<&pb::KeySet>,
-    types: &[ColumnType],
-    name: &str,
+    cols: &KeyColumns<'_>,
     prod_messages: bool,
 ) -> spanbolt_storage::Result<KeySet> {
     let Some(ks) = ks else {
@@ -61,21 +71,35 @@ pub fn keyset(
     if ks.all {
         return Ok(KeySet::all());
     }
+    let types = &cols.types[..];
+    let value_error = |list: &prost_types::ListValue, e| match prod_messages {
+        true => prod_value_error(list, cols, e),
+        false => e,
+    };
     let mut out = KeySet::default();
     for k in &ks.keys {
-        out.keys
-            .push(decode_point_key(k, types, name, prod_messages)?);
+        out.keys.push(
+            decode_point_key(k, types, cols.name, prod_messages).map_err(|e| {
+                if k.values.len() == types.len() {
+                    value_error(k, e)
+                } else {
+                    e
+                }
+            })?,
+        );
     }
+    let range_key =
+        |l: &prost_types::ListValue| decode_key(l, types).map_err(|e| value_error(l, e));
     use pb::key_range::{EndKeyType, StartKeyType};
     for r in &ks.ranges {
         let (start, start_closed) = match &r.start_key_type {
-            Some(StartKeyType::StartClosed(l)) => (decode_key(l, types)?, true),
-            Some(StartKeyType::StartOpen(l)) => (decode_key(l, types)?, false),
+            Some(StartKeyType::StartClosed(l)) => (range_key(l)?, true),
+            Some(StartKeyType::StartOpen(l)) => (range_key(l)?, false),
             None => (Vec::new(), true),
         };
         let (end, end_closed) = match &r.end_key_type {
-            Some(EndKeyType::EndClosed(l)) => (decode_key(l, types)?, true),
-            Some(EndKeyType::EndOpen(l)) => (decode_key(l, types)?, false),
+            Some(EndKeyType::EndClosed(l)) => (range_key(l)?, true),
+            Some(EndKeyType::EndOpen(l)) => (range_key(l)?, false),
             None => (Vec::new(), true),
         };
         out.ranges.push(KeyRange {
@@ -86,6 +110,72 @@ pub fn keyset(
         });
     }
     Ok(out)
+}
+
+/// Production Spanner's error for the first part of `list` that doesn't decode (`e` is the
+/// emulator-worded error for it): NUMERIC strings get the NUMERIC parser's OUT_OF_RANGE error,
+/// everything else names the column and the type it expected.
+fn prod_value_error(
+    list: &prost_types::ListValue,
+    cols: &KeyColumns<'_>,
+    e: spanbolt_storage::Error,
+) -> spanbolt_storage::Error {
+    use prost_types::value::Kind;
+    use spanbolt_storage::error::{Code, Error};
+    let Some((i, v)) = list
+        .values
+        .iter()
+        .zip(&cols.types)
+        .enumerate()
+        .find_map(|(i, (v, t))| {
+            spanbolt_storage::wire::decode(v, t)
+                .is_err()
+                .then_some((i, v))
+        })
+    else {
+        return e;
+    };
+    let ty = &cols.types[i];
+    if let (ColumnType::Numeric, Some(Kind::StringValue(s))) = (ty, &v.kind) {
+        return match numeric_parse_error(s) {
+            Some(detail) => {
+                Error::new(Code::OutOfRange, format!("Invalid NUMERIC value: {detail}"))
+            }
+            None => e,
+        };
+    }
+    let expected = match ty {
+        ColumnType::Bytes(_) => "Base64 encoded BYTES".to_string(),
+        t => spanbolt_storage::value::type_name(t),
+    };
+    Error::failed_precondition(format!(
+        "Invalid value for column {} in table {}: Expected {expected}.",
+        cols.names.get(i).copied().unwrap_or_default(),
+        cols.table
+    ))
+}
+
+/// Why production Spanner's NUMERIC parser rejects `s`, for the plain decimal forms recorded
+/// from it; `None` for anything else (exponents), which keeps the emulator's message.
+fn numeric_parse_error(s: &str) -> Option<String> {
+    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+    if let Some(c) = digits.chars().find(|c| !c.is_ascii_digit() && *c != '.') {
+        if c == 'e' || c == 'E' {
+            return None;
+        }
+        return Some(format!("invalidCharacter {c} found in {s}"));
+    }
+    let (whole, frac) = digits.split_once('.').unwrap_or((digits, ""));
+    if frac.contains('.') {
+        return Some(format!("{s} has more than one decimal point"));
+    }
+    if whole.trim_start_matches('0').len() > 29 {
+        return Some(format!("whole component of NUMERIC {s} too large"));
+    }
+    if frac.trim_end_matches('0').len() > 9 {
+        return Some(format!("fractional component of NUMERIC {s} too large"));
+    }
+    None
 }
 
 pub fn timestamp(t: &prost_types::Timestamp) -> Result<Timestamp, Status> {
@@ -101,4 +191,29 @@ pub fn duration(d: &prost_types::Duration) -> Result<std::time::Duration, Status
 
 pub fn storage_err(e: spanbolt_storage::Error) -> Status {
     to_status(e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::numeric_parse_error;
+
+    #[test]
+    fn numeric_parse_errors_as_spanner_words_them() {
+        let e = |s| numeric_parse_error(s);
+        assert_eq!(e("abc").as_deref(), Some("invalidCharacter a found in abc"));
+        assert_eq!(
+            e("1.2.3").as_deref(),
+            Some("1.2.3 has more than one decimal point")
+        );
+        assert_eq!(
+            e("1.0000000001").as_deref(),
+            Some("fractional component of NUMERIC 1.0000000001 too large")
+        );
+        assert_eq!(
+            e("100000000000000000000000000000").as_deref(),
+            Some("whole component of NUMERIC 100000000000000000000000000000 too large")
+        );
+        assert_eq!(e("-1.5"), None);
+        assert_eq!(e("1e5"), None);
+    }
 }

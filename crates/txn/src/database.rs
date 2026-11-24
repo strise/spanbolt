@@ -295,7 +295,9 @@ impl Database {
             .map_or(by_retention, |v| v.ts.max(by_retention))
     }
 
-    fn version_at(&self, ts: Timestamp) -> Result<Arc<Version>> {
+    /// Fails once `ts` is `version_retention_period` or more in the past, as Spanner and the
+    /// emulator do for stale reads and for every read in an older read-only transaction.
+    pub fn check_retention(&self, ts: Timestamp) -> Result<()> {
         let retention = self.version_retention();
         let horizon = self.clock.now().as_nanos() - retention.as_nanos() as i128;
         if ts.as_nanos() <= horizon {
@@ -304,6 +306,16 @@ impl Database {
                 ts.format_offset()
             )));
         }
+        Ok(())
+    }
+
+    fn version_at(&self, ts: Timestamp) -> Result<Arc<Version>> {
+        self.check_retention(ts)?;
+        self.find_version(ts)
+    }
+
+    /// The version a read at `ts` sees, without the retention check (the caller made it).
+    pub(crate) fn find_version(&self, ts: Timestamp) -> Result<Arc<Version>> {
         let latest = self.latest();
         if ts >= latest.ts {
             // Pin `ts` in the past for every later commit, under the commit lock so no commit with

@@ -4,7 +4,7 @@ use prost::bytes::Bytes;
 use spanbolt_proto::spanner as pb;
 use spanbolt_proto::spanner::spanner_server::Spanner;
 use spanbolt_storage::{Catalog, Error, KeySet, Mutation, Target, WriteKind, scan};
-use spanbolt_txn::{ReadOnlyTxn, ReadView, ReadWriteTxn, TimestampBound};
+use spanbolt_txn::{OpenReadOnlyTxn, ReadOnlyTxn, ReadView, ReadWriteTxn, TimestampBound};
 use tonic::{Request, Response, Status};
 
 use crate::convert::{self, spanner_type};
@@ -123,12 +123,12 @@ impl SpannerService {
                         "Timestamp bound: {b} for read can be only be used for a single use transaction."
                     )));
                 }
-                let version = session.db.snapshot(bound).map_err(to_status)?;
-                let read_timestamp = ro.return_read_timestamp.then(|| version.ts.to_proto());
-                let txn = ReadOnlyTxn { version };
+                let open = OpenReadOnlyTxn::begin(session.db.clone(), bound).map_err(to_status)?;
+                let txn = open.reader().map_err(to_status)?;
+                let read_timestamp = ro.return_read_timestamp.then(|| txn.version.ts.to_proto());
                 let id = self
                     .emu
-                    .add_txn(session, TxnKind::ReadOnly(txn.clone()))
+                    .add_txn(session, TxnKind::ReadOnly(open))
                     .to_be_bytes()
                     .to_vec();
                 Ok((
@@ -212,7 +212,7 @@ impl SpannerService {
                 let entry = self.emu.txn(session, id)?;
                 let reader = match &entry.kind {
                     TxnKind::ReadWrite(t) => Reader::ReadWrite(t.clone()),
-                    TxnKind::ReadOnly(t) => Reader::ReadOnly(t.clone()),
+                    TxnKind::ReadOnly(t) => Reader::ReadOnly(t.reader().map_err(to_status)?),
                     TxnKind::PartitionedDml => Reader::PartitionedDml,
                 };
                 Ok(Resolved {

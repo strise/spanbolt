@@ -1,0 +1,82 @@
+soak:     10s rss=  321.0MB footprint=   84.1MB rust_heap=   80.2MB malloc=    3.7MB ops=137490 passes=6 instances=2 databases=73 sessions=439 txns=845 operations=68 catalogs=27 plans=865 gsql_tables=148 search_postings=32 search_queries=213
+soak:     20s rss=  397.8MB footprint=   83.9MB rust_heap=  147.0MB malloc=    4.1MB ops=167704 passes=13 instances=2 databases=94 sessions=864 txns=1710 operations=87 catalogs=46 plans=3597 gsql_tables=148 search_postings=32 search_queries=213
+soak:     30s rss=  466.6MB footprint=   84.3MB rust_heap=  202.1MB malloc=    3.7MB ops=167848 passes=21 instances=2 databases=73 sessions=1303 txns=2576 operations=68 catalogs=27 plans=1901 gsql_tables=148 search_postings=32 search_queries=213
+soak:     40s rss=  538.1MB footprint=   84.9MB rust_heap=  261.1MB malloc=    3.5MB ops=167824 passes=29 instances=2 databases=47 sessions=1736 txns=3443 operations=39 catalogs=4 plans=419 gsql_tables=148 search_postings=32 search_queries=213
+soak:     50s rss=  604.9MB footprint=   86.7MB rust_heap=  327.0MB malloc=    3.7MB ops=168697 passes=36 instances=2 databases=74 sessions=2171 txns=4306 operations=64 catalogs=23 plans=2554 gsql_tables=148 search_postings=32 search_queries=213
+soak:     60s rss=  671.1MB footprint=   87.3MB rust_heap=  385.4MB malloc=    3.5MB ops=166955 passes=44 instances=2 databases=50 sessions=2602 txns=5171 operations=46 catalogs=10 plans=649 gsql_tables=148 search_postings=32 search_queries=213
+soak:     70s rss=  735.8MB footprint=   89.2MB rust_heap=  445.9MB malloc=    3.7MB ops=155743 passes=51 instances=2 databases=72 sessions=3027 txns=6022 operations=63 catalogs=22 plans=1003 gsql_tables=148 search_postings=32 search_queries=213
+soak:     80s rss=  824.8MB footprint=   97.8MB rust_heap=  502.5MB malloc=    3.7MB ops=116474 passes=57 instances=2 databases=72 sessions=3430 txns=6830 operations=64 catalogs=23 plans=1148 gsql_tables=148 search_postings=32 search_queries=213
+soak:     90s rss=  885.1MB footprint=  102.5MB rust_heap=  560.1MB malloc=    3.7MB ops=125239 passes=63 instances=2 databases=74 sessions=3839 txns=7648 operations=64 catalogs=23 plans=2086 gsql_tables=148 search_postings=32 search_queries=213
+soak:    100s rss=  949.4MB footprint=  104.9MB rust_heap=  615.7MB malloc=    3.7MB ops=121184 passes=69 instances=2 databases=74 sessions=4246 txns=8458 operations=68 catalogs=27 plans=2832 gsql_tables=148 search_postings=32 search_queries=213
+soak:    110s rss=  983.7MB footprint=  223.0MB rust_heap=  672.1MB malloc=    3.7MB ops=121215 passes=75 instances=2 databases=72 sessions=4643 txns=9268 operations=68 catalogs=28 plans=3144 gsql_tables=148 search_postings=32 search_queries=213
+soak:    120s rss= 1050.9MB footprint=  220.1MB rust_heap=  690.2MB malloc=    3.7MB ops=119914 passes=81 instances=2 databases=71 sessions=5047 txns=10074 operations=67 catalogs=23 plans=2099 gsql_tables=148 search_postings=32 search_queries=213
+soak:    130s rss=  968.6MB footprint=  431.3MB rust_heap=  426.4MB malloc=    3.7MB ops=131899 passes=87 instances=2 databases=75 sessions=5447 txns=10877 operations=69 catalogs=27 plans=3907 gsql_tables=148 search_postings=32 search_queries=213
+soak:    140s rss= 1020.8MB footprint=  437.0MB rust_heap=  484.5MB malloc=    4.0MB ops=128126 passes=93 instances=2 databases=91 sessions=5855 txns=11684 operations=81 catalogs=40 plans=4342 gsql_tables=148 search_postings=32 search_queries=213
+soak:    150s rss= 1058.1MB footprint=  436.0MB rust_heap=  535.6MB malloc=    3.8MB ops=138230 passes=100 instances=2 databases=72 sessions=6268 txns=12506 operations=64 catalogs=23 plans=1987 gsql_tables=148 search_postings=32 search_queries=213
+soak:    160s rss= 1088.5MB footprint=  436.2MB rust_heap=  597.9MB malloc=    3.7MB ops=164463 passes=107 instances=2 databases=74 sessions=6700 txns=13367 operations=64 catalogs=23 plans=2526 gsql_tables=148 search_postings=32 search_queries=213
+soak:    170s rss= 1123.5MB footprint=  437.4MB rust_heap=  660.3MB malloc=    3.7MB ops=167162 passes=114 instances=2 databases=74 sessions=7130 txns=14227 operations=64 catalogs=23 plans=3243 gsql_tables=148 search_postings=32 search_queries=213
+soak:    180s rss= 1157.7MB footprint=  439.1MB rust_heap=  670.8MB malloc=    3.7MB ops=163634 passes=121 instances=2 databases=70 sessions=7553 txns=15086 operations=68 catalogs=27 plans=3253 gsql_tables=148 search_postings=32 search_queries=213
+soak:    190s rss= 1171.0MB footprint=  260.6MB rust_heap=  445.3MB malloc=    3.7MB ops=166467 passes=128 instances=2 databases=73 sessions=7985 txns=15936 operations=68 catalogs=27 plans=3519 gsql_tables=148 search_postings=32 search_queries=213
+soak:    200s rss= 1185.1MB footprint=  260.4MB rust_heap=  507.2MB malloc=    3.7MB ops=166057 passes=135 instances=2 databases=74 sessions=8413 txns=16796 operations=68 catalogs=27 plans=3693 gsql_tables=148 search_postings=32 search_queries=213
+soak:    210s rss= 1198.0MB footprint=  260.8MB rust_heap=  568.7MB malloc=    3.7MB ops=167240 passes=142 instances=2 databases=73 sessions=8843 txns=17655 operations=68 catalogs=27 plans=4038 gsql_tables=148 search_postings=32 search_queries=213
+soak:    220s rss= 1213.2MB footprint=  261.3MB rust_heap=  631.4MB malloc=    3.7MB ops=167218 passes=149 instances=2 databases=73 sessions=9272 txns=18514 operations=64 catalogs=23 plans=4204 gsql_tables=148 search_postings=32 search_queries=213
+soak:    230s rss= 1230.3MB footprint=  264.4MB rust_heap=  692.7MB malloc=    3.8MB ops=166307 passes=156 instances=2 databases=74 sessions=9703 txns=19370 operations=68 catalogs=24 plans=4145 gsql_tables=148 search_postings=32 search_queries=213
+soak:    240s rss= 1256.9MB footprint=  264.4MB rust_heap=  700.4MB malloc=    3.7MB ops=165757 passes=163 instances=2 databases=70 sessions=10125 txns=20230 operations=67 catalogs=27 plans=3798 gsql_tables=148 search_postings=32 search_queries=213
+soak:    250s rss= 1259.2MB footprint=  258.3MB rust_heap=  462.1MB malloc=    3.7MB ops=164703 passes=170 instances=2 databases=73 sessions=10552 txns=21077 operations=64 catalogs=23 plans=3097 gsql_tables=148 search_postings=32 search_queries=213
+soak:    260s rss= 1260.2MB footprint=  258.4MB rust_heap=  520.6MB malloc=    3.6MB ops=165122 passes=177 instances=2 databases=60 sessions=10981 txns=21933 operations=56 catalogs=15 plans=2563 gsql_tables=148 search_postings=32 search_queries=213
+soak:    270s rss= 1260.5MB footprint=  257.8MB rust_heap=  588.7MB malloc=    4.0MB ops=162714 passes=183 instances=2 databases=76 sessions=11401 txns=22786 operations=73 catalogs=31 plans=5515 gsql_tables=148 search_postings=32 search_queries=213
+soak:    280s rss= 1262.6MB footprint=  257.8MB rust_heap=  646.0MB malloc=    3.7MB ops=163194 passes=190 instances=2 databases=72 sessions=11836 txns=23640 operations=64 catalogs=23 plans=4061 gsql_tables=148 search_postings=32 search_queries=213
+soak:    290s rss= 1269.7MB footprint=  259.6MB rust_heap=  710.7MB malloc=    3.8MB ops=157313 passes=196 instances=2 databases=81 sessions=12250 txns=24486 operations=76 catalogs=35 plans=5781 gsql_tables=148 search_postings=32 search_queries=213
+soak:    300s rss= 1281.9MB footprint=  258.2MB rust_heap=  724.4MB malloc=    3.5MB ops=156018 passes=203 instances=2 databases=43 sessions=12675 txns=25330 operations=40 catalogs=4 plans=2916 gsql_tables=148 search_postings=32 search_queries=213
+soak:    310s rss= 1283.3MB footprint=  254.3MB rust_heap=  461.8MB malloc=    3.7MB ops=145563 passes=208 instances=2 databases=72 sessions=13084 txns=26154 operations=66 catalogs=26 plans=5618 gsql_tables=148 search_postings=32 search_queries=213
+soak:    320s rss= 1284.2MB footprint=  254.5MB rust_heap=  517.4MB malloc=    3.5MB ops=160484 passes=215 instances=2 databases=53 sessions=13514 txns=27002 operations=47 catalogs=8 plans=3114 gsql_tables=148 search_postings=32 search_queries=213
+soak:    330s rss= 1284.9MB footprint=  254.3MB rust_heap=  579.0MB malloc=    3.7MB ops=159243 passes=221 instances=2 databases=70 sessions=13938 txns=27845 operations=68 catalogs=27 plans=3956 gsql_tables=148 search_postings=32 search_queries=213
+soak:    340s rss= 1287.3MB footprint=  254.1MB rust_heap=  640.0MB malloc=    3.8MB ops=158570 passes=227 instances=2 databases=72 sessions=14360 txns=28688 operations=68 catalogs=27 plans=4934 gsql_tables=148 search_postings=32 search_queries=213
+soak:    350s rss= 1288.9MB footprint=  254.8MB rust_heap=  703.7MB malloc=    3.8MB ops=161068 passes=233 instances=2 databases=76 sessions=14774 txns=29534 operations=72 catalogs=32 plans=6270 gsql_tables=148 search_postings=32 search_queries=213
+soak:    360s rss= 1293.1MB footprint=  256.4MB rust_heap=  723.5MB malloc=    4.0MB ops=159801 passes=239 instances=2 databases=95 sessions=15191 txns=30378 operations=92 catalogs=50 plans=6960 gsql_tables=148 search_postings=32 search_queries=213
+soak:    370s rss= 1295.8MB footprint=  255.7MB rust_heap=  456.9MB malloc=    3.5MB ops=161698 passes=246 instances=2 databases=47 sessions=15621 txns=31213 operations=39 catalogs=5 plans=3610 gsql_tables=148 search_postings=32 search_queries=213
+soak:    380s rss= 1297.5MB footprint=  257.8MB rust_heap=  526.4MB malloc=    4.0MB ops=156092 passes=251 instances=2 databases=97 sessions=16035 txns=32052 operations=91 catalogs=50 plans=7154 gsql_tables=148 search_postings=32 search_queries=213
+soak:    390s rss= 1298.5MB footprint=  257.4MB rust_heap=  581.5MB malloc=    3.8MB ops=156946 passes=257 instances=2 databases=73 sessions=16451 txns=32890 operations=71 catalogs=31 plans=6616 gsql_tables=148 search_postings=32 search_queries=213
+soak:    400s rss= 1301.8MB footprint=  259.8MB rust_heap=  644.5MB malloc=    3.8MB ops=161379 passes=263 instances=2 databases=83 sessions=16877 txns=33733 operations=75 catalogs=34 plans=6848 gsql_tables=148 search_postings=32 search_queries=213
+soak:    410s rss= 1302.3MB footprint=  255.2MB rust_heap=  701.9MB malloc=    3.7MB ops=158307 passes=269 instances=2 databases=71 sessions=17290 txns=34568 operations=68 catalogs=28 plans=6267 gsql_tables=148 search_postings=32 search_queries=213
+soak:    420s rss= 1308.5MB footprint=  254.5MB rust_heap=  703.6MB malloc=    3.7MB ops=158284 passes=275 instances=2 databases=69 sessions=17712 txns=35404 operations=64 catalogs=23 plans=1297 gsql_tables=148 search_postings=32 search_queries=213
+soak:    430s rss= 1309.4MB footprint=  254.5MB rust_heap=  453.7MB malloc=    3.7MB ops=159632 passes=281 instances=2 databases=74 sessions=18134 txns=36232 operations=68 catalogs=27 plans=680 gsql_tables=148 search_postings=32 search_queries=213
+soak:    440s rss= 1310.8MB footprint=  252.6MB rust_heap=  513.9MB malloc=    3.5MB ops=160728 passes=287 instances=2 databases=48 sessions=18550 txns=37072 operations=39 catalogs=5 plans=214 gsql_tables=148 search_postings=32 search_queries=213
+soak:    450s rss= 1312.3MB footprint=  255.9MB rust_heap=  576.9MB malloc=    3.7MB ops=156702 passes=292 instances=2 databases=71 sessions=18961 txns=37907 operations=68 catalogs=26 plans=2433 gsql_tables=148 search_postings=32 search_queries=213
+soak:    460s rss= 1313.8MB footprint=  253.7MB rust_heap=  633.5MB malloc=    3.8MB ops=158546 passes=298 instances=2 databases=73 sessions=19385 txns=38742 operations=68 catalogs=27 plans=1043 gsql_tables=148 search_postings=32 search_queries=213
+soak:    470s rss= 1314.3MB footprint=  254.5MB rust_heap=  699.2MB malloc=    3.9MB ops=156919 passes=303 instances=2 databases=78 sessions=19792 txns=39576 operations=79 catalogs=40 plans=3526 gsql_tables=148 search_postings=32 search_queries=213
+soak:    480s rss= 1315.4MB footprint=  255.9MB rust_heap=  709.4MB malloc=    3.7MB ops=154346 passes=309 instances=2 databases=69 sessions=20214 txns=40408 operations=66 catalogs=22 plans=862 gsql_tables=148 search_postings=32 search_queries=213
+soak:    490s rss= 1316.5MB footprint=  254.5MB rust_heap=  456.5MB malloc=    3.7MB ops=154014 passes=314 instances=2 databases=73 sessions=20629 txns=41228 operations=68 catalogs=27 plans=2073 gsql_tables=148 search_postings=32 search_queries=213
+soak:    500s rss= 1318.8MB footprint=  252.1MB rust_heap=  521.8MB malloc=    3.9MB ops=155693 passes=319 instances=2 databases=82 sessions=21039 txns=42062 operations=75 catalogs=34 plans=3739 gsql_tables=148 search_postings=32 search_queries=213
+soak:    510s rss= 1319.1MB footprint=  254.5MB rust_heap=  575.6MB malloc=    3.6MB ops=156996 passes=325 instances=2 databases=63 sessions=21463 txns=42897 operations=54 catalogs=13 plans=1000 gsql_tables=148 search_postings=32 search_queries=213
+soak:    520s rss= 1320.3MB footprint=  251.6MB rust_heap=  634.2MB malloc=    3.8MB ops=155339 passes=330 instances=2 databases=72 sessions=21878 txns=43726 operations=68 catalogs=27 plans=1745 gsql_tables=148 search_postings=32 search_queries=213
+soak:    530s rss= 1321.6MB footprint=  254.8MB rust_heap=  694.9MB malloc=    3.7MB ops=156081 passes=335 instances=2 databases=71 sessions=22292 txns=44556 operations=64 catalogs=23 plans=2498 gsql_tables=148 search_postings=32 search_queries=213
+soak:    540s rss= 1322.7MB footprint=  249.0MB rust_heap=  705.9MB malloc=    3.7MB ops=153746 passes=340 instances=2 databases=68 sessions=22695 txns=45386 operations=68 catalogs=28 plans=2993 gsql_tables=148 search_postings=32 search_queries=213
+soak:    550s rss= 1323.2MB footprint=  246.5MB rust_heap=  456.2MB malloc=    3.7MB ops=147597 passes=345 instances=2 databases=71 sessions=23115 txns=46202 operations=64 catalogs=23 plans=1801 gsql_tables=148 search_postings=32 search_queries=213
+soak:    560s rss= 1284.2MB footprint=  376.7MB rust_heap=  513.0MB malloc=    3.8MB ops=120233 passes=348 instances=2 databases=72 sessions=23501 txns=46990 operations=64 catalogs=24 plans=2920 gsql_tables=148 search_postings=32 search_queries=213
+soak:    570s rss= 1301.1MB footprint=  395.5MB rust_heap=  574.6MB malloc=    3.8MB ops=115368 passes=351 instances=2 databases=71 sessions=23895 txns=47776 operations=69 catalogs=29 plans=3744 gsql_tables=148 search_postings=32 search_queries=213
+soak:    580s rss= 1281.4MB footprint=  445.8MB rust_heap=  623.7MB malloc=    3.6MB ops=120910 passes=355 instances=2 databases=61 sessions=24298 txns=48569 operations=52 catalogs=11 plans=1531 gsql_tables=148 search_postings=32 search_queries=213
+soak:    590s rss= 1293.6MB footprint=  439.6MB rust_heap=  677.7MB malloc=    3.7MB ops=143378 passes=359 instances=2 databases=71 sessions=24700 txns=49370 operations=64 catalogs=23 plans=1982 gsql_tables=148 search_postings=32 search_queries=213
+soak:    600s rss= 1305.2MB footprint=  438.3MB rust_heap=  699.8MB malloc=    3.8MB ops=129850 passes=362 instances=2 databases=71 sessions=25083 txns=50162 operations=73 catalogs=31 plans=4567 gsql_tables=148 search_postings=32 search_queries=213
+== soak summary (601 s, 4 workers, 2 churn tasks, 50163 short-lived clients)
+rss: start 321.0 MB, after warm-up 1281.9 MB, end 1305.2 MB, peak 1323.2 MB, slope after warm-up +274.6 MB/h
+footprint: start 84.1 MB, after warm-up 258.2 MB, end 438.3 MB, peak 445.8 MB, slope after warm-up +1535.2 MB/h
+rust_heap: start 80.2 MB, after warm-up 724.4 MB, end 699.8 MB, peak 724.4 MB, slope after warm-up +233.7 MB/h
+malloc: start 3.7 MB, after warm-up 3.5 MB, end 3.8 MB, peak 4.1 MB, slope after warm-up +0.1 MB/h
+conformance passes: 363 (last: TOTAL 4311 4229 31 42 0 9); workload errors: 0
+latency p50/p99 µs, first window after warm-up -> last window:
+  create_db      580/1390     ->     786/2039    
+  seed          1199/2287     ->    1456/3150    
+  point          229/508      ->     247/868     
+  index          268/608      ->     295/979     
+  search         429/2116     ->     493/2905    
+  dml            510/955      ->     577/1682    
+  commit         239/998      ->     259/1326    
+  clone          210/478      ->     222/867     
+  drop_db        582/1683     ->    1688/5344    
+  connect        785/2108     ->    1349/5041    
+  mux_rw         310/547      ->     338/1617    
+  mux_pdml      1375/2306     ->    1613/3720    
+  mux_partition    2933/4234     ->    3685/7706    
+final sizes: instances=2 databases=2 sessions=25083 txns=50162 operations=4 catalogs=50 plans=5117 gsql_tables=148 search_postings=32 search_queries=213
+csv: docs/soak/2026-11-24-10m-churn-after-sb061.csv

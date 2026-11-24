@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 use spanbolt_storage::{
     Catalog, DbState, Error, KeySet, Mutation, Result, Span, TableId, Target, Timestamp, Writer,
 };
 
-use crate::database::{CommitInput, CommitOutcome, Database, ReadSet, Version};
+use crate::database::{CommitInput, CommitOutcome, Database, ReadSet, TimestampBound, Version};
 
 /// Checks the `(table, column)`s pending a commit timestamp after a DML statement.
 pub type PendingCheck<'a> = dyn Fn(&[(TableId, usize)]) -> Result<()> + 'a;
@@ -262,5 +263,84 @@ impl ReadOnlyTxn {
             spans,
             ts: self.version.ts,
         })
+    }
+}
+
+/// A read-only transaction kept between requests (`BeginTransaction`, or begun inline): its read
+/// timestamp, and the version it reads while it is in use.
+///
+/// Holding the version for the transaction's whole life would keep that version's whole state
+/// alive after the history drops it, and clients never close read-only transactions: a client per
+/// test that runs a PartitionQuery on a multiplexed session leaves one behind each time, each
+/// pinning a different version under a steady writer, until the hour-long transaction sweep.
+/// So the version stays pinned only while the transaction is read: [`release_if_idle`]
+/// (from the session sweeper) drops the pin of a transaction not read since its previous call,
+/// and the next read finds the version in the database's history again by timestamp. If the
+/// history has dropped it by then (more than its cap of versions or schema changes since), that
+/// read fails as garbage collected, like a stale read at the same timestamp.
+///
+/// [`release_if_idle`]: OpenReadOnlyTxn::release_if_idle
+pub struct OpenReadOnlyTxn {
+    db: Arc<Database>,
+    /// The version's timestamp: finds it again in the history.
+    ts: Timestamp,
+    /// When the transaction reads (now at begin, or the bound's timestamp), at least `ts`; the
+    /// retention period counts from here. A strong read of a database nobody wrote to for hours
+    /// gets an old version, and must not count as stale for it.
+    read_at: Timestamp,
+    pin: Mutex<Option<Arc<Version>>>,
+    used: AtomicBool,
+}
+
+impl OpenReadOnlyTxn {
+    /// Begins a transaction reading `db` at `bound`, its version pinned until it goes idle.
+    pub fn begin(db: Arc<Database>, bound: TimestampBound) -> Result<OpenReadOnlyTxn> {
+        let now = db.clock().now();
+        let version = db.snapshot(bound)?;
+        let read_at = match bound {
+            TimestampBound::ReadTimestamp(ts) => ts,
+            TimestampBound::ExactStaleness(d) => {
+                Timestamp::from_nanos(now.as_nanos() - d.as_nanos() as i128)
+            }
+            _ => now,
+        };
+        Ok(OpenReadOnlyTxn {
+            db,
+            ts: version.ts,
+            read_at: read_at.max(version.ts),
+            pin: Mutex::new(Some(version)),
+            used: AtomicBool::new(true),
+        })
+    }
+
+    /// The version one request reads. Every read checks the retention period, as Spanner and the
+    /// emulator do: a transaction older than `version_retention_period` can no longer read.
+    pub fn reader(&self) -> Result<ReadOnlyTxn> {
+        self.db.check_retention(self.read_at)?;
+        self.used.store(true, Ordering::Relaxed);
+        let mut pin = self.pin.lock();
+        let version = match &*pin {
+            Some(v) => v.clone(),
+            None => {
+                let v = self.db.find_version(self.ts)?;
+                *pin = Some(v.clone());
+                v
+            }
+        };
+        Ok(ReadOnlyTxn { version })
+    }
+
+    /// Unpins the version if the transaction hasn't been read since the previous call. Returns
+    /// whether it did.
+    pub fn release_if_idle(&self) -> bool {
+        if self.used.swap(false, Ordering::Relaxed) {
+            return false;
+        }
+        self.pin.lock().take().is_some()
+    }
+
+    /// Whether the version is pinned (tests).
+    pub fn is_pinned(&self) -> bool {
+        self.pin.lock().is_some()
     }
 }

@@ -60,12 +60,12 @@ fn precommit(
         })
 }
 
-fn session_proto(s: &Session) -> pb::Session {
+fn session_proto(emu: &Emulator, s: &Session) -> pb::Session {
     pb::Session {
         name: s.name.clone(),
         labels: s.labels.clone(),
         create_time: Some(s.create_time.to_proto()),
-        approximate_last_use_time: Some(s.create_time.to_proto()),
+        approximate_last_use_time: Some(emu.last_use_time(s).to_proto()),
         creator_role: s.creator_role.clone(),
         multiplexed: s.multiplexed,
     }
@@ -576,6 +576,7 @@ impl Spanner for SpannerService {
         let req = req.into_inner();
         let entry = self.emu.database(&req.database)?;
         Ok(Response::new(session_proto(
+            &self.emu,
             &self.new_session(&entry, req.session.as_ref()),
         )))
     }
@@ -590,7 +591,12 @@ impl Spanner for SpannerService {
         }
         let entry = self.emu.database(&req.database)?;
         let session = (0..req.session_count.min(100))
-            .map(|_| session_proto(&self.new_session(&entry, req.session_template.as_ref())))
+            .map(|_| {
+                session_proto(
+                    &self.emu,
+                    &self.new_session(&entry, req.session_template.as_ref()),
+                )
+            })
             .collect();
         Ok(Response::new(pb::BatchCreateSessionsResponse { session }))
     }
@@ -599,8 +605,10 @@ impl Spanner for SpannerService {
         &self,
         req: Request<pb::GetSessionRequest>,
     ) -> Result<Response<pb::Session>, Status> {
-        let session = self.emu.session(&req.get_ref().name)?;
-        Ok(Response::new(session_proto(&session)))
+        let name = &req.get_ref().name;
+        crate::names::validate_session_name(name)?;
+        let session = self.emu.session(name)?;
+        Ok(Response::new(session_proto(&self.emu, &session)))
     }
 
     async fn list_sessions(
@@ -612,7 +620,10 @@ impl Spanner for SpannerService {
         let (sessions, next_page_token) =
             self.emu
                 .sessions_page(&req.database, req.page_size, &req.page_token);
-        let sessions = sessions.iter().map(|s| session_proto(s)).collect();
+        let sessions = sessions
+            .iter()
+            .map(|s| session_proto(&self.emu, s))
+            .collect();
         Ok(Response::new(pb::ListSessionsResponse {
             sessions,
             next_page_token,

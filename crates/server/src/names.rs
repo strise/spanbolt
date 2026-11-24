@@ -44,6 +44,33 @@ pub fn database_name(name: &str) -> Result<DatabaseName<'_>, Status> {
     }
 }
 
+/// Checks a session name the way the emulator's `ParseSessionUri` does, with its messages. It is
+/// lenient: each segment is `<kind>s/<id>` with any id up to the next `/` (empty included), and
+/// the session id is the whole rest (`.../sessions/` and `.../sessions/a/b` pass). A failing
+/// segment's message shows what is left of the name from that segment on.
+pub fn validate_session_name(name: &str) -> Result<(), Status> {
+    fn consume<'a>(rest: &'a str, prefix: &str) -> Option<&'a str> {
+        let rest = rest.strip_prefix(prefix)?;
+        let id = rest.split('/').next().unwrap_or_default();
+        Some(
+            rest.strip_prefix(id)
+                .and_then(|r| r.strip_prefix('/'))
+                .unwrap_or(rest),
+        )
+    }
+    let mut rest = name;
+    for (prefix, kind) in [
+        ("projects/", "project"),
+        ("instances/", "instance"),
+        ("databases/", "database"),
+        ("sessions/", "session"),
+    ] {
+        rest = consume(rest, prefix)
+            .ok_or_else(|| Status::invalid_argument(format!("Invalid {kind} uri: {rest}")))?;
+    }
+    Ok(())
+}
+
 pub fn validate_instance_id(id: &str) -> Result<(), Status> {
     let b = id.as_bytes();
     let ok = (2..=64).contains(&b.len())
@@ -113,6 +140,38 @@ pub fn parse_create_database(stmt: &str) -> Result<String, Status> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Recorded from emulator 1.5.59 (`conformance/cases/api/sessions.case`) and its `uris.cc`.
+    #[test]
+    fn session_names() {
+        let msg = |n: &str| {
+            validate_session_name(n)
+                .err()
+                .map(|s| s.message().to_string())
+        };
+        let db = "projects/p/instances/i/databases/d";
+        assert_eq!(msg(&format!("{db}/sessions/s1")), None);
+        assert_eq!(msg(&format!("{db}/sessions/")), None);
+        assert_eq!(msg(&format!("{db}/sessions/a/b")), None);
+        assert_eq!(
+            msg(&format!("{db}/sessions")).as_deref(),
+            Some("Invalid session uri: sessions")
+        );
+        assert_eq!(
+            msg(&format!("{db}/session/a")).as_deref(),
+            Some("Invalid session uri: session/a")
+        );
+        assert_eq!(msg(db).as_deref(), Some("Invalid session uri: d"));
+        assert_eq!(
+            msg("projects/p/instances/i/sessions/a").as_deref(),
+            Some("Invalid database uri: sessions/a")
+        );
+        assert_eq!(
+            msg("projects/p").as_deref(),
+            Some("Invalid instance uri: p")
+        );
+        assert_eq!(msg("").as_deref(), Some("Invalid project uri: "));
+    }
 
     #[test]
     fn ids() {

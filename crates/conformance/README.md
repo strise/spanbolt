@@ -110,7 +110,7 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 
 | Step | Body | Notes |
 |---|---|---|
-| `query [ordered\|unordered] [txn=] [bound=]:` | SQL | Rows compared in order only if the SQL has a top-level `ORDER BY` (override with `ordered`/`unordered`). |
+| `query [ordered\|unordered] [txn=] [bound=] [session=S]:` | SQL | Rows compared in order only if the SQL has a top-level `ORDER BY` (override with `ordered`/`unordered`). `session=S` runs it in a session saved by `create_session`. |
 | `dml [txn=]:` | SQL | Expects `count:` and, with `THEN RETURN`, rows. |
 | `pdml:` | SQL | Partitioned DML; expects `count:` (lower bound). |
 | `batch [txn=]:` | statements, `;` at line end | `ExecuteBatchDml`; expects `counts:` and optionally `error:`. |
@@ -123,6 +123,10 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 | `ddl:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation. |
 | `get_ddl` | – | `GetDatabaseDdl`; expects `statements:`. |
 | `list_sessions [create=K] [page_size=N]` | – | Creates K sessions, then pages through `ListSessions`; expects `counts:` (sessions per page). |
+| `create_session session=S [multiplexed]` | – | `CreateSession`, saving the name under `S`. |
+| `get_session session=S [wait=D]` | – | Sleeps `D`, then `GetSession`; expects `counts: [1]` when `approximate_last_use_time` is at least 0.5 s after `create_time`, else `[0]`. |
+| `session_last_use session=S [wait=D]` | – | Same, read from `ListSessions` (not a use); `[-1]` when `S` is not listed. |
+| `delete_session session=S` / `name=TEXT` | – | `DeleteSession` on a saved session or a literal name (`<db>` is the case database). |
 | `params:` | `@name TYPE = <json>` per line | Attaches to the preceding `query`/`dml`/`pdml`. |
 | `expect:` | see below | Attaches to the preceding step. Written by `record`. |
 

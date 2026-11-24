@@ -23,6 +23,10 @@ pub enum Verb {
     Ddl,
     GetDdl,
     ListSessions,
+    CreateSession,
+    GetSession,
+    SessionLastUse,
+    DeleteSession,
     GetOperation,
     ListDatabaseOperations,
     ListOperations,
@@ -415,6 +419,10 @@ fn parse_step(b: &Block) -> Result<Step, String> {
         "ddl" => Verb::Ddl,
         "get_ddl" => Verb::GetDdl,
         "list_sessions" => Verb::ListSessions,
+        "create_session" => Verb::CreateSession,
+        "get_session" => Verb::GetSession,
+        "session_last_use" => Verb::SessionLastUse,
+        "delete_session" => Verb::DeleteSession,
         "get_operation" => Verb::GetOperation,
         "list_database_operations" => Verb::ListDatabaseOperations,
         "list_operations" => Verb::ListOperations,
@@ -449,6 +457,10 @@ fn parse_step(b: &Block) -> Result<Step, String> {
             | Verb::Rollback
             | Verb::GetDdl
             | Verb::ListSessions
+            | Verb::CreateSession
+            | Verb::GetSession
+            | Verb::SessionLastUse
+            | Verb::DeleteSession
             | Verb::GetOperation
             | Verb::ListDatabaseOperations
             | Verb::ListOperations
@@ -459,6 +471,16 @@ fn parse_step(b: &Block) -> Result<Step, String> {
     }
     if !wants_body && b.body.iter().any(|l| !l.trim().is_empty()) {
         return Err(format!("`{verb_text}` takes no body"));
+    }
+    let names_session = matches!(
+        verb,
+        Verb::CreateSession | Verb::GetSession | Verb::SessionLastUse
+    );
+    if names_session && !opts.contains_key("session") {
+        return Err(format!("`{verb_text}` needs session="));
+    }
+    if verb == Verb::DeleteSession && opts.contains_key("session") == opts.contains_key("name") {
+        return Err(format!("`{verb_text}` needs session= or name="));
     }
     if verb == Verb::GetOperation && !opts.contains_key("op") {
         return Err(format!("`{verb_text}` needs op="));

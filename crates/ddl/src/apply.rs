@@ -3,7 +3,7 @@
 use crate::DdlError;
 use crate::lexer::{Tok, tokenize};
 use crate::names;
-use crate::parser::{ChangeStream, CsTarget};
+use crate::parser::{ChangeStream, CsTarget, GrantStmt, parse_grant};
 use crate::schema::*;
 
 type R<T> = Result<T, DdlError>;
@@ -885,8 +885,11 @@ impl Schema {
                 views.join(", ")
             )));
         }
+        let name = t.name.clone();
         self.tables.remove(&k);
         self.drop_order(ObjectKind::Table, &k);
+        self.grants
+            .retain(|g| !matches!(&g.object, GrantObject::Table { table, .. } if *table == name));
         Ok(())
     }
 
@@ -941,8 +944,14 @@ impl Schema {
                 }
                 let streams = self.streams_tracking(&tname, Some(name));
                 if !streams.is_empty() {
+                    // The emulator names the column with its table and puts a space before the dot.
+                    let (gap, column) = if compat {
+                        (" ", format!("{tname}.{cname}"))
+                    } else {
+                        ("", cname.clone())
+                    };
                     return Err(pre(format!(
-                        "Cannot drop column {tname}.{cname} . Column {tname}.{cname} is tracked by {}. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
+                        "Cannot drop column {tname}.{cname}{gap}. Column {column} is tracked by {}. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
                         count_streams(&streams)
                     )));
                 }
@@ -996,6 +1005,10 @@ impl Schema {
                 self.table_mut(&k)?
                     .columns
                     .retain(|c| !c.name.eq_ignore_ascii_case(name));
+                self.grants.retain(|g| {
+                    !matches!(&g.object, GrantObject::Table { table, column: Some(c), .. }
+                        if *table == tname && *c == cname)
+                });
             }
             AlterTable::AlterColumn { column } => {
                 let Some(old) = t.column(&column.name) else {
@@ -1353,6 +1366,13 @@ impl Schema {
             }
         }
         let same = |s: &str| s.eq_ignore_ascii_case(&old_name);
+        for g in &mut self.grants {
+            if let GrantObject::Table { table, .. } = &mut g.object
+                && same(table)
+            {
+                *table = to.to_string();
+            }
+        }
         for t in self.tables.values_mut() {
             if let Some(il) = t.interleave.as_mut()
                 && same(&il.parent)
@@ -1376,6 +1396,19 @@ impl Schema {
         for i in self.search_indexes.values_mut() {
             if same(&i.table) {
                 i.table = to.to_string();
+            }
+        }
+        for o in self.opaque.iter_mut().filter(|o| o.kind == "CHANGE STREAM") {
+            let Ok(mut cs) = ChangeStream::parse(&o.ddl) else {
+                continue;
+            };
+            if let CsTarget::Tables(ts) = &mut cs.target
+                && ts.iter().any(|(t, _)| same(t))
+            {
+                for (t, _) in ts.iter_mut().filter(|(t, _)| same(t)) {
+                    *t = to.to_string();
+                }
+                o.ddl = cs.to_ddl();
             }
         }
         Ok(new_key)
@@ -1675,9 +1708,14 @@ impl Schema {
         Ok(())
     }
 
-    fn opaque_stmt(&mut self, object: &OpaqueObject, drop: bool) -> R<()> {
+    fn opaque_stmt(&mut self, object: &OpaqueObject, drop: bool, compat: bool) -> R<()> {
         let kind = object.kind.as_str();
         let name = object.name.as_str();
+        match kind {
+            "ROLE" => return self.role_stmt(object, drop, compat),
+            "GRANT" | "REVOKE" => return self.grant_stmt(&object.ddl, compat),
+            _ => {}
+        }
         if drop {
             let Some(i) = self.opaque_find(kind, name) else {
                 if object.ddl == "IF EXISTS" || kind == "ROLE" {
@@ -1691,7 +1729,15 @@ impl Schema {
                 };
                 return Err(DdlError::NotFound(format!("{what} not found: {name}")));
             };
-            self.opaque.remove(i);
+            let removed = self.opaque.remove(i);
+            if kind == "CHANGE STREAM" {
+                let tvf = format!("READ_{}", removed.name);
+                self.grants.retain(|g| match &g.object {
+                    GrantObject::ChangeStream(c) => *c != removed.name,
+                    GrantObject::TableFunction(f) => *f != tvf,
+                    _ => true,
+                });
+            }
             return Ok(());
         }
         match kind {
@@ -1702,7 +1748,7 @@ impl Schema {
                 }
                 self.check_new_name(name)?;
                 let cs = ChangeStream::parse(&ddl)?;
-                self.validate_change_stream(&cs)?;
+                self.validate_change_stream(&cs, compat)?;
                 self.opaque.push(OpaqueObject {
                     kind: kind.to_string(),
                     name: name.to_string(),
@@ -1717,7 +1763,7 @@ impl Schema {
                 };
                 let mut cs = ChangeStream::parse(&self.opaque[i].ddl)?;
                 cs.alter(&object.ddl)?;
-                self.validate_change_stream(&cs)?;
+                self.validate_change_stream(&cs, compat)?;
                 self.opaque[i].ddl = cs.to_ddl();
             }
             "PROPERTY GRAPH" | "MODEL" => {
@@ -1744,6 +1790,144 @@ impl Schema {
         Ok(())
     }
 
+    /// `CREATE ROLE` and `DROP ROLE`. The emulator accepts both without checking them.
+    fn role_stmt(&mut self, object: &OpaqueObject, drop: bool, compat: bool) -> R<()> {
+        let name = object.name.as_str();
+        let found = self.opaque_find("ROLE", name);
+        if drop {
+            let Some(i) = found else {
+                if compat || object.ddl == "IF EXISTS" {
+                    return Ok(());
+                }
+                return Err(pre(format!("Role not found: {name}.")));
+            };
+            let role = self.opaque[i].name.clone();
+            // Roles granted to the role don't count.
+            let privileged = self
+                .grants
+                .iter()
+                .any(|g| g.grantee == role && !matches!(g.object, GrantObject::Role(_)));
+            if !compat && privileged {
+                return Err(inv(format!(
+                    "Cannot drop role `{name}` which has active privileges. All privileges must be revoked from a role before it can be dropped."
+                )));
+            }
+            self.opaque.remove(i);
+            self.grants
+                .retain(|g| g.grantee != role && g.object != GrantObject::Role(role.clone()));
+            return Ok(());
+        }
+        let error = if name.eq_ignore_ascii_case("public") {
+            inv(format!(
+                "Invalid role name. `{name}` is a reserved system role name, ignoring case."
+            ))
+        } else if found.is_some() {
+            pre(format!("Duplicate name in schema: {name}."))
+        } else {
+            self.opaque.push(object.clone());
+            return Ok(());
+        };
+        if compat { Ok(()) } else { Err(error) }
+    }
+
+    /// `GRANT` and `REVOKE`. The emulator accepts any it can parse and checks nothing, so under
+    /// `compat` one that names a missing role or object is accepted and not stored.
+    fn grant_stmt(&mut self, ddl: &str, compat: bool) -> R<()> {
+        let stmt = parse_grant(ddl)?;
+        let (roles, objects) = match self.resolve_grant(&stmt) {
+            Ok(r) => r,
+            Err(_) if compat => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        for grantee in roles {
+            for object in &objects {
+                let held = |g: &Grant| g.grantee == grantee && g.object == *object;
+                if stmt.revoke {
+                    self.grants.retain(|g| !held(g));
+                } else if !self.grants.iter().any(held) {
+                    self.grants.push(Grant {
+                        grantee: grantee.clone(),
+                        object: object.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The grantees and objects of a grant, under their names in the schema.
+    fn resolve_grant(&self, stmt: &GrantStmt) -> R<(Vec<String>, Vec<GrantObject>)> {
+        let role = |name: &str, system: bool| -> R<String> {
+            if let Some(i) = self.opaque_find("ROLE", name) {
+                return Ok(self.opaque[i].name.clone());
+            }
+            if system && let Some(r) = SYSTEM_ROLES.iter().find(|r| r.eq_ignore_ascii_case(name)) {
+                return Ok(r.to_string());
+            }
+            Err(pre(format!("Role not found: {name}.")))
+        };
+        let roles = stmt
+            .roles
+            .iter()
+            .map(|r| role(r, false))
+            .collect::<R<Vec<_>>>()?;
+        let stream = |name: &str| {
+            self.opaque_find("CHANGE STREAM", name)
+                .map(|i| self.opaque[i].name.clone())
+        };
+        let mut objects = Vec::new();
+        for object in &stmt.objects {
+            objects.push(match object {
+                GrantObject::Table {
+                    table,
+                    privilege,
+                    column,
+                } => {
+                    let t = &self.tables[&self.need_table(table)?];
+                    let column = match column {
+                        None => None,
+                        Some(c) => Some(
+                            t.columns
+                                .iter()
+                                .find(|x| x.name.eq_ignore_ascii_case(c))
+                                .map(|x| x.name.clone())
+                                .ok_or_else(|| {
+                                    DdlError::NotFound(format!("Column not found: {}.{c}", t.name))
+                                })?,
+                        ),
+                    };
+                    GrantObject::Table {
+                        table: t.name.clone(),
+                        privilege: *privilege,
+                        column,
+                    }
+                }
+                GrantObject::View(v) => GrantObject::View(
+                    self.views
+                        .get(&key(v))
+                        .map(|x| x.name.clone())
+                        .ok_or_else(|| DdlError::NotFound(format!("VIEW not found: {v}")))?,
+                ),
+                GrantObject::ChangeStream(c) => {
+                    GrantObject::ChangeStream(stream(c).ok_or_else(|| {
+                        DdlError::NotFound(format!("Change Stream not found: {c}"))
+                    })?)
+                }
+                GrantObject::TableFunction(f) => GrantObject::TableFunction(
+                    f.get(..5)
+                        .filter(|p| p.eq_ignore_ascii_case("READ_"))
+                        .and_then(|_| stream(&f[5..]))
+                        .map(|c| format!("READ_{c}"))
+                        .ok_or_else(|| {
+                            DdlError::NotFound(format!("TABLE_FUNCTION not found: {f}"))
+                        })?,
+                ),
+                GrantObject::Role(r) => GrantObject::Role(role(r, true)?),
+            });
+        }
+        Ok((roles, objects))
+    }
+
     /// Change streams explicitly tracking `table` (or `column` of it).
     fn streams_tracking(&self, table: &str, column: Option<&str>) -> Vec<String> {
         self.opaque
@@ -1764,7 +1948,8 @@ impl Schema {
             .collect()
     }
 
-    fn validate_change_stream(&self, cs: &ChangeStream) -> R<()> {
+    fn validate_change_stream(&self, cs: &ChangeStream, compat: bool) -> R<()> {
+        check_change_stream_options(cs, compat)?;
         if let CsTarget::Tables(ts) = &cs.target {
             for (t, cols) in ts {
                 let Some(table) = self.resolve_table(t) else {
@@ -1782,6 +1967,93 @@ impl Schema {
                     }
                 }
             }
+        }
+        self.check_change_stream_limit(cs, compat)
+    }
+
+    /// The tables, non-key columns (as `table.column`) and ALL that `cs` tracks, in the order
+    /// Spanner checks them against the limit.
+    fn tracked_objects(&self, cs: &ChangeStream) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let non_key = |t: &Table| -> Vec<String> {
+            t.columns
+                .iter()
+                .filter(|c| {
+                    !t.primary_key
+                        .iter()
+                        .any(|k| k.column.eq_ignore_ascii_case(&c.name))
+                })
+                .map(|c| c.name.clone())
+                .collect()
+        };
+        let whole = |t: &Table, out: &mut Vec<(String, String)>| {
+            out.push((t.name.clone(), String::new()));
+            for c in non_key(t) {
+                out.push((t.name.clone(), c));
+            }
+        };
+        match &cs.target {
+            CsTarget::None => {}
+            CsTarget::All => {
+                out.push((String::new(), String::new()));
+                for (_, n) in &self.creation_order {
+                    if let Some(t) = self.tables.get(n) {
+                        whole(t, &mut out);
+                    }
+                }
+            }
+            CsTarget::Tables(ts) => {
+                for (t, cols) in ts {
+                    let Some(table) = self.resolve_table(t) else {
+                        continue;
+                    };
+                    match cols {
+                        None => whole(table, &mut out),
+                        Some(cols) => {
+                            for c in cols {
+                                if let Some(col) = table.column(c) {
+                                    out.push((table.name.clone(), col.name.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// At most three change streams may track the same table, non-key column, or ALL.
+    fn check_change_stream_limit(&self, cs: &ChangeStream, compat: bool) -> R<()> {
+        let others: Vec<Vec<(String, String)>> = self
+            .opaque
+            .iter()
+            .filter(|o| o.kind == "CHANGE STREAM" && !o.name.eq_ignore_ascii_case(&cs.name))
+            .filter_map(|o| ChangeStream::parse(&o.ddl).ok())
+            .map(|o| self.tracked_objects(&o))
+            .collect();
+        let same = |a: &(String, String), b: &(String, String)| {
+            a.0.eq_ignore_ascii_case(&b.0) && a.1.eq_ignore_ascii_case(&b.1)
+        };
+        for obj in self.tracked_objects(cs) {
+            let count = others
+                .iter()
+                .filter(|o| o.iter().any(|x| same(x, &obj)))
+                .count();
+            if count < 3 {
+                continue;
+            }
+            let what = match (obj.0.as_str(), obj.1.as_str()) {
+                ("", _) => "ALL".to_string(),
+                (t, "") => t.to_string(),
+                (_, c) if compat => c.to_string(),
+                (t, c) => format!("{t}.{c}"),
+            };
+            let sep = if compat { " :" } else { "" };
+            return Err(pre(format!(
+                "Failed to create or alter Change Stream {}{sep} because it is not allowed to have more than 3 Change Streams tracking the same table or non-key column or ALL: {what}.",
+                cs.name
+            )));
         }
         Ok(())
     }
@@ -1881,6 +2153,13 @@ impl Schema {
                 self.alter_table(table, action, compat)?
             }
             Statement::RenameTables { renames } => {
+                // Spanner renames one pair after the other, so a chain can go through a new name;
+                // the emulator looks every source up in the schema before the statement.
+                if compat {
+                    for (from, _) in renames {
+                        self.need_table(from)?;
+                    }
+                }
                 let mut next = self.clone();
                 for (from, to) in renames {
                     let k = next.need_table(from)?;
@@ -1965,13 +2244,15 @@ impl Schema {
             }
             Statement::DropView { name, if_exists } => {
                 let k = key(name);
-                if self.views.remove(&k).is_none() {
+                let Some(view) = self.views.remove(&k) else {
                     if *if_exists {
                         return Ok(());
                     }
                     return Err(DdlError::NotFound(format!("View not found: {name}")));
-                }
+                };
                 self.drop_order(ObjectKind::View, &k);
+                self.grants
+                    .retain(|g| g.object != GrantObject::View(view.name.clone()));
             }
             Statement::AlterDatabase { options, name } => {
                 self.database_name = Some(name.clone());
@@ -1987,7 +2268,7 @@ impl Schema {
             Statement::DropLocalityGroup { name, if_exists } => {
                 self.drop_locality_group(name, *if_exists, compat)?
             }
-            Statement::Opaque { object, drop } => self.opaque_stmt(object, *drop)?,
+            Statement::Opaque { object, drop } => self.opaque_stmt(object, *drop, compat)?,
         }
         Ok(())
     }
@@ -2193,4 +2474,88 @@ fn check_name_in_default_schema(name: &str) -> R<()> {
         )));
     }
     Ok(())
+}
+
+/// Seconds in a change stream `retention_period` (`36h`, `1440m`, `2d`, `86400s`).
+fn duration_secs(v: &str) -> Option<u64> {
+    let unit = match v.chars().last()? {
+        's' => 1,
+        'm' => 60,
+        'h' => 3600,
+        'd' => 86400,
+        _ => return None,
+    };
+    let n = &v[..v.len() - 1];
+    if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    n.parse::<u64>().ok()?.checked_mul(unit)
+}
+
+/// `retention_period` and `value_capture_type` values. The emulator allows up to 7 days of
+/// retention, production 30.
+fn check_change_stream_options(cs: &ChangeStream, compat: bool) -> R<()> {
+    let opt = |k: &str| {
+        cs.options
+            .iter()
+            .find(|(o, _)| o == k)
+            .and_then(|(_, v)| unquote(v))
+    };
+    let name = &cs.name;
+    let retention = opt("retention_period").and_then(|v| {
+        let max_days = if compat { 7 } else { 30 };
+        match duration_secs(&v) {
+            None if compat => Some(format!("Invalid time duration format: {v}.")),
+            None => Some(format!(
+                "ChangeStream {name} has invalid retention_period option: {v}. Invalid time duration format"
+            )),
+            Some(s) if !(86400..=max_days * 86400).contains(&s) => Some(if compat {
+                format!(
+                    "Invalid retention_period: {v}. Change Streams retention period must be a value in the range [24h, 7d]."
+                )
+            } else {
+                format!(
+                    "ChangeStream {name} has invalid retention_period option: {v}. Change Streams retention period must be a value in the range [24h, 30d]"
+                )
+            }),
+            Some(_) => None,
+        }
+    });
+    let capture = opt("value_capture_type")
+        .filter(|v| {
+            !matches!(
+                v.as_str(),
+                "OLD_AND_NEW_VALUES" | "NEW_ROW" | "NEW_VALUES" | "NEW_ROW_AND_OLD_VALUES"
+            )
+        })
+        .map(|v| {
+            if compat {
+                format!(
+                    "Invalid value_capture_type: {v}. Change Streams only support value capture types in OLD_AND_NEW_VALUES, NEW_ROW, and NEW_VALUES."
+                )
+            } else {
+                format!(
+                    "ChangeStream {name} has invalid value_capture_type option: {v}. Invalid value_capture_type"
+                )
+            }
+        });
+    // The emulator stops at the first bad option; Spanner lists them all, value_capture_type first.
+    let errors: Vec<String> = if compat {
+        retention.or(capture).into_iter().collect()
+    } else {
+        capture.into_iter().chain(retention).collect()
+    };
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(pre(errors.join(", ")))
+    }
+}
+
+/// A string option literal's value; `None` for NULL and other literals.
+fn unquote(v: &str) -> Option<String> {
+    match tokenize(v).ok()?.first().map(|t| &t.tok) {
+        Some(Tok::Str(s)) => Some(s.clone()),
+        _ => None,
+    }
 }

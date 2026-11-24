@@ -1,6 +1,6 @@
 //! Canonical DDL printing in the official emulator's GetDatabaseDdl format.
 
-use crate::parser::{join_idents, quote_path, quote_string};
+use crate::parser::{join_idents, quote_ident, quote_path, quote_string};
 use crate::schema::*;
 
 pub(crate) fn type_sql(ty: &ColumnType) -> String {
@@ -334,13 +334,21 @@ pub(crate) fn view_sql(v: &View) -> String {
 }
 
 impl Schema {
-    /// Canonical statements as production's GetDatabaseDdl returns them. Snapshots store these,
-    /// so they keep everything the schema holds.
+    /// Canonical statements as production's GetDatabaseDdl returns them: roles and role grants
+    /// after the database options, and each object's grants after the object. Snapshots store
+    /// these, so they keep everything the schema holds.
     pub fn to_ddl(&self) -> Vec<String> {
         let mut out = Vec::new();
         self.database_options_ddl(&mut out);
+        out.extend(
+            self.opaque
+                .iter()
+                .filter(|o| o.kind == "ROLE")
+                .map(|o| o.ddl.clone()),
+        );
+        out.extend(self.role_grants());
         out.extend(self.locality_groups.iter().map(locality_group_sql));
-        self.objects_ddl(&mut out);
+        self.objects_ddl(&mut out, true);
         out
     }
 
@@ -359,7 +367,7 @@ impl Schema {
         }
         let mut out = Vec::new();
         s.database_options_ddl(&mut out);
-        s.objects_ddl(&mut out);
+        s.objects_ddl(&mut out, false);
         out.extend(s.locality_groups.iter().map(locality_group_sql_emulator));
         out
     }
@@ -375,7 +383,9 @@ impl Schema {
         }
     }
 
-    fn objects_ddl(&self, out: &mut Vec<String>) {
+    /// Schemas, sequences, tables, change streams, models, views and graphs; with `access`, each
+    /// followed by its grants.
+    fn objects_ddl(&self, out: &mut Vec<String>, access: bool) {
         let ordered = |kind: ObjectKind| {
             self.creation_order
                 .iter()
@@ -414,21 +424,144 @@ impl Schema {
                 .collect();
             idx.sort_by(|a, b| a.0.cmp(b.0));
             out.extend(idx.into_iter().map(|(_, s)| s));
+            if access {
+                out.extend(self.table_grants(t));
+            }
         }
-        let opaque = |kind: &'static str| {
+        for o in self.opaque.iter().filter(|o| o.kind == "CHANGE STREAM") {
+            out.push(o.ddl.clone());
+            if access {
+                let tvf = format!("READ_{}", o.name);
+                out.extend(self.object_grants(
+                    |g| matches!(g, GrantObject::ChangeStream(c) if *c == o.name),
+                    &format!("SELECT ON CHANGE STREAM {}", quote_path(&o.name)),
+                ));
+                out.extend(self.object_grants(
+                    |g| matches!(g, GrantObject::TableFunction(f) if *f == tvf),
+                    &format!("EXECUTE ON TABLE FUNCTION {}", quote_path(&tvf)),
+                ));
+            }
+        }
+        out.extend(
             self.opaque
                 .iter()
-                .filter(move |o| o.kind == kind)
-                .map(|o| o.ddl.clone())
-        };
-        out.extend(opaque("CHANGE STREAM"));
-        out.extend(opaque("MODEL"));
+                .filter(|o| o.kind == "MODEL")
+                .map(|o| o.ddl.clone()),
+        );
         for key in ordered(ObjectKind::View) {
             if let Some(v) = self.views.get(key) {
                 out.push(view_sql(v));
+                if access {
+                    out.extend(self.object_grants(
+                        |g| matches!(g, GrantObject::View(n) if *n == v.name),
+                        &format!("SELECT ON VIEW {}", quote_path(&v.name)),
+                    ));
+                }
             }
         }
-        out.extend(opaque("PROPERTY GRAPH"));
+        out.extend(
+            self.opaque
+                .iter()
+                .filter(|o| o.kind == "PROPERTY GRAPH")
+                .map(|o| o.ddl.clone()),
+        );
+    }
+
+    /// Grantees of the grants matching `on`, in name order.
+    fn grantees(&self, on: impl Fn(&GrantObject) -> bool) -> Vec<&str> {
+        let mut out: Vec<&str> = self
+            .grants
+            .iter()
+            .filter(|g| on(&g.object))
+            .map(|g| g.grantee.as_str())
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// `GRANT <what> TO ROLE r`, one per grantee of the grants matching `on`.
+    fn object_grants(&self, on: impl Fn(&GrantObject) -> bool, what: &str) -> Vec<String> {
+        self.grantees(on)
+            .into_iter()
+            .map(|r| format!("GRANT {what} TO ROLE {}", quote_ident(r)))
+            .collect()
+    }
+
+    /// `GRANT ROLE a, b TO ROLE r`, one per grantee.
+    fn role_grants(&self) -> Vec<String> {
+        let is_role = |g: &GrantObject| matches!(g, GrantObject::Role(_));
+        self.grantees(is_role)
+            .into_iter()
+            .map(|grantee| {
+                let mut roles: Vec<&str> = self
+                    .grants
+                    .iter()
+                    .filter(|g| g.grantee == grantee)
+                    .filter_map(|g| match &g.object {
+                        GrantObject::Role(r) => Some(r.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                roles.sort();
+                let roles: Vec<String> = roles.into_iter().map(quote_ident).collect();
+                format!(
+                    "GRANT ROLE {} TO ROLE {}",
+                    roles.join(", "),
+                    quote_ident(grantee)
+                )
+            })
+            .collect()
+    }
+
+    /// A table's privileges, one statement per grantee: `GRANT SELECT, UPDATE(V) ON TABLE T ...`.
+    fn table_grants(&self, t: &Table) -> Vec<String> {
+        let on_table =
+            |g: &GrantObject| matches!(g, GrantObject::Table { table, .. } if *table == t.name);
+        self.grantees(on_table)
+            .into_iter()
+            .map(|grantee| {
+                let mut privileges = Vec::new();
+                for p in [
+                    Privilege::Select,
+                    Privilege::Insert,
+                    Privilege::Update,
+                    Privilege::Delete,
+                ] {
+                    let held: Vec<Option<&str>> = self
+                        .grants
+                        .iter()
+                        .filter(|g| g.grantee == grantee)
+                        .filter_map(|g| match &g.object {
+                            GrantObject::Table {
+                                table,
+                                privilege,
+                                column,
+                            } if *table == t.name && *privilege == p => Some(column.as_deref()),
+                            _ => None,
+                        })
+                        .collect();
+                    if held.contains(&None) {
+                        privileges.push(p.as_str().to_string());
+                    }
+                    let columns: Vec<String> = t
+                        .columns
+                        .iter()
+                        .filter(|c| held.contains(&Some(c.name.as_str())))
+                        .map(|c| quote_ident(&c.name))
+                        .collect();
+                    if !columns.is_empty() {
+                        privileges.push(format!("{}({})", p.as_str(), columns.join(", ")));
+                    }
+                }
+                format!(
+                    "GRANT {} ON TABLE {} TO ROLE {}",
+                    privileges.join(", "),
+                    quote_path(&t.name),
+                    quote_ident(grantee)
+                )
+            })
+            .collect()
     }
 }
 

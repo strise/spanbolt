@@ -429,6 +429,19 @@ impl<'a> Parser<'a> {
         } else if self.is_kw("GRANT") || self.is_kw("REVOKE") {
             let kind = self.found().to_ascii_uppercase();
             let ddl = self.rest_text();
+            let grant = parse_grant(&ddl)?;
+            // The emulator reports one error per privilege with a column list.
+            let error = "Emulator does not yet support column level access controls";
+            if self.emulator && grant.column_privileges == 1 {
+                return Err(self.statement_error(error));
+            }
+            if self.emulator && grant.column_privileges > 1 {
+                return Err(DdlError::Syntax(format!(
+                    "Errors parsing Spanner DDL statement: {} has errors:{}",
+                    self.src,
+                    format!(" -{error}").repeat(grant.column_privileges)
+                )));
+            }
             Ok(opaque(&kind, "", ddl, false))
         } else if self.is_kw("ANALYZE") {
             self.bump();
@@ -569,6 +582,7 @@ impl<'a> Parser<'a> {
             let if_not_exists = self.if_not_exists();
             let name = self.path()?;
             let cs = self.change_stream_body(ChangeStream::new(name))?;
+            self.check_change_stream_options(&cs.options)?;
             let mut ddl = cs.to_ddl();
             if if_not_exists {
                 // `apply` reads IF NOT EXISTS back from the text and stores the canonical form.
@@ -1133,6 +1147,36 @@ impl<'a> Parser<'a> {
         Ok(cs)
     }
 
+    /// Change stream option names (case-sensitive) and value types, checked as the statement is
+    /// parsed.
+    fn check_change_stream_options(&self, options: &[(String, String)]) -> R<()> {
+        for (k, v) in options {
+            let supported = match k.as_str() {
+                "retention_period" | "value_capture_type" => (v == "NULL" || v.starts_with('\''))
+                    .then_some(())
+                    .ok_or("strings and NULL"),
+                "exclude_ttl_deletes"
+                | "exclude_insert"
+                | "exclude_update"
+                | "exclude_delete"
+                | "allow_txn_exclusion" => matches!(v.as_str(), "true" | "false" | "NULL")
+                    .then_some(())
+                    .ok_or(if self.emulator {
+                        "booleans and NULL"
+                    } else {
+                        "true, false, and null"
+                    }),
+                _ => return Err(self.statement_error(&format!("Option: {k} is unknown."))),
+            };
+            if let Err(what) = supported {
+                return Err(self.statement_error(&format!(
+                    "Unexpected value for option: {k}. Supported option values are {what}."
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn change_stream_target(&mut self) -> R<CsTarget> {
         if self.eat_kw("ALL") {
             return Ok(CsTarget::All);
@@ -1243,7 +1287,8 @@ impl<'a> Parser<'a> {
                 if self.eat_kw("FOR") {
                     self.change_stream_target()?;
                 } else {
-                    self.options()?;
+                    let options = self.options()?;
+                    self.check_change_stream_options(&options)?;
                 }
             } else {
                 self.expect_kw("DROP")?;
@@ -1607,9 +1652,18 @@ impl ChangeStream {
             if p.eat_kw("FOR") {
                 self.target = p.change_stream_target()?;
             } else {
-                // The emulator replaces the whole option set.
-                self.options = p.options()?;
-                self.options.retain(|(_, v)| v != "NULL");
+                // Options merge into the stream's; NULL removes one.
+                for (k, v) in p.options()? {
+                    let at = self.options.iter().position(|(o, _)| *o == k);
+                    match (at, v.as_str()) {
+                        (Some(i), "NULL") => {
+                            self.options.remove(i);
+                        }
+                        (Some(i), _) => self.options[i].1 = v,
+                        (None, "NULL") => {}
+                        (None, _) => self.options.push((k, v)),
+                    }
+                }
             }
         } else {
             self.target = CsTarget::None;
@@ -1678,4 +1732,111 @@ pub(crate) fn join_idents(cols: &[String]) -> String {
         .map(|c| quote_ident(c))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// A parsed `GRANT` or `REVOKE`: the privileges it names, without the grantee, and the roles.
+pub(crate) struct GrantStmt {
+    pub revoke: bool,
+    pub objects: Vec<GrantObject>,
+    pub roles: Vec<String>,
+    /// Privileges given a column list (`SELECT(a, b)`), which the emulator rejects.
+    pub column_privileges: usize,
+}
+
+/// Parses `GRANT ... TO ROLE ...` or `REVOKE ... FROM ROLE ...`.
+pub(crate) fn parse_grant(ddl: &str) -> R<GrantStmt> {
+    let mut p = Parser::new(ddl)?;
+    let revoke = if p.eat_kw("GRANT") {
+        false
+    } else {
+        p.expect_kw("REVOKE")?;
+        true
+    };
+    let names = |p: &mut Parser| -> R<Vec<String>> {
+        let mut out = vec![p.path()?];
+        while p.eat_sym(",") {
+            out.push(p.path()?);
+        }
+        Ok(out)
+    };
+    let mut objects = Vec::new();
+    let mut column_privileges = 0;
+    if p.eat_kw("ROLE") {
+        objects.extend(names(&mut p)?.into_iter().map(GrantObject::Role));
+    } else if p.eat_kw("EXECUTE") {
+        p.expect_kw("ON")?;
+        p.expect_kw("TABLE")?;
+        p.expect_kw("FUNCTION")?;
+        objects.extend(names(&mut p)?.into_iter().map(GrantObject::TableFunction));
+    } else {
+        let mut privileges: Vec<(Privilege, Option<Vec<String>>)> = Vec::new();
+        loop {
+            let privilege = if p.eat_kw("SELECT") {
+                Privilege::Select
+            } else if p.eat_kw("INSERT") {
+                Privilege::Insert
+            } else if p.eat_kw("UPDATE") {
+                Privilege::Update
+            } else if p.eat_kw("DELETE") {
+                Privilege::Delete
+            } else {
+                return Err(p.encountered("privilege"));
+            };
+            let columns = if p.is_sym("(") {
+                column_privileges += 1;
+                Some(p.ident_list1()?)
+            } else {
+                None
+            };
+            privileges.push((privilege, columns));
+            if !p.eat_sym(",") {
+                break;
+            }
+        }
+        p.expect_kw("ON")?;
+        let select_only = |p: &Parser| -> R<()> {
+            if privileges
+                .iter()
+                .any(|(pr, c)| *pr != Privilege::Select || c.is_some())
+            {
+                return Err(p.statement_error("Only SELECT can be granted on this object."));
+            }
+            Ok(())
+        };
+        if p.eat_kw("VIEW") {
+            select_only(&p)?;
+            objects.extend(names(&mut p)?.into_iter().map(GrantObject::View));
+        } else if p.eat_kws(&["CHANGE", "STREAM"]) {
+            select_only(&p)?;
+            objects.extend(names(&mut p)?.into_iter().map(GrantObject::ChangeStream));
+        } else {
+            p.expect_kw("TABLE")?;
+            for table in names(&mut p)? {
+                for (privilege, columns) in &privileges {
+                    match columns {
+                        None => objects.push(GrantObject::Table {
+                            table: table.clone(),
+                            privilege: *privilege,
+                            column: None,
+                        }),
+                        Some(cols) => objects.extend(cols.iter().map(|c| GrantObject::Table {
+                            table: table.clone(),
+                            privilege: *privilege,
+                            column: Some(c.clone()),
+                        })),
+                    }
+                }
+            }
+        }
+    }
+    p.expect_kw(if revoke { "FROM" } else { "TO" })?;
+    p.expect_kw("ROLE")?;
+    let roles = names(&mut p)?;
+    p.expect_eof()?;
+    Ok(GrantStmt {
+        revoke,
+        objects,
+        roles,
+        column_privileges,
+    })
 }

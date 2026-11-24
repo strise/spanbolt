@@ -407,6 +407,7 @@ impl DatabaseAdmin for DatabaseAdminService {
     ) -> Result<Response<da::GetDatabaseDdlResponse>, Status> {
         let entry = self.emu.database(&req.get_ref().database)?;
         let schema = &entry.db.latest().state.schema;
+        // The emulator leaves roles and grants out of GetDatabaseDdl.
         let statements = if self.emu.emulator_compat {
             schema.to_ddl_emulator_compat()
         } else {

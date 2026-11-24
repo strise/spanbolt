@@ -244,7 +244,7 @@ fn rejects_like_the_emulator() {
         (
             "ALTER TABLE H DROP COLUMN a",
             Pre,
-            "Cannot drop column H.a . Column H.a is tracked by 1 Change Stream: cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
+            "Cannot drop column H.a. Column a is tracked by 1 Change Stream: cs. Columns explicitly tracked by a Change Stream cannot be dropped. Please alter the Change Stream to stop tracking the column before dropping the column.",
         ),
         (
             "ALTER TABLE T DROP COLUMN ts",

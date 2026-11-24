@@ -228,6 +228,7 @@ impl Engine {
                 planner.finish_search()?;
                 if !self.opts.emulator_compat {
                     crate::struct_shape::check(&q)?;
+                    crate::struct_result::check(&q)?;
                 }
                 let positions = positions(&p.layout, &ids)?;
                 Ok(Prepared {

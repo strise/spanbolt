@@ -1,0 +1,211 @@
+tags: mutations dml
+# Generated columns without STORED read their computed value, through SQL, the Read API and
+# indexes on them. Generated columns are evaluated in dependency order, not declaration order.
+schema:
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    S STRING(MAX),
+    L INT64 AS (CHAR_LENGTH(S)),
+    U STRING(MAX) AS (UPPER(S)),
+  ) PRIMARY KEY (K);
+  CREATE INDEX VByL ON V(L);
+  CREATE INDEX VByU ON V(U) STORING (L);
+  CREATE TABLE D (
+    K INT64 NOT NULL,
+    A STRING(MAX) AS (CONCAT(B, '!')) STORED,
+    B STRING(MAX) AS (CONCAT(C, '?')),
+    C STRING(MAX) AS (UPPER(X)) STORED,
+    X STRING(MAX),
+    N INT64 AS (CHAR_LENGTH(A)),
+  ) PRIMARY KEY (K);
+  CREATE INDEX DByN ON D(N)
+insert V cols=K,S:
+  [1, "abc"]
+  [2, "hello"]
+  [3, null]
+insert D cols=K,X:
+  [1, "ab"]
+
+case virtual_query
+query:
+  SELECT K, S, L, U FROM V ORDER BY K
+expect:
+  columns: K INT64, S STRING, L INT64, U STRING
+  ["1","abc","3","ABC"]
+  ["2","hello","5","HELLO"]
+  ["3",null,null,null]
+
+case virtual_read
+read V cols=K,L,U:
+  all
+expect:
+  columns: K INT64, L INT64, U STRING
+  ["1","3","ABC"]
+  ["2","5","HELLO"]
+  ["3",null,null]
+
+case virtual_where
+query:
+  SELECT K FROM V WHERE L = 5
+expect:
+  columns: K INT64
+  ["2"]
+
+case virtual_force_index
+query:
+  SELECT K, L FROM V@{FORCE_INDEX=VByL} WHERE L > 2 ORDER BY L
+expect:
+  columns: K INT64, L INT64
+  ["1","3"]
+  ["2","5"]
+
+case virtual_index_read
+read V cols=U,L index=VByU:
+  all
+expect:
+  columns: U STRING, L INT64
+  [null,null]
+  ["ABC","3"]
+  ["HELLO","5"]
+
+case virtual_after_update_mutation
+update V cols=K,S:
+  [1, "abcdefg"]
+read V cols=K,L index=VByL:
+  all
+expect:
+  columns: K INT64, L INT64
+  ["3",null]
+  ["2","5"]
+  ["1","7"]
+
+case virtual_after_insert_or_update
+insert_or_update V cols=K,S:
+  [3, "xy"]
+  [4, "z"]
+query:
+  SELECT K, L, U FROM V@{FORCE_INDEX=VByU} WHERE U IS NOT NULL ORDER BY U
+expect:
+  columns: K INT64, L INT64, U STRING
+  ["1","3","ABC"]
+  ["2","5","HELLO"]
+  ["3","2","XY"]
+  ["4","1","Z"]
+
+case virtual_after_replace
+replace V cols=K,S:
+  [2, "hi"]
+query:
+  SELECT L, U FROM V WHERE K = 2
+expect:
+  columns: L INT64, U STRING
+  ["2","HI"]
+
+case virtual_dml_insert_returning
+dml:
+  INSERT INTO V (K, S) VALUES (10, 'four') THEN RETURN K, L, U
+expect:
+  count: 1
+  columns: K INT64, L INT64, U STRING
+  ["10","4","FOUR"]
+
+case virtual_dml_update_returning
+dml:
+  UPDATE V SET S = CONCAT(S, S) WHERE K < 3 THEN RETURN K, L
+expect:
+  count: 2
+  columns: K INT64, L INT64
+  ["1","6"]
+  ["2","10"]
+
+case virtual_dml_update_then_index
+dml:
+  UPDATE V SET S = 'x' WHERE K = 2
+expect:
+  count: 1
+query:
+  SELECT K FROM V@{FORCE_INDEX=VByL} WHERE L = 1
+expect:
+  columns: K INT64
+  ["2"]
+
+case virtual_pdml_update
+pdml:
+  UPDATE V SET S = 'pq' WHERE K > 0
+expect:
+  count: 3
+query:
+  SELECT K, L, U FROM V ORDER BY K
+expect:
+  columns: K INT64, L INT64, U STRING
+  ["1","2","PQ"]
+  ["2","2","PQ"]
+  ["3","2","PQ"]
+
+case virtual_write_rejected
+update V cols=K,L:
+  [1, 9]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write into generated column `V.L`.
+
+case virtual_dml_write_rejected
+dml:
+  UPDATE V SET L = 9 WHERE K = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot UPDATE value on non-writable column: L [at 1:14]
+
+case dependency_order_query
+query:
+  SELECT K, X, C, B, A, N FROM D
+expect:
+  columns: K INT64, X STRING, C STRING, B STRING, A STRING, N INT64
+  ["1","ab","AB","AB?","AB?!","4"]
+
+case dependency_order_update
+update D cols=K,X:
+  [1, "xyz"]
+read D cols=K,N index=DByN:
+  all
+expect:
+  columns: K INT64, N INT64
+  ["1","5"]
+query:
+  SELECT A, B, C FROM D WHERE K = 1
+expect:
+  columns: A STRING, B STRING, C STRING
+  ["XYZ?!","XYZ?","XYZ"]
+
+case dependency_order_dml_insert
+dml:
+  INSERT INTO D (K, X) VALUES (2, 'q') THEN RETURN A, N
+expect:
+  count: 1
+  columns: A STRING, N INT64
+  ["Q?!","3"]
+
+case dependency_order_insert_null
+insert D cols=K:
+  [3]
+query:
+  SELECT A, B, C, N FROM D WHERE K = 3
+expect:
+  columns: A STRING, B STRING, C STRING, N INT64
+  [null,null,null,null]
+
+case add_virtual_column_backfills
+ddl:
+  ALTER TABLE V ADD COLUMN R STRING(MAX) AS (REVERSE(S))
+expect:
+  ok
+ddl:
+  CREATE INDEX VByR ON V(R)
+expect:
+  ok
+query:
+  SELECT K, R FROM V@{FORCE_INDEX=VByR} WHERE R IS NOT NULL ORDER BY R
+expect:
+  columns: K INT64, R STRING
+  ["1","cba"]
+  ["2","olleh"]

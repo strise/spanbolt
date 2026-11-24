@@ -1,5 +1,5 @@
-//! The seam through which the SQL engine evaluates schema expressions: DEFAULT values, stored
-//! generated columns and CHECK constraints.
+//! The seam through which the SQL engine evaluates schema expressions: DEFAULT values, generated
+//! columns and CHECK constraints.
 
 use std::sync::{Arc, RwLock};
 
@@ -62,11 +62,11 @@ pub(crate) fn no_evaluator(what: &str) -> Error {
 }
 
 pub(crate) const DEFAULTS: &str = "DEFAULT values";
-pub(crate) const GENERATED: &str = "Stored generated columns";
+pub(crate) const GENERATED: &str = "Generated columns";
 pub(crate) const CHECKS: &str = "CHECK constraints on existing rows";
 
-/// Fills the defaults of `missing` columns and recomputes the stored generated columns selected
-/// by `regenerate`, then assigns identity values to missing identity columns.
+/// Fills the defaults of `missing` columns and recomputes the generated columns selected by
+/// `regenerate`, in dependency order, then assigns identity values to missing identity columns.
 pub fn compute_row(
     tm: &TableMeta,
     row: &mut [Value],
@@ -87,8 +87,9 @@ pub fn compute_row(
             row[c] = get(DEFAULTS)?.eval(d, tm, row, &cm.ty)?;
         }
     }
-    for (c, cm) in tm.columns.iter().enumerate() {
-        if let (Some(e), true) = (&cm.expr, cm.stored)
+    for &c in &tm.generated_order {
+        let cm = &tm.columns[c];
+        if let Some(e) = &cm.expr
             && regenerate(c)
         {
             row[c] = get(GENERATED)?.eval(e, tm, row, &cm.ty)?;

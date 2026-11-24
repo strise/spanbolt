@@ -15,7 +15,16 @@
 //! - `--workers` cycles of: create a database, seed it, run point/index/SEARCH queries, DML and
 //!   mutations (including distinct SQL texts), clone a seeded template, work on the clone, drop
 //!   both;
-//! - one long-lived database taking single-row commits and reads (MVCC history).
+//! - one long-lived database taking single-row commits and reads (MVCC history);
+//! - `--churn` clients that each open a new connection, create a session, run a query and go
+//!   away, as a test suite that builds a client per test does (the emulator leaked or slowed down
+//!   per connection: GoogleCloudPlatform/cloud-spanner-emulator#72). Every other client uses a
+//!   multiplexed session, as the Java and Go clients do with
+//!   `GOOGLE_CLOUD_SPANNER_MULTIPLEXED_SESSIONS(_FOR_RW,_PARTITIONED_OPS)=true`, and runs a
+//!   read-write transaction with its precommit token, a partitioned DML and a PartitionQuery on it
+//!   (the emulator crashed on these: #260, #273). Regular sessions are deleted; multiplexed ones
+//!   can't be and stay until they idle out, so watch the `sessions` and `txns` columns.
+//!   `--churn-pause-ms` (default 20) spaces the clients out: each leaves a socket in TIME_WAIT.
 //!
 //! Runs on the `spanbolt` binary's allocator (mimalloc, src/main.rs). Memory columns: `rss_mb`,
 //! `footprint_mb` (macOS physical footprint, counts compressed pages), `rust_heap_mb` (live bytes
@@ -135,6 +144,8 @@ struct Args {
     sample: Duration,
     warmup: Duration,
     workers: usize,
+    churn: usize,
+    churn_pause: Duration,
     out: String,
     conformance: Option<String>,
 }
@@ -145,6 +156,8 @@ fn args() -> Result<Args, BoxErr> {
         sample: Duration::from_secs(10),
         warmup: Duration::from_secs(300),
         workers: 4,
+        churn: 2,
+        churn_pause: Duration::from_millis(20),
         out: ".mcp-output/soak.csv".into(),
         conformance: Some("target/release/spanbolt-conformance".into()),
     };
@@ -156,6 +169,8 @@ fn args() -> Result<Args, BoxErr> {
             "--sample" => a.sample = Duration::from_secs(val()?.parse()?),
             "--warmup" => a.warmup = Duration::from_secs(val()?.parse()?),
             "--workers" => a.workers = val()?.parse()?,
+            "--churn" => a.churn = val()?.parse()?,
+            "--churn-pause-ms" => a.churn_pause = Duration::from_millis(val()?.parse()?),
             "--out" => a.out = val()?,
             "--conformance" => a.conformance = Some(val()?),
             "--no-conformance" => a.conformance = None,
@@ -193,6 +208,10 @@ const KINDS: &[&str] = &[
     "commit",
     "clone",
     "drop_db",
+    "connect",
+    "mux_rw",
+    "mux_pdml",
+    "mux_partition",
 ];
 
 fn s(v: impl ToString) -> Value {
@@ -529,6 +548,150 @@ impl Client {
     }
 }
 
+fn rw_options() -> pb::TransactionOptions {
+    pb::TransactionOptions {
+        mode: Some(pb::transaction_options::Mode::ReadWrite(Default::default())),
+        ..Default::default()
+    }
+}
+
+/// One short-lived client: a new connection, a session, a point read on `db`; on a multiplexed
+/// session also a read-write transaction, a partitioned DML and a PartitionQuery. `n` picks the
+/// rows and whether the session is multiplexed.
+async fn churn_client(url: &str, db: &str, n: u64, w: &Window) -> Result<(), BoxErr> {
+    let multiplexed = n % 2 == 1;
+    // Rows the hot writer doesn't touch (it writes 0..5000), so the update doesn't abort.
+    let k = 5000 + (n % 5000) as i64;
+    let t = Instant::now();
+    let channel = Channel::from_shared(url.to_string())?.connect().await?;
+    let mut sp = SpannerClient::new(channel);
+    let session = sp
+        .create_session(pb::CreateSessionRequest {
+            database: db.into(),
+            session: Some(pb::Session {
+                multiplexed,
+                ..Default::default()
+            }),
+        })
+        .await?
+        .into_inner()
+        .name;
+    let (ps, param_types) = params(&[("k", pb::TypeCode::Int64, s(k))]);
+    sp.execute_sql(pb::ExecuteSqlRequest {
+        session: session.clone(),
+        sql: "SELECT Id, Body FROM Items WHERE Id = @k".into(),
+        params: ps,
+        param_types,
+        ..Default::default()
+    })
+    .await?;
+    if !multiplexed {
+        sp.delete_session(pb::DeleteSessionRequest {
+            name: session.clone(),
+        })
+        .await?;
+        w.record("connect", t);
+        return Ok(());
+    }
+    w.record("connect", t);
+
+    // A read-write transaction begun inline; the commit carries the precommit token.
+    let t = Instant::now();
+    let (ps, param_types) = params(&[
+        ("k", pb::TypeCode::Int64, s(k)),
+        ("b", pb::TypeCode::String, s(body(k + n as i64))),
+    ]);
+    let rs = sp
+        .execute_sql(pb::ExecuteSqlRequest {
+            session: session.clone(),
+            transaction: Some(pb::TransactionSelector {
+                selector: Some(pb::transaction_selector::Selector::Begin(rw_options())),
+            }),
+            sql: "UPDATE Items SET Body = @b WHERE Id = @k".into(),
+            params: ps,
+            param_types,
+            seqno: 1,
+            ..Default::default()
+        })
+        .await?
+        .into_inner();
+    let txn = rs
+        .metadata
+        .and_then(|m| m.transaction)
+        .map(|t| t.id)
+        .unwrap_or_default();
+    sp.commit(pb::CommitRequest {
+        session: session.clone(),
+        transaction: Some(pb::commit_request::Transaction::TransactionId(txn)),
+        precommit_token: rs.precommit_token,
+        ..Default::default()
+    })
+    .await?;
+    w.record("mux_rw", t);
+
+    let t = Instant::now();
+    let pdml = sp
+        .begin_transaction(pb::BeginTransactionRequest {
+            session: session.clone(),
+            options: Some(pb::TransactionOptions {
+                mode: Some(pb::transaction_options::Mode::PartitionedDml(
+                    Default::default(),
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .await?
+        .into_inner();
+    let (ps, param_types) = params(&[("g", pb::TypeCode::Int64, s(k % 50))]);
+    sp.execute_sql(pb::ExecuteSqlRequest {
+        session: session.clone(),
+        transaction: Some(pb::TransactionSelector {
+            selector: Some(pb::transaction_selector::Selector::Id(pdml.id)),
+        }),
+        sql: "UPDATE Items SET Name = Name WHERE Grp = @g".into(),
+        params: ps,
+        param_types,
+        seqno: 1,
+        ..Default::default()
+    })
+    .await?;
+    w.record("mux_pdml", t);
+
+    let t = Instant::now();
+    let parts = sp
+        .partition_query(pb::PartitionQueryRequest {
+            session: session.clone(),
+            transaction: Some(pb::TransactionSelector {
+                selector: Some(pb::transaction_selector::Selector::Begin(
+                    pb::TransactionOptions {
+                        mode: Some(pb::transaction_options::Mode::ReadOnly(Default::default())),
+                        ..Default::default()
+                    },
+                )),
+            }),
+            sql: "SELECT Id, Grp FROM Items".into(),
+            ..Default::default()
+        })
+        .await?
+        .into_inner();
+    let ro = parts.transaction.map(|t| t.id).unwrap_or_default();
+    for p in parts.partitions {
+        sp.execute_sql(pb::ExecuteSqlRequest {
+            session: session.clone(),
+            transaction: Some(pb::TransactionSelector {
+                selector: Some(pb::transaction_selector::Selector::Id(ro.clone())),
+            }),
+            sql: "SELECT Id, Grp FROM Items".into(),
+            partition_token: p.partition_token,
+            ..Default::default()
+        })
+        .await?;
+    }
+    w.record("mux_partition", t);
+    Ok(())
+}
+
 /// (elapsed s, RSS MB, footprint MB, Rust heap MB, system malloc MB).
 type Mem = (f64, f64, f64, f64, f64);
 type MemField = fn(&Mem) -> f64;
@@ -572,6 +735,7 @@ async fn main() -> Result<(), BoxErr> {
         setup.commit(&ts, vec![items(c..c + 500)], "seed").await?;
     }
     let hot = setup.create_db("hot").await?;
+    let churn_db = hot.clone();
     window.take();
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -651,6 +815,31 @@ async fn main() -> Result<(), BoxErr> {
                     eprintln!("soak: hot writer: {e}");
                 }
                 i += 1;
+            }
+        }));
+    }
+
+    let url = format!("http://{}", server.addr);
+    let churned = Arc::new(AtomicU64::new(0));
+    for _ in 0..a.churn {
+        let pause = a.churn_pause;
+        let (stop, w, url, hot, churned) = (
+            stop.clone(),
+            window.clone(),
+            url.clone(),
+            churn_db.clone(),
+            churned.clone(),
+        );
+        tasks.push(tokio::spawn(async move {
+            while !stop.load(Ordering::Relaxed) {
+                let n = churned.fetch_add(1, Ordering::Relaxed);
+                if let Err(e) = churn_client(&url, &hot, n, &w).await {
+                    w.errors.fetch_add(1, Ordering::Relaxed);
+                    eprintln!("soak: churn client {n}: {e}");
+                }
+                // Each client leaves a socket in TIME_WAIT; without a pause the OS runs out of
+                // ephemeral ports within a minute.
+                tokio::time::sleep(pause).await;
             }
         }));
     }
@@ -753,9 +942,11 @@ async fn main() -> Result<(), BoxErr> {
 
     let warm = a.warmup.as_secs_f64();
     println!(
-        "== soak summary ({:.0} s, {} workers)",
+        "== soak summary ({:.0} s, {} workers, {} churn tasks, {} short-lived clients)",
         start.elapsed().as_secs_f64(),
-        a.workers
+        a.workers,
+        a.churn,
+        churned.load(Ordering::Relaxed)
     );
     let series: [(&str, MemField); 4] = [
         ("rss", |p| p.1),

@@ -358,6 +358,10 @@ fn clone_is_empty_before_it_was_created() {
     commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "seed")])
         .unwrap_or_else(|e| panic!("{e}"));
     let before = db.clock().now();
+    // The clock ticks in microseconds: clone in a later tick, or the clone is created at `before`.
+    while db.clock().now() <= before {
+        std::hint::spin_loop();
+    }
     let clone = db.clone_database();
     assert_eq!(
         rows_at(&clone, TimestampBound::ReadTimestamp(before)).ok(),

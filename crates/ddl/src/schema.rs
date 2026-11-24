@@ -76,6 +76,8 @@ pub struct Column {
     pub hidden: bool,
     /// `ARRAY<FLOAT32|FLOAT64>(vector_length=>n)`.
     pub vector_length: Option<u64>,
+    /// `OPTIONS (locality_group = '...')`.
+    pub locality_group: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +137,8 @@ pub struct Table {
     pub checks: Vec<CheckConstraint>,
     pub row_deletion_policy: Option<RowDeletionPolicy>,
     pub synonym: Option<String>,
+    /// `OPTIONS (locality_group = '...')`.
+    pub locality_group: Option<String>,
 }
 
 impl Table {
@@ -156,6 +160,8 @@ pub struct Index {
     pub interleave_in: Option<String>,
     /// `WHERE ...` filter SQL text.
     pub filter: Option<String>,
+    /// `OPTIONS (locality_group = '...')`.
+    pub locality_group: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +187,17 @@ pub struct OpaqueObject {
     pub name: String,
     pub ddl: String,
 }
+
+/// A locality group. Stored and printed; storage ignores it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalityGroup {
+    pub name: String,
+    /// `storage` and `ssd_to_hdd_spill_timespan`, as SQL literal text.
+    pub options: Vec<(String, String)>,
+}
+
+/// The locality group every database has.
+pub const DEFAULT_LOCALITY_GROUP: &str = "default";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sequence {
@@ -271,6 +288,18 @@ pub enum Statement {
     RenameTables {
         renames: Vec<(String, String)>,
     },
+    CreateLocalityGroup {
+        group: LocalityGroup,
+        if_not_exists: bool,
+    },
+    AlterLocalityGroup {
+        name: String,
+        options: Vec<(String, String)>,
+    },
+    DropLocalityGroup {
+        name: String,
+        if_exists: bool,
+    },
     /// CHANGE STREAM, ROLE, GRANT, REVOKE, PROPERTY GRAPH, MODEL, ...
     Opaque {
         object: OpaqueObject,
@@ -299,9 +328,15 @@ pub enum AlterTable {
         name: String,
         on_update: Option<String>,
     },
+    /// Options not given are `None`; `locality_group = NULL` is `Some(None)`.
     SetColumnOptions {
         name: String,
         allow_commit_timestamp: Option<bool>,
+        locality_group: Option<Option<String>>,
+    },
+    /// `SET OPTIONS (locality_group = ...)`; `None` for NULL.
+    SetOptions {
+        locality_group: Option<String>,
     },
     AddForeignKey(ForeignKey),
     AddCheck(CheckConstraint),
@@ -350,6 +385,8 @@ pub struct Schema {
     pub views: BTreeMap<String, View>,
     /// In declaration order.
     pub opaque: Vec<OpaqueObject>,
+    /// In creation order; `default` is listed once its options are altered.
+    pub locality_groups: Vec<LocalityGroup>,
     pub options: Vec<(String, String)>,
     /// Bumped on every successful apply; lets SQL caches key on it.
     pub version: u64,

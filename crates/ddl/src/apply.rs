@@ -350,6 +350,170 @@ impl Schema {
                     "CHANGE STREAM" | "MODEL" | "PROPERTY GRAPH"
                 ) && o.name.eq_ignore_ascii_case(name)
             })
+            || self.locality_group(name).is_some()
+    }
+
+    fn locality_group(&self, name: &str) -> Option<usize> {
+        self.locality_groups
+            .iter()
+            .position(|g| g.name.eq_ignore_ascii_case(name))
+    }
+
+    /// The locality groups a statement's tables, columns and indexes name must exist.
+    fn check_locality_refs(&self, stmt: &Statement, compat: bool) -> R<()> {
+        let cols = |cs: &[Column]| -> Vec<String> {
+            cs.iter().filter_map(|c| c.locality_group.clone()).collect()
+        };
+        let refs: Vec<String> = match stmt {
+            Statement::CreateTable { table, .. } => {
+                let mut v = cols(&table.columns);
+                v.extend(table.locality_group.clone());
+                v
+            }
+            Statement::CreateIndex { index, .. } => index.locality_group.iter().cloned().collect(),
+            Statement::AlterTable { action, .. } => match action {
+                AlterTable::AddColumn { column, .. } | AlterTable::AlterColumn { column } => {
+                    cols(std::slice::from_ref(column))
+                }
+                AlterTable::SetColumnOptions {
+                    locality_group: Some(Some(g)),
+                    ..
+                }
+                | AlterTable::SetOptions {
+                    locality_group: Some(g),
+                } => vec![g.clone()],
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        };
+        for g in refs {
+            if !g.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP) && self.locality_group(&g).is_none()
+            {
+                // Production answers NOT_FOUND without a message.
+                let msg = if compat {
+                    format!("Locality group not found: {g}")
+                } else {
+                    String::new()
+                };
+                return Err(DdlError::NotFound(msg));
+            }
+        }
+        Ok(())
+    }
+
+    /// Production only: spilling to HDD needs SSD storage first.
+    fn check_locality_storage(g: &LocalityGroup) -> R<()> {
+        let opt = |k: &str| {
+            g.options
+                .iter()
+                .find(|(n, v)| n.eq_ignore_ascii_case(k) && v != "NULL")
+                .map(|(_, v)| v.as_str())
+        };
+        if opt("storage") == Some("'hdd'") && opt("ssd_to_hdd_spill_timespan").is_some() {
+            return Err(pre(format!(
+                "Locality Group {} has invalid storage option: hdd. If the ssd_to_hdd_spill_timespan is set, then the storage option is required to be \"ssd\".",
+                g.name
+            )));
+        }
+        Ok(())
+    }
+
+    fn locality_group_referenced(&self, name: &str) -> bool {
+        let is = |g: &Option<String>| g.as_deref().is_some_and(|g| g.eq_ignore_ascii_case(name));
+        self.tables
+            .values()
+            .any(|t| is(&t.locality_group) || t.columns.iter().any(|c| is(&c.locality_group)))
+            || self.indexes.values().any(|i| is(&i.locality_group))
+    }
+
+    fn create_locality_group(
+        &mut self,
+        group: &LocalityGroup,
+        if_not_exists: bool,
+        compat: bool,
+    ) -> R<()> {
+        let name = &group.name;
+        if self.locality_group(name).is_some() {
+            // Production refuses even with IF NOT EXISTS.
+            return match (compat, if_not_exists) {
+                (true, true) => Ok(()),
+                (true, false) => Err(dup(name)),
+                (false, _) => Err(inv(format!(
+                    "Could not create locality group because it already exists: {name}"
+                ))),
+            };
+        }
+        self.check_new_name(name)?;
+        let mut group = group.clone();
+        if !compat {
+            group.options.retain(|(_, v)| v != "NULL");
+            Self::check_locality_storage(&group)?;
+        }
+        self.locality_groups.push(group);
+        Ok(())
+    }
+
+    fn alter_locality_group(
+        &mut self,
+        name: &str,
+        options: &[(String, String)],
+        compat: bool,
+    ) -> R<()> {
+        let i = match self.locality_group(name) {
+            Some(i) => i,
+            // `default` exists without being created.
+            None if name.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP) => {
+                self.locality_groups.push(LocalityGroup {
+                    name: DEFAULT_LOCALITY_GROUP.to_string(),
+                    options: Vec::new(),
+                });
+                self.locality_groups.len() - 1
+            }
+            None if compat => {
+                return Err(DdlError::NotFound(format!(
+                    "Locality group not found: {name}"
+                )));
+            }
+            None => return Err(DdlError::NotFound(String::new())),
+        };
+        let mut group = self.locality_groups[i].clone();
+        if compat {
+            // The emulator replaces the options rather than merging them.
+            group.options = options.to_vec();
+        } else {
+            merge_options(&mut group.options, options);
+            Self::check_locality_storage(&group)?;
+        }
+        self.locality_groups[i] = group;
+        Ok(())
+    }
+
+    fn drop_locality_group(&mut self, name: &str, if_exists: bool, compat: bool) -> R<()> {
+        let Some(i) = self.locality_group(name) else {
+            // Production refuses even with IF EXISTS.
+            return match (compat, if_exists) {
+                (true, true) => Ok(()),
+                (true, false) => Err(DdlError::NotFound(format!(
+                    "Locality group not found: {name}"
+                ))),
+                (false, _) => Err(inv(format!(
+                    "Cannot drop locality group {name} - it does not exist."
+                ))),
+            };
+        };
+        if self.locality_group_referenced(name) {
+            return Err(if compat {
+                pre(format!(
+                    "Locality group {name} cannot be dropped as it is referenced."
+                ))
+            } else {
+                inv(format!(
+                    "Cannot drop locality group {name} - it is still referenced."
+                ))
+            });
+        }
+        self.locality_groups.remove(i);
+        Ok(())
     }
 
     fn check_new_name(&self, name: &str) -> R<()> {
@@ -974,6 +1138,7 @@ impl Schema {
             AlterTable::SetColumnOptions {
                 name,
                 allow_commit_timestamp,
+                locality_group,
             } => {
                 let Some(c) = t.column(name) else {
                     return Err(col_not_found(name));
@@ -1004,16 +1169,22 @@ impl Schema {
                         c.name
                     )));
                 }
-                if let Some(v) = allow_commit_timestamp {
-                    let t = self.table_mut(&k)?;
-                    if let Some(c) = t
-                        .columns
-                        .iter_mut()
-                        .find(|c| c.name.eq_ignore_ascii_case(name))
-                    {
+                let t = self.table_mut(&k)?;
+                if let Some(c) = t
+                    .columns
+                    .iter_mut()
+                    .find(|c| c.name.eq_ignore_ascii_case(name))
+                {
+                    if let Some(v) = allow_commit_timestamp {
                         c.allow_commit_timestamp = *v;
                     }
+                    if let Some(g) = locality_group {
+                        c.locality_group = g.clone();
+                    }
                 }
+            }
+            AlterTable::SetOptions { locality_group } => {
+                self.table_mut(&k)?.locality_group = locality_group.clone();
             }
             AlterTable::AddForeignKey(fk) => {
                 let mut fk = fk.clone();
@@ -1616,6 +1787,7 @@ impl Schema {
     }
 
     fn apply_inner(&mut self, stmt: &Statement, compat: bool) -> R<()> {
+        self.check_locality_refs(stmt, compat)?;
         match stmt {
             Statement::CreateSchema {
                 name,
@@ -1804,6 +1976,16 @@ impl Schema {
             Statement::AlterDatabase { options, name } => {
                 self.database_name = Some(name.clone());
                 merge_options(&mut self.options, options);
+            }
+            Statement::CreateLocalityGroup {
+                group,
+                if_not_exists,
+            } => self.create_locality_group(group, *if_not_exists, compat)?,
+            Statement::AlterLocalityGroup { name, options } => {
+                self.alter_locality_group(name, options, compat)?
+            }
+            Statement::DropLocalityGroup { name, if_exists } => {
+                self.drop_locality_group(name, *if_exists, compat)?
             }
             Statement::Opaque { object, drop } => self.opaque_stmt(object, *drop)?,
         }

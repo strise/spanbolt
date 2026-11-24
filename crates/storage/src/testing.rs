@@ -15,6 +15,7 @@ pub fn col(name: &str, ty: ColumnType) -> Column {
         allow_commit_timestamp: false,
         hidden: false,
         vector_length: None,
+        locality_group: None,
     }
 }
 
@@ -52,6 +53,7 @@ pub fn table(name: &str, columns: Vec<Column>, pk: Vec<KeyPart>) -> Table {
         checks: Vec::new(),
         row_deletion_policy: None,
         synonym: None,
+        locality_group: None,
     }
 }
 
@@ -74,6 +76,7 @@ pub fn index(name: &str, table: &str, key: Vec<KeyPart>, storing: &[&str]) -> In
         null_filtered: false,
         interleave_in: None,
         filter: None,
+        locality_group: None,
     }
 }
 

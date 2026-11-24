@@ -1,6 +1,6 @@
 //! Canonical DDL printing in the official emulator's GetDatabaseDdl format.
 
-use crate::parser::{join_idents, quote_path};
+use crate::parser::{join_idents, quote_path, quote_string};
 use crate::schema::*;
 
 pub(crate) fn type_sql(ty: &ColumnType) -> String {
@@ -83,8 +83,64 @@ pub(crate) fn column_sql(c: &Column) -> String {
     if c.hidden {
         s.push_str(" HIDDEN");
     }
+    let mut opts = Vec::new();
+    if let Some(g) = &c.locality_group {
+        opts.push(format!("    locality_group = {}", quote_string(g)));
+    }
     if c.allow_commit_timestamp {
-        s.push_str(" OPTIONS (\n    allow_commit_timestamp = true\n  )");
+        opts.push("    allow_commit_timestamp = true".to_string());
+    }
+    if !opts.is_empty() {
+        s.push_str(&format!(" OPTIONS (\n{}\n  )", opts.join(",\n")));
+    }
+    s
+}
+
+/// A table's or index's `OPTIONS (locality_group = ...)` clause, as production prints it.
+fn locality_clause(g: &Option<String>) -> String {
+    match g {
+        Some(g) => format!(" OPTIONS (\n  locality_group = {}\n)", quote_string(g)),
+        None => String::new(),
+    }
+}
+
+/// `CREATE LOCALITY GROUP` as production prints it; the altered `default` group is an ALTER.
+pub(crate) fn locality_group_sql(g: &LocalityGroup) -> String {
+    let opts: Vec<String> = g
+        .options
+        .iter()
+        .filter(|(_, v)| v != "NULL")
+        .map(|(k, v)| format!("  {k} = {v}"))
+        .collect();
+    let name = crate::parser::quote_ident(&g.name);
+    let is_default = g.name.eq_ignore_ascii_case(DEFAULT_LOCALITY_GROUP);
+    let mut s = if is_default {
+        format!("ALTER LOCALITY GROUP {name} SET")
+    } else {
+        format!("CREATE LOCALITY GROUP {name}")
+    };
+    if !opts.is_empty() {
+        s.push_str(&format!(" OPTIONS (\n{}\n)", opts.join(",\n")));
+    } else if is_default {
+        s.push_str(" OPTIONS ()");
+    }
+    s
+}
+
+/// `CREATE LOCALITY GROUP` as the emulator prints it: options on one line, NULLs left out.
+fn locality_group_sql_emulator(g: &LocalityGroup) -> String {
+    let mut s = format!(
+        "CREATE LOCALITY GROUP {}",
+        crate::parser::quote_ident(&g.name)
+    );
+    if !g.options.is_empty() {
+        let opts: Vec<String> = g
+            .options
+            .iter()
+            .filter(|(_, v)| v != "NULL")
+            .map(|(k, v)| format!("{k} = {v}"))
+            .collect();
+        s.push_str(&format!(" OPTIONS ( {} )", opts.join(", ")));
     }
     s
 }
@@ -171,6 +227,10 @@ pub(crate) fn table_sql(t: &Table) -> String {
         s.push_str(", ");
         s.push_str(&rdp_sql(r));
     }
+    if t.locality_group.is_some() {
+        s.push(',');
+        s.push_str(&locality_clause(&t.locality_group));
+    }
     s
 }
 
@@ -197,6 +257,7 @@ pub(crate) fn index_sql(i: &Index) -> String {
     if let Some(p) = &i.interleave_in {
         s.push_str(&format!(", INTERLEAVE IN {}", quote_path(p)));
     }
+    s.push_str(&locality_clause(&i.locality_group));
     s
 }
 
@@ -273,9 +334,37 @@ pub(crate) fn view_sql(v: &View) -> String {
 }
 
 impl Schema {
-    /// Canonical statements as GetDatabaseDdl returns them.
+    /// Canonical statements as production's GetDatabaseDdl returns them. Snapshots store these,
+    /// so they keep everything the schema holds.
     pub fn to_ddl(&self) -> Vec<String> {
         let mut out = Vec::new();
+        self.database_options_ddl(&mut out);
+        out.extend(self.locality_groups.iter().map(locality_group_sql));
+        self.objects_ddl(&mut out);
+        out
+    }
+
+    /// GetDatabaseDdl as the emulator returns it (`--emulator-compat`): locality groups come last
+    /// and tables, columns and indexes don't print their `locality_group`.
+    pub fn to_ddl_emulator_compat(&self) -> Vec<String> {
+        let mut s = self.clone();
+        for t in s.tables.values_mut() {
+            t.locality_group = None;
+            for c in &mut t.columns {
+                c.locality_group = None;
+            }
+        }
+        for i in s.indexes.values_mut() {
+            i.locality_group = None;
+        }
+        let mut out = Vec::new();
+        s.database_options_ddl(&mut out);
+        s.objects_ddl(&mut out);
+        out.extend(s.locality_groups.iter().map(locality_group_sql_emulator));
+        out
+    }
+
+    fn database_options_ddl(&self, out: &mut Vec<String>) {
         if !self.options.is_empty() {
             let name = self.database_name.as_deref().unwrap_or("db");
             out.push(format!(
@@ -284,6 +373,9 @@ impl Schema {
                 options_inline(&self.options)
             ));
         }
+    }
+
+    fn objects_ddl(&self, out: &mut Vec<String>) {
         let ordered = |kind: ObjectKind| {
             self.creation_order
                 .iter()
@@ -337,7 +429,6 @@ impl Schema {
             }
         }
         out.extend(opaque("PROPERTY GRAPH"));
-        out
     }
 }
 
@@ -351,6 +442,10 @@ fn if_not_exists(b: bool) -> &'static str {
 
 fn options_paren(opts: &[(String, String)]) -> String {
     format!("OPTIONS ({})", options_inline(opts))
+}
+
+fn locality_value(g: &Option<String>) -> String {
+    g.as_deref().map_or("NULL".to_string(), quote_string)
 }
 
 fn alter_table_sql(table: &str, action: &AlterTable) -> String {
@@ -374,17 +469,21 @@ fn alter_table_sql(table: &str, action: &AlterTable) -> String {
         AlterTable::SetColumnOptions {
             name,
             allow_commit_timestamp,
+            locality_group,
         } => {
-            let v = match allow_commit_timestamp {
-                Some(true) => "true",
-                Some(false) => "false",
-                None => "NULL",
-            };
-            format!(
-                "ALTER COLUMN {} SET OPTIONS (allow_commit_timestamp = {v})",
-                q(name)
-            )
+            let mut opts = Vec::new();
+            if let Some(v) = allow_commit_timestamp {
+                opts.push(format!("allow_commit_timestamp = {v}"));
+            }
+            if let Some(g) = locality_group {
+                opts.push(format!("locality_group = {}", locality_value(g)));
+            }
+            format!("ALTER COLUMN {} SET OPTIONS ({})", q(name), opts.join(", "))
         }
+        AlterTable::SetOptions { locality_group } => format!(
+            "SET OPTIONS (locality_group = {})",
+            locality_value(locality_group)
+        ),
         AlterTable::AddForeignKey(fk) => format!("ADD {}", fk_sql(fk)),
         AlterTable::AddCheck(c) => format!("ADD {}", check_sql(c)),
         AlterTable::DropConstraint { name } => format!("DROP CONSTRAINT {}", q(name)),
@@ -484,6 +583,34 @@ pub fn print_statement(stmt: &Statement) -> String {
             ),
         },
         Statement::CreateSearchIndex { index } => search_index_sql(index),
+        Statement::CreateLocalityGroup {
+            group,
+            if_not_exists: ine,
+        } => {
+            let mut s = format!(
+                "CREATE LOCALITY GROUP {}{}",
+                if_not_exists(*ine),
+                crate::parser::quote_ident(&group.name)
+            );
+            if !group.options.is_empty() {
+                s.push(' ');
+                s.push_str(&options_paren(&group.options));
+            }
+            s
+        }
+        Statement::AlterLocalityGroup { name, options } => format!(
+            "ALTER LOCALITY GROUP {} SET {}",
+            crate::parser::quote_ident(name),
+            options_paren(options)
+        ),
+        Statement::DropLocalityGroup {
+            name,
+            if_exists: ie,
+        } => format!(
+            "DROP LOCALITY GROUP {}{}",
+            if_exists(*ie),
+            crate::parser::quote_ident(name)
+        ),
         Statement::AlterSearchIndex { name, action } => {
             let (verb, c) = match action {
                 AlterSearchIndex::AddColumn(c) => ("ADD COLUMN", c),

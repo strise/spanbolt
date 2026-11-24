@@ -59,6 +59,8 @@ suite and the conformance cases exercise.
   (`GET_NEXT_SEQUENCE_VALUE`; sequences themselves are stored), `ListDatabaseRoles`, and these
   DDL statements: proto bundles, queues, placements, user-defined functions, vector indexes and
   expression index keys.
+- Locality groups are validated and stored (DDL, `INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS`) but
+  don't change where or how data is stored.
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the
   client libraries already handle, but the timing differs.
 - Tested on macOS (arm64) and in the linux/arm64 image. CI smoke-tests the linux/amd64 image; the

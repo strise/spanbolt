@@ -53,6 +53,8 @@ enum Kind {
 }
 
 struct Returning {
+    /// The target table's columns the expressions read (pending commit timestamps fail them).
+    columns: Vec<usize>,
     exprs: Vec<Eval>,
     /// Positions in `row ++ computed ++ [action]`.
     positions: Vec<usize>,
@@ -113,11 +115,26 @@ type Fields = Vec<(String, Type)>;
 fn returning(
     p: &mut Planner,
     r: &Option<ResolvedReturningClauseProto>,
+    ts: &ResolvedTableScanProto,
     layout: &[i64],
 ) -> Result<(Option<Returning>, Fields)> {
     let Some(r) = r else {
         return Ok((None, Vec::new()));
     };
+    let read: Vec<&AnyResolvedExprProto> = r
+        .expr_list
+        .iter()
+        .filter_map(|cc| cc.expr.as_deref())
+        .collect();
+    let mut columns = crate::plan::columns_read(&read, ts, layout);
+    // Plain column references are output columns without an expression.
+    for oc in &r.output_column_list {
+        if let Some(c) = layout.iter().position(|&l| l == nid(&oc.column))
+            && !columns.contains(&c)
+        {
+            columns.push(c);
+        }
+    }
     let scope = Scope {
         cols: layout,
         up: Some(&Scope::TOP),
@@ -150,7 +167,14 @@ fn returning(
         );
         fields.push((oc.name.clone().unwrap_or_default(), col_type(c)?));
     }
-    Ok((Some(Returning { exprs, positions }), fields))
+    Ok((
+        Some(Returning {
+            columns,
+            exprs,
+            positions,
+        }),
+        fields,
+    ))
 }
 
 fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fields)> {
@@ -208,7 +232,7 @@ fn insert(p: &mut Planner, ins: &ResolvedInsertStmtProto) -> Result<(DmlPlan, Fi
         }
         Source::Values(rows)
     };
-    let (ret, fields) = returning(p, &ins.returning, &layout)?;
+    let (ret, fields) = returning(p, &ins.returning, ts, &layout)?;
     Ok((
         DmlPlan {
             table,
@@ -272,9 +296,17 @@ fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fie
         if matches!(val, Val::Default) && has_default(p, table, col) {
             return Err(unimplemented("DEFAULT values in DML"));
         }
+        if let Some(e) = item.set_value.as_ref().and_then(|v| v.value.as_ref()) {
+            let read = crate::plan::columns_read(&[e], ts, &layout);
+            p.reads.push(crate::prepared::ScanRead {
+                table,
+                index: None,
+                columns: read,
+            });
+        }
         sets.push((col, val));
     }
-    let (ret, fields) = returning(p, &up.returning, &layout)?;
+    let (ret, fields) = returning(p, &up.returning, ts, &layout)?;
     Ok((
         DmlPlan {
             table,
@@ -298,7 +330,7 @@ fn delete(p: &mut Planner, del: &ResolvedDeleteStmtProto) -> Result<(DmlPlan, Fi
         .as_ref()
         .ok_or_else(|| Error::internal("delete without table"))?;
     let (scan, layout, table) = p.dml_scan(ts, del.where_expr.as_deref())?;
-    let (ret, fields) = returning(p, &del.returning, &layout)?;
+    let (ret, fields) = returning(p, &del.returning, ts, &layout)?;
     Ok((
         DmlPlan {
             table,
@@ -320,6 +352,36 @@ pub fn plan(p: &mut Planner, node: &StmtNode) -> Result<(DmlPlan, Fields)> {
     };
     plan.has_subquery = p.subqueries > before;
     Ok((plan, fields))
+}
+
+/// Cloud Spanner rejects an UPDATE that has to rewrite an index entry holding a column the
+/// transaction wrote with PENDING_COMMIT_TIMESTAMP() (the emulator allows it since 1.5.57). The
+/// error is a constraint error: the commit fails with it too.
+fn check_index_rewrite(
+    cat: &spanbolt_storage::Catalog,
+    tm: &TableMeta,
+    table: TableId,
+    sets: &[(usize, Val)],
+    pending: &[(TableId, usize)],
+) -> Result<()> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    for &ix in &tm.indexes {
+        let im = cat.index(ix);
+        if !sets.iter().any(|(c, _)| im.entry_columns.contains(c)) {
+            continue;
+        }
+        if let Some(&c) = im
+            .entry_columns
+            .iter()
+            .find(|&&c| pending.contains(&(table, c)) && !sets.iter().any(|(s, _)| *s == c))
+        {
+            let e = spanbolt_storage::pending::pending_column_error(cat, table, c, true);
+            return Err(Error::constraint(e.code, e.message));
+        }
+    }
+    Ok(())
 }
 
 fn check_commit_ts(tm: &TableMeta, col: usize) -> Result<()> {
@@ -511,6 +573,16 @@ pub fn execute(
         with: RefCell::new(Vec::new()),
         memo: RefCell::new(HashMap::new()),
     };
+    // THEN RETURN can't read a column the transaction (this statement included) wrote with
+    // PENDING_COMMIT_TIMESTAMP().
+    let check = |pending: &[(TableId, usize)]| -> Result<()> {
+        match &d.returning {
+            Some(ret) if ret.columns.iter().any(|&c| pending.contains(&(d.table, c))) => Err(
+                Error::invalid_argument(crate::plan::PENDING_COMMIT_TIMESTAMP_USE),
+            ),
+            _ => Ok(()),
+        }
+    };
     let top = Env::EMPTY;
     let pk_of = |row: &[Value]| -> Vec<Value> { tm.pk.iter().map(|&c| row[c].clone()).collect() };
     // THEN RETURN rows: deleted rows as they were; inserted/updated ones read back afterwards.
@@ -608,13 +680,16 @@ pub fn execute(
             count = kept_rows.len();
             if kept_defaults.iter().all(|d| d.is_empty()) {
                 if !kept_rows.is_empty() {
-                    rw.apply_dml(vec![Mutation::Write {
-                        kind: *mode,
-                        table: d.table,
-                        columns: columns.clone(),
-                        rows: kept_rows,
-                        commit_ts_cells: kept_cells,
-                    }])?;
+                    rw.apply_dml_checked(
+                        vec![Mutation::Write {
+                            kind: *mode,
+                            table: d.table,
+                            columns: columns.clone(),
+                            rows: kept_rows,
+                            commit_ts_cells: kept_cells,
+                        }],
+                        &check,
+                    )?;
                 }
             } else {
                 // Rows naming DEFAULT omit those columns so storage fills the defaults.
@@ -635,10 +710,13 @@ pub fn execute(
                         commit_ts_cells: cells,
                     });
                 }
-                rw.apply_dml(muts)?;
+                rw.apply_dml_checked(muts, &check)?;
             }
         }
         Kind::Update { scan, sets } => {
+            if state.prod_messages {
+                check_index_rewrite(&state.catalog, &tm, d.table, sets, &rw.pending_commit_ts())?;
+            }
             let olds: Vec<Row> = scan.open(&cx, &top)?.collect::<Result<_>>()?;
             let mut columns: Vec<usize> = tm.pk.clone();
             columns.extend(sets.iter().map(|(c, _)| *c));
@@ -666,13 +744,16 @@ pub fn execute(
             }
             count = rows.len();
             if !rows.is_empty() {
-                rw.apply_dml(vec![Mutation::Write {
-                    kind: WriteKind::Update,
-                    table: d.table,
-                    columns,
-                    rows,
-                    commit_ts_cells: ts_cells,
-                }])?;
+                rw.apply_dml_checked(
+                    vec![Mutation::Write {
+                        kind: WriteKind::Update,
+                        table: d.table,
+                        columns,
+                        rows,
+                        commit_ts_cells: ts_cells,
+                    }],
+                    &check,
+                )?;
             }
         }
         Kind::Delete { scan } => {
@@ -680,10 +761,13 @@ pub fn execute(
             count = olds.len();
             if !olds.is_empty() {
                 let keys = olds.iter().map(|o| pk_of(o)).collect();
-                rw.apply_dml(vec![Mutation::Delete {
-                    table: d.table,
-                    keys: KeySet::keys(keys),
-                }])?;
+                rw.apply_dml_checked(
+                    vec![Mutation::Delete {
+                        table: d.table,
+                        keys: KeySet::keys(keys),
+                    }],
+                    &check,
+                )?;
             }
             affected = olds.into_iter().map(|o| (o, "DELETE")).collect();
         }

@@ -66,7 +66,7 @@ fn not_keyable(ty: &ColumnType) -> bool {
 const MAX_STRING_LEN: u64 = 2_621_440;
 const MAX_BYTES_LEN: u64 = 10_485_760;
 
-fn validate_column(table: &str, c: &Column) -> R<()> {
+fn validate_column(table: &str, c: &Column, compat: bool) -> R<()> {
     fn check_len(table: &str, c: &Column, ty: &ColumnType) -> R<()> {
         let (n, max) = match ty {
             ColumnType::String(Some(n)) => (*n, MAX_STRING_LEN),
@@ -118,6 +118,36 @@ fn validate_column(table: &str, c: &Column) -> R<()> {
             c.name
         )));
     }
+    if let Some(u) = &c.on_update
+        && !is_pending_commit_timestamp(u)
+    {
+        return Err(on_update_not_pct(table, &c.name, u, compat));
+    }
+    if c.default
+        .as_deref()
+        .is_some_and(is_pending_commit_timestamp)
+        && !c.allow_commit_timestamp
+    {
+        return Err(pre(format!(
+            "Cannot use default value expression PENDING_COMMIT_TIMESTAMP() on column `{}` without the allow_commit_timestamp column option.",
+            c.name
+        )));
+    }
+    if c.on_update.is_some()
+        && !c
+            .default
+            .as_deref()
+            .is_some_and(is_pending_commit_timestamp)
+    {
+        return Err(if compat {
+            inv(format!(
+                "The ON UPDATE expression of column `{}` does not match the DEFAULT value expression.",
+                c.name
+            ))
+        } else {
+            default_not_pct(&c.name)
+        });
+    }
     if c.default.is_some() && c.generated.is_some() {
         return Err(inv(format!(
             "Cannot use DEFAULT with generated column `{}`.",
@@ -131,6 +161,28 @@ fn validate_column(table: &str, c: &Column) -> R<()> {
         )));
     }
     Ok(())
+}
+
+fn on_update_not_pct(table: &str, column: &str, expr: &str, compat: bool) -> DdlError {
+    inv(if compat {
+        "PENDING_COMMIT_TIMESTAMP() is the only supported ON UPDATE expression.".into()
+    } else {
+        format!(
+            "Error parsing ON UPDATE expression '{expr}' from column '{column}' in table '{table}': PENDING_COMMIT_TIMESTAMP() and PENDING_COMMIT_TIMESTAMP_INT64() are the only supported ON UPDATE expressions."
+        )
+    })
+}
+
+fn default_not_pct(column: &str) -> DdlError {
+    pre(format!(
+        "The only default value expression permitted for commit timestamp column `{column}` is PENDING_COMMIT_TIMESTAMP()."
+    ))
+}
+
+fn on_update_needs_default(column: &str) -> DdlError {
+    inv(format!(
+        "Column `{column}` with an ON UPDATE expression must have an identical DEFAULT value expression."
+    ))
 }
 
 fn rdp_check(t: &Table, r: &RowDeletionPolicy) -> R<()> {
@@ -418,7 +470,7 @@ impl Schema {
         Ok(())
     }
 
-    fn create_table(&mut self, table: &Table, if_not_exists: bool) -> R<()> {
+    fn create_table(&mut self, table: &Table, if_not_exists: bool, compat: bool) -> R<()> {
         if if_not_exists && self.table_key(&table.name).is_some() {
             return Ok(());
         }
@@ -431,7 +483,7 @@ impl Schema {
             {
                 return Err(pre(format!("Duplicate column name {}.{}.", t.name, c.name)));
             }
-            validate_column(&t.name, c)?;
+            validate_column(&t.name, c, compat)?;
         }
         for (i, k) in t.primary_key.iter().enumerate() {
             if t.primary_key[..i]
@@ -456,6 +508,12 @@ impl Schema {
                         t.name,
                         c.name,
                         base_type(&c.ty)
+                    )));
+                }
+                Some(c) if c.on_update.is_some() => {
+                    return Err(inv(format!(
+                        "Column {}.{} with ON UPDATE cannot be a part of or the whole primary key.",
+                        t.name, c.name
                     )));
                 }
                 _ => {}
@@ -587,7 +645,7 @@ impl Schema {
         Ok(())
     }
 
-    fn alter_table(&mut self, table: &str, action: &AlterTable) -> R<()> {
+    fn alter_table(&mut self, table: &str, action: &AlterTable, compat: bool) -> R<()> {
         let k = self.need_table(table)?;
         let t = &self.tables[&k];
         let tname = t.name.clone();
@@ -607,7 +665,7 @@ impl Schema {
                         tname, column.name
                     )));
                 }
-                validate_column(&tname, column)?;
+                validate_column(&tname, column, compat)?;
                 self.table_mut(&k)?.columns.push(column.clone());
             }
             AlterTable::DropColumn { name } => {
@@ -732,12 +790,12 @@ impl Schema {
                         )));
                     }
                 }
-                validate_column(&tname, column)?;
                 let mut new = column.clone();
                 new.name = old.name.clone();
                 if !new.allow_commit_timestamp && new.ty == ColumnType::Timestamp {
                     new.allow_commit_timestamp = old.allow_commit_timestamp;
                 }
+                validate_column(&tname, &new, compat)?;
                 if new.generated.is_none() && old.generated.is_some() {
                     new.generated = old.generated.clone();
                 }
@@ -751,8 +809,17 @@ impl Schema {
                 }
             }
             AlterTable::SetColumnDefault { name, default } => {
-                if t.column(name).is_none() {
+                let Some(c) = t.column(name) else {
                     return Err(col_not_found(name));
+                };
+                if c.on_update.is_some() {
+                    match default {
+                        None => return Err(on_update_needs_default(&c.name)),
+                        Some(d) if !is_pending_commit_timestamp(d) => {
+                            return Err(default_not_pct(&c.name));
+                        }
+                        Some(_) => {}
+                    }
                 }
                 let t = self.table_mut(&k)?;
                 if let Some(c) = t
@@ -761,6 +828,49 @@ impl Schema {
                     .find(|c| c.name.eq_ignore_ascii_case(name))
                 {
                     c.default = default.clone();
+                }
+            }
+            AlterTable::SetColumnOnUpdate { name, on_update } => {
+                let Some(c) = t.column(name) else {
+                    return Err(col_not_found(name));
+                };
+                if let Some(u) = on_update {
+                    if !is_pending_commit_timestamp(u) {
+                        return Err(on_update_not_pct(&tname, &c.name, u, compat));
+                    }
+                    if !compat && c.ty != ColumnType::Timestamp {
+                        // Cloud Spanner type-checks the expression first; its message escapes
+                        // the quotes.
+                        return Err(inv(format!(
+                            "Error parsing ON UPDATE expression \\'{u}\\' from column \\'{}\\' in table \\'{tname}\\': Expected type {}; found TIMESTAMP [at 1:1]",
+                            c.name,
+                            base_type(&c.ty)
+                        )));
+                    }
+                    if !c
+                        .default
+                        .as_deref()
+                        .is_some_and(is_pending_commit_timestamp)
+                    {
+                        return Err(on_update_needs_default(&c.name));
+                    }
+                    if t.primary_key
+                        .iter()
+                        .any(|k| k.column.eq_ignore_ascii_case(&c.name))
+                    {
+                        return Err(inv(format!(
+                            "Column {tname}.{} with ON UPDATE cannot be a part of or the whole primary key.",
+                            c.name
+                        )));
+                    }
+                }
+                let t = self.table_mut(&k)?;
+                if let Some(c) = t
+                    .columns
+                    .iter_mut()
+                    .find(|c| c.name.eq_ignore_ascii_case(name))
+                {
+                    c.on_update = on_update.clone();
                 }
             }
             AlterTable::SetColumnOptions {
@@ -1329,7 +1439,7 @@ impl Schema {
         Ok(())
     }
 
-    fn apply_inner(&mut self, stmt: &Statement) -> R<()> {
+    fn apply_inner(&mut self, stmt: &Statement, compat: bool) -> R<()> {
         match stmt {
             Statement::CreateSchema {
                 name,
@@ -1410,9 +1520,9 @@ impl Schema {
             Statement::CreateTable {
                 table,
                 if_not_exists,
-            } => self.create_table(table, *if_not_exists)?,
+            } => self.create_table(table, *if_not_exists, compat)?,
             Statement::DropTable { name, if_exists } => self.drop_table(name, *if_exists)?,
-            Statement::AlterTable { table, action } => self.alter_table(table, action)?,
+            Statement::AlterTable { table, action } => self.alter_table(table, action, compat)?,
             Statement::RenameTables { renames } => {
                 let mut next = self.clone();
                 for (from, to) in renames {
@@ -1515,7 +1625,7 @@ impl Schema {
     /// Apply a parsed statement, validating it against the current schema. On error the schema
     /// is unchanged.
     pub fn apply(&mut self, stmt: &Statement) -> Result<(), DdlError> {
-        self.apply_inner(stmt)?;
+        self.apply_inner(stmt, false)?;
         self.version += 1;
         Ok(())
     }
@@ -1529,7 +1639,11 @@ impl Schema {
                 self.version += 1;
                 Ok(())
             }
-            _ => self.apply(stmt),
+            _ => {
+                self.apply_inner(stmt, true)?;
+                self.version += 1;
+                Ok(())
+            }
         }
     }
 

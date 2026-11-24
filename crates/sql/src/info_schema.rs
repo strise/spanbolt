@@ -198,6 +198,7 @@ pub fn rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         Some("COMMITTED"),
                     );
                     r[5] = opt(c.default.as_deref());
+                    r[12] = opt(c.on_update.as_deref());
                     r[9] = s(generated);
                     r[10] = b(c.hidden);
                     r[11] = opt(expr);

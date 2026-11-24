@@ -66,7 +66,9 @@ pub(crate) const GENERATED: &str = "Generated columns";
 pub(crate) const CHECKS: &str = "CHECK constraints on existing rows";
 
 /// Fills the defaults of `missing` columns and recomputes the generated columns selected by
-/// `regenerate`, in dependency order, then assigns identity values to missing identity columns.
+/// `regenerate`, in dependency order, then assigns identity values to missing identity columns. A
+/// `DEFAULT (PENDING_COMMIT_TIMESTAMP())` is left alone: the writer fills it with the commit
+/// timestamp.
 pub fn compute_row(
     tm: &TableMeta,
     row: &mut [Value],
@@ -82,6 +84,7 @@ pub fn compute_row(
     };
     for (c, cm) in tm.columns.iter().enumerate() {
         if let Some(d) = &cm.default
+            && !cm.default_commit_ts
             && missing(c)
         {
             row[c] = get(DEFAULTS)?.eval(d, tm, row, &cm.ty)?;

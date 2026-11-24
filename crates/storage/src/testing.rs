@@ -10,6 +10,7 @@ pub fn col(name: &str, ty: ColumnType) -> Column {
         ty,
         not_null: false,
         default: None,
+        on_update: None,
         generated: None,
         allow_commit_timestamp: false,
         hidden: false,

@@ -1,0 +1,402 @@
+# Reading a cell that DML wrote with PENDING_COMMIT_TIMESTAMP() in the same read-write transaction:
+# its value isn't known until commit, so Spanner rejects the read (emulator issue #25, v1.5.43).
+# Buffered mutations aren't visible to reads in the transaction, so they never conflict.
+tags: txn sql
+schema:
+  CREATE TABLE Events (
+    Id STRING(36) NOT NULL,
+    Created TIMESTAMP OPTIONS (allow_commit_timestamp = true),
+    Note STRING(MAX),
+  ) PRIMARY KEY (Id);
+  CREATE INDEX EventsByCreated ON Events(Created);
+  CREATE INDEX EventsByNote ON Events(Note);
+  CREATE INDEX EventsByNoteStoring ON Events(Note) STORING (Created);
+  CREATE TABLE Others (
+    Id INT64 NOT NULL,
+    V STRING(MAX),
+  ) PRIMARY KEY (Id)
+insert Events cols=Id,Created,Note:
+  ["seed", "2020-01-01T00:00:00Z", "n"]
+insert Others cols=Id,V:
+  [1, "x"]
+
+case select_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Created FROM Events WHERE Id = 'a'
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case select_other_columns
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Id, Note FROM Events WHERE Id = 'a'
+expect:
+  columns: Id STRING, Note STRING
+  ["a",null]
+expect@spanner:
+  same
+
+case select_count_star
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT COUNT(*) FROM Events
+expect:
+  columns: INT64
+  ["2"]
+expect@spanner:
+  same
+
+case select_star
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT * FROM Events WHERE Id = 'seed'
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case filter_on_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Id FROM Events WHERE Created IS NULL
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case select_other_table
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT V FROM Others
+expect:
+  columns: V STRING
+  ["x"]
+expect@spanner:
+  same
+commit txn=t
+expect:
+  ok
+expect@spanner:
+  same
+
+case select_after_update
+begin txn=t
+dml txn=t:
+  UPDATE Events SET Created = PENDING_COMMIT_TIMESTAMP() WHERE Id = 'seed'
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Created FROM Events WHERE Id = 'seed'
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case then_return_pending_column
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+  THEN RETURN Created
+expect:
+  error: INVALID_ARGUMENT
+  message: The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.
+expect@spanner:
+  same
+
+case then_return_star
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+  THEN RETURN *
+expect:
+  error: INVALID_ARGUMENT
+  message: The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.
+expect@spanner:
+  same
+
+case then_return_other_column
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+  THEN RETURN Id, Note
+expect:
+  count: 1
+  columns: Id STRING, Note STRING
+  ["a",null]
+expect@spanner:
+  same
+
+case update_then_return_pending_column
+dml:
+  UPDATE Events SET Created = PENDING_COMMIT_TIMESTAMP() WHERE Id = 'seed'
+  THEN RETURN Id, Created
+expect:
+  error: INVALID_ARGUMENT
+  message: The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.
+expect@spanner:
+  same
+
+case second_insert_same_table
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('b', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+commit txn=t
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT COUNT(*) FROM Events WHERE Created > '2021-01-01T00:00:00Z'
+expect:
+  columns: INT64
+  ["2"]
+expect@spanner:
+  same
+
+case update_other_column_after_pending
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+dml txn=t:
+  UPDATE Events SET Note = 'x' WHERE Id = 'seed'
+expect:
+  count: 1
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+commit txn=t
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case update_filter_on_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+dml txn=t:
+  UPDATE Events SET Note = 'x' WHERE Created < '2021-01-01T00:00:00Z'
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case read_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+read Events cols=Id,Created txn=t:
+  ["a"]
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case read_other_columns
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+read Events cols=Id,Note txn=t:
+  all
+expect:
+  columns: Id STRING, Note STRING
+  ["a",null]
+  ["seed","n"]
+expect@spanner:
+  same
+
+case read_index_on_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+read Events cols=Id index=EventsByCreated txn=t:
+  all
+expect:
+  error: INVALID_ARGUMENT
+  message: Table _index_data_table_EventsByCreated cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Table _Index_EventsByCreated cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Table _Index_EventsByCreated can't access the pending commit timestamp to record the old value.
+
+case read_index_storing_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+read Events cols=Id,Note index=EventsByNoteStoring txn=t:
+  all
+expect:
+  columns: Id STRING, Note STRING
+  ["a",null]
+  ["seed","n"]
+expect@spanner:
+  same
+
+case read_other_index
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+read Events cols=Id,Note index=EventsByNote txn=t:
+  all
+expect:
+  columns: Id STRING, Note STRING
+  ["a",null]
+  ["seed","n"]
+expect@spanner:
+  same
+
+case query_force_index_on_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Id FROM Events@{FORCE_INDEX=EventsByCreated}
+expect:
+  columns: Id STRING
+  ["seed"]
+  ["a"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Table _Index_EventsByCreated cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Table _Index_EventsByCreated can't access the pending commit timestamp to record the old value.
+
+case query_force_index_storing_pending_column
+begin txn=t
+dml txn=t:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Id, Note FROM Events@{FORCE_INDEX=EventsByNoteStoring}
+expect:
+  columns: Id STRING, Note STRING
+  ["seed","n"]
+  ["a",null]
+expect@spanner:
+  same
+
+case mutation_then_select
+begin txn=t
+insert Events cols=Id,Created txn=t:
+  ["a", "spanner.commit_timestamp()"]
+query txn=t:
+  SELECT Id, Created FROM Events
+expect:
+  columns: Id STRING, Created TIMESTAMP
+  ["seed","2020-01-01T00:00:00Z"]
+expect@spanner:
+  same
+commit txn=t
+expect:
+  ok
+expect@spanner:
+  same
+
+case select_after_commit
+dml:
+  INSERT INTO Events (Id, Created) VALUES ('a', PENDING_COMMIT_TIMESTAMP())
+expect:
+  count: 1
+expect@spanner:
+  same
+begin txn=t
+query txn=t:
+  SELECT Id, Created FROM Events WHERE Id = 'a'
+expect:
+  columns: Id STRING, Created TIMESTAMP
+  ["a","<now>"]
+expect@spanner:
+  same

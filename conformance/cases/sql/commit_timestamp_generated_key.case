@@ -1,0 +1,56 @@
+# DEFAULT (PENDING_COMMIT_TIMESTAMP()) in a table keyed by a stored generated column (emulator
+# issue #316).
+tags: sql dml
+schema:
+  CREATE TABLE G (
+    Id STRING(MAX) NOT NULL AS (JSON_VALUE(Doc, '$.id')) STORED,
+    Doc JSON,
+    Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true),
+  ) PRIMARY KEY (Id)
+
+case mutation_insert
+insert G cols=Doc:
+  ["{\"id\":\"m\"}"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write timestamps in the future, found: 9999-12-31T23:59:59.999999+00:00
+expect@spanner:
+  ok
+query:
+  SELECT Id, Created FROM G
+expect:
+  columns: Id STRING, Created TIMESTAMP
+expect@spanner:
+  columns: Id STRING, Created TIMESTAMP
+  ["m","<now>"]
+
+case mutation_insert_or_update
+insert_or_update G cols=Doc:
+  ["{\"id\":\"m\"}"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write timestamps in the future, found: 9999-12-31T23:59:59.999999+00:00
+expect@spanner:
+  ok
+query:
+  SELECT Id, Created FROM G
+expect:
+  columns: Id STRING, Created TIMESTAMP
+expect@spanner:
+  columns: Id STRING, Created TIMESTAMP
+  ["m","<now>"]
+
+case dml_insert
+dml:
+  INSERT INTO G (Doc) VALUES (JSON '{"id":"d"}')
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Created FROM G
+expect:
+  columns: Id STRING, Created TIMESTAMP
+  ["d","<now>"]
+expect@spanner:
+  same

@@ -52,6 +52,12 @@ impl Generated {
     }
 }
 
+/// Whether a DEFAULT or ON UPDATE expression is `PENDING_COMMIT_TIMESTAMP()` (any case or spacing).
+pub fn is_pending_commit_timestamp(expr: &str) -> bool {
+    let e: String = expr.split_whitespace().collect();
+    e.eq_ignore_ascii_case("PENDING_COMMIT_TIMESTAMP()")
+}
+
 /// The hidden key column the emulator adds to tables declared without a primary key.
 pub const ROWID_COLUMN: &str = "rowid";
 
@@ -62,6 +68,8 @@ pub struct Column {
     pub not_null: bool,
     /// `DEFAULT (expr)` SQL text.
     pub default: Option<String>,
+    /// `ON UPDATE (expr)` SQL text; only `PENDING_COMMIT_TIMESTAMP()` is accepted.
+    pub on_update: Option<String>,
     pub generated: Option<Generated>,
     pub allow_commit_timestamp: bool,
     /// Hidden columns (e.g. TOKENLIST ... HIDDEN) are excluded from SELECT *.
@@ -279,6 +287,11 @@ pub enum AlterTable {
     SetColumnDefault {
         name: String,
         default: Option<String>,
+    },
+    /// `ALTER COLUMN c SET ON UPDATE (expr)` / `DROP ON UPDATE`.
+    SetColumnOnUpdate {
+        name: String,
+        on_update: Option<String>,
     },
     SetColumnOptions {
         name: String,

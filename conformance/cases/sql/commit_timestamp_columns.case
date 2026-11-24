@@ -1,0 +1,580 @@
+# DEFAULT (PENDING_COMMIT_TIMESTAMP()) and ON UPDATE (PENDING_COMMIT_TIMESTAMP()) column clauses
+# (emulator issues #316, #338; v1.5.48, v1.5.53/54).
+tags: sql ddl dml
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true),
+    Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true),
+    V STRING(MAX),
+  ) PRIMARY KEY (Id)
+insert T cols=Id,Created,Updated,V:
+  [1, "2020-01-01T00:00:00Z", "2020-01-01T00:00:00Z", "a"]
+
+case get_ddl
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case information_schema_columns
+query:
+  SELECT COLUMN_NAME, COLUMN_DEFAULT, ON_UPDATE_EXPRESSION, IS_GENERATED
+  FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'T' ORDER BY ORDINAL_POSITION
+expect:
+  columns: COLUMN_NAME STRING, COLUMN_DEFAULT STRING, ON_UPDATE_EXPRESSION STRING, IS_GENERATED STRING
+  ["Id",null,null,"NEVER"]
+  ["Created","PENDING_COMMIT_TIMESTAMP()",null,"NEVER"]
+  ["Updated","PENDING_COMMIT_TIMESTAMP()","PENDING_COMMIT_TIMESTAMP()","NEVER"]
+  ["V",null,null,"NEVER"]
+expect@spanner:
+  same
+
+case mutation_insert_default
+insert T cols=Id,V:
+  [2, "b"]
+query:
+  SELECT Id, Created, Updated, Created = Updated FROM T WHERE Id = 2
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, BOOL
+  ["2","<now>","<now>",true]
+expect@spanner:
+  same
+
+case mutation_insert_or_update_default
+insert_or_update T cols=Id,V:
+  [2, "b"]
+query:
+  SELECT Id, Created, Updated, Created = Updated FROM T WHERE Id = 2
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, BOOL
+  ["2","<now>","<now>",true]
+expect@spanner:
+  same
+
+case mutation_replace_default
+replace T cols=Id,V:
+  [1, "b"]
+query:
+  SELECT Id, Created, Updated, Created = Updated FROM T WHERE Id = 1
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, BOOL
+  ["1","<now>","<now>",true]
+expect@spanner:
+  same
+
+case dml_insert_default
+dml:
+  INSERT INTO T (Id, V) VALUES (2, 'b')
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Created, Updated, Created = Updated FROM T WHERE Id = 2
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, BOOL
+  ["2","<now>","<now>",true]
+expect@spanner:
+  same
+
+case dml_insert_default_keyword
+dml:
+  INSERT INTO T (Id, Created, V) VALUES (2, DEFAULT, 'b')
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Created, Updated FROM T WHERE Id = 2
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP
+  ["2","<now>","<now>"]
+expect@spanner:
+  same
+
+case dml_insert_default_then_return
+dml:
+  INSERT INTO T (Id, V) VALUES (2, 'b') THEN RETURN Id
+expect:
+  count: 1
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case dml_insert_default_then_return_pending
+dml:
+  INSERT INTO T (Id, V) VALUES (2, 'b') THEN RETURN Created
+expect:
+  error: INVALID_ARGUMENT
+  message: The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.
+expect@spanner:
+  same
+
+case dml_insert_default_then_select
+begin txn=t
+dml txn=t:
+  INSERT INTO T (Id, V) VALUES (2, 'b')
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT Created FROM T WHERE Id = 2
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Created cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Created can't access the pending commit timestamp to record the old value.
+
+case mutation_update_on_update
+update T cols=Id,V:
+  [1, "b"]
+query:
+  SELECT Id, Created, Updated, V FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, V STRING
+  ["1","2020-01-01T00:00:00Z","<now>","b"]
+expect@spanner:
+  same
+
+case mutation_insert_or_update_on_update
+insert_or_update T cols=Id,V:
+  [1, "b"]
+query:
+  SELECT Id, Created, Updated, V FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, V STRING
+  ["1","2020-01-01T00:00:00Z","<now>","b"]
+expect@spanner:
+  same
+
+case mutation_update_explicit_value
+update T cols=Id,Updated:
+  [1, "2021-01-01T00:00:00Z"]
+query:
+  SELECT Id, Created, Updated FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP
+  ["1","2020-01-01T00:00:00Z","2021-01-01T00:00:00Z"]
+expect@spanner:
+  same
+
+case dml_update_on_update
+dml:
+  UPDATE T SET V = 'b' WHERE Id = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Created, Updated, V FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, V STRING
+  ["1","2020-01-01T00:00:00Z","<now>","b"]
+expect@spanner:
+  same
+
+case dml_update_explicit_value
+dml:
+  UPDATE T SET V = 'b', Updated = TIMESTAMP '2021-01-01T00:00:00Z' WHERE Id = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Created, Updated, V FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, V STRING
+  ["1","2020-01-01T00:00:00Z","2021-01-01T00:00:00Z","b"]
+expect@spanner:
+  same
+
+case dml_update_on_update_then_select
+begin txn=t
+dml txn=t:
+  UPDATE T SET V = 'b' WHERE Id = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+query txn=t:
+  SELECT V FROM T WHERE Id = 1
+expect:
+  columns: V STRING
+  ["b"]
+expect@spanner:
+  same
+query txn=t:
+  SELECT Updated FROM T WHERE Id = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Column Updated cannot be accessed because it, or its associated index, has a pending CommitTimestamp
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Column Updated cannot be accessed because 1. it, or its associated index, has a pending CommitTimestamp, or 2. change stream tracking Column Updated can't access the pending commit timestamp to record the old value.
+
+case dml_update_on_update_then_return
+dml:
+  UPDATE T SET V = 'b' WHERE Id = 1 THEN RETURN Id, V
+expect:
+  count: 1
+  columns: Id INT64, V STRING
+  ["1","b"]
+expect@spanner:
+  same
+
+case dml_update_no_rows
+dml:
+  UPDATE T SET V = 'b' WHERE Id = 99
+expect:
+  count: 0
+expect@spanner:
+  same
+query:
+  SELECT Id, Created, Updated, V FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, V STRING
+  ["1","2020-01-01T00:00:00Z","2020-01-01T00:00:00Z","a"]
+expect@spanner:
+  same
+
+case add_column_on_update
+ddl:
+  ALTER TABLE T ADD COLUMN Touched TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n  Touched TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+query:
+  SELECT Id, Touched FROM T
+expect:
+  columns: Id INT64, Touched TIMESTAMP
+  ["1","9999-12-31T23:59:59.999999Z"]
+expect@spanner:
+  columns: Id INT64, Touched TIMESTAMP
+  ["1","<now>"]
+update T cols=Id,V:
+  [1, "b"]
+query:
+  SELECT Id, Touched IS NOT NULL, Touched = Updated FROM T
+expect:
+  columns: Id INT64, BOOL, BOOL
+  ["1",true,true]
+expect@spanner:
+  same
+
+case alter_column_set_on_update
+ddl:
+  ALTER TABLE T ALTER COLUMN Created SET ON UPDATE (PENDING_COMMIT_TIMESTAMP())
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+dml:
+  UPDATE T SET V = 'b' WHERE Id = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Created > '2021-01-01T00:00:00Z', Created = Updated FROM T
+expect:
+  columns: BOOL, BOOL
+  [true,true]
+expect@spanner:
+  same
+
+case alter_column_set_on_update_without_default
+ddl:
+  ALTER TABLE T ALTER COLUMN V SET ON UPDATE (PENDING_COMMIT_TIMESTAMP())
+expect:
+  error: INVALID_ARGUMENT
+  message: Column `V` with an ON UPDATE expression must have an identical DEFAULT value expression.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing ON UPDATE expression \'PENDING_COMMIT_TIMESTAMP()\' from column \'V\' in table \'T\': Expected type STRING; found TIMESTAMP [at 1:1]
+
+case alter_column_drop_on_update
+ddl:
+  ALTER TABLE T ALTER COLUMN Updated DROP ON UPDATE
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+dml:
+  UPDATE T SET V = 'b' WHERE Id = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Created, Updated, V FROM T
+expect:
+  columns: Id INT64, Created TIMESTAMP, Updated TIMESTAMP, V STRING
+  ["1","2020-01-01T00:00:00Z","2020-01-01T00:00:00Z","b"]
+expect@spanner:
+  same
+
+case alter_column_drop_on_update_none
+ddl:
+  ALTER TABLE T ALTER COLUMN V DROP ON UPDATE
+expect:
+  ok
+expect@spanner:
+  same
+
+case alter_column_drop_default_with_on_update
+ddl:
+  ALTER TABLE T ALTER COLUMN Updated DROP DEFAULT
+expect:
+  error: INVALID_ARGUMENT
+  message: Column `Updated` with an ON UPDATE expression must have an identical DEFAULT value expression.
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case alter_column_set_default_with_on_update
+ddl:
+  ALTER TABLE T ALTER COLUMN Updated SET DEFAULT (TIMESTAMP '2020-01-01T00:00:00Z')
+expect:
+  error: FAILED_PRECONDITION
+  message: The only default value expression permitted for commit timestamp column `Updated` is PENDING_COMMIT_TIMESTAMP().
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case alter_column_retype_drops_on_update
+ddl:
+  ALTER TABLE T ALTER COLUMN Updated TIMESTAMP
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case alter_column_retype_with_on_update
+ddl:
+  ALTER TABLE T ALTER COLUMN Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP())
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case on_update_without_default
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (K INT64, U TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K) : Syntax error on line 1, column 38: Encountered 'ON' while parsing: column_def
+expect@spanner:
+  same
+
+case on_update_without_allow_commit_timestamp
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP())) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot use default value expression PENDING_COMMIT_TIMESTAMP() on column `U` without the allow_commit_timestamp column option.
+expect@spanner:
+  same
+
+case on_update_other_expression
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (CURRENT_TIMESTAMP()) ON UPDATE (CURRENT_TIMESTAMP())) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: PENDING_COMMIT_TIMESTAMP() is the only supported ON UPDATE expression.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing ON UPDATE expression 'CURRENT_TIMESTAMP()' from column 'U' in table 'X': PENDING_COMMIT_TIMESTAMP() and PENDING_COMMIT_TIMESTAMP_INT64() are the only supported ON UPDATE expressions.
+
+case on_update_literal
+ddl:
+  CREATE TABLE X (K INT64, U STRING(MAX) DEFAULT ('a') ON UPDATE ('a')) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: PENDING_COMMIT_TIMESTAMP() is the only supported ON UPDATE expression.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing ON UPDATE expression ''a'' from column 'U' in table 'X': PENDING_COMMIT_TIMESTAMP() and PENDING_COMMIT_TIMESTAMP_INT64() are the only supported ON UPDATE expressions.
+
+case on_update_differs_from_default
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (TIMESTAMP '2020-01-01T00:00:00Z') ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: The ON UPDATE expression of column `U` does not match the DEFAULT value expression.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: The only default value expression permitted for commit timestamp column `U` is PENDING_COMMIT_TIMESTAMP().
+
+case on_update_lowercase
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP default (pending_commit_timestamp()) on update (pending_commit_timestamp()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+  "CREATE TABLE X (\n  K INT64,\n  U TIMESTAMP DEFAULT (pending_commit_timestamp()) ON UPDATE (pending_commit_timestamp()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+query:
+  SELECT COLUMN_DEFAULT, ON_UPDATE_EXPRESSION FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'X' AND COLUMN_NAME = 'U'
+expect:
+  columns: COLUMN_DEFAULT STRING, ON_UPDATE_EXPRESSION STRING
+  ["pending_commit_timestamp()","pending_commit_timestamp()"]
+expect@spanner:
+  same
+
+case on_update_before_default
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP ON UPDATE (PENDING_COMMIT_TIMESTAMP()) DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Created TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  Updated TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n  V STRING(MAX),\n) PRIMARY KEY(Id)"
+  "CREATE TABLE X (\n  K INT64,\n  U TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(K)"
+expect@spanner:
+  same
+
+case on_update_after_options
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true) ON UPDATE (PENDING_COMMIT_TIMESTAMP())) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true) ON UPDATE (PENDING_COMMIT_TIMESTAMP())) PRIMARY KEY (K) : Syntax error on line 1, column 115: Expecting ')' but found 'ON'
+expect@spanner:
+  same
+
+case on_update_key_column
+ddl:
+  CREATE TABLE X (K TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) ON UPDATE (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Column X.K with ON UPDATE cannot be a part of or the whole primary key.
+expect@spanner:
+  same
+
+case default_pending_without_allow_commit_timestamp
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP())) PRIMARY KEY (K)
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot use default value expression PENDING_COMMIT_TIMESTAMP() on column `U` without the allow_commit_timestamp column option.
+expect@spanner:
+  same
+
+case default_pending_in_expression
+ddl:
+  CREATE TABLE X (K INT64, U TIMESTAMP DEFAULT (TIMESTAMP_ADD(PENDING_COMMIT_TIMESTAMP(), INTERVAL 1 SECOND)) OPTIONS (allow_commit_timestamp = true)) PRIMARY KEY (K)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `X`.`U`: The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression 'TIMESTAMP_ADD(PENDING_COMMIT_TIMESTAMP(), INTERVAL 1 SECOND)' from column 'U' in table 'X': The PENDING_COMMIT_TIMESTAMP() function may only be used as a value for INSERT or UPDATE of an appropriately typed column. It cannot be used in SELECT, or as the input to any other scalar expression.
+
+case default_pending_key_column
+ddl:
+  CREATE TABLE X (K TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true), V INT64) PRIMARY KEY (K)
+expect:
+  ok
+expect@spanner:
+  same
+insert X cols=V:
+  [1]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot write timestamps in the future, found: 9999-12-31T23:59:59.999999+00:00
+expect@spanner:
+  ok
+query:
+  SELECT K IS NOT NULL, V FROM X
+expect:
+  columns: BOOL, V INT64
+expect@spanner:
+  columns: BOOL, V INT64
+  [true,"1"]
+
+case add_column_default_pending
+ddl:
+  ALTER TABLE T ADD COLUMN Added TIMESTAMP DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT Id, Added FROM T
+expect:
+  columns: Id INT64, Added TIMESTAMP
+  ["1","9999-12-31T23:59:59.999999Z"]
+expect@spanner:
+  columns: Id INT64, Added TIMESTAMP
+  ["1","<now>"]
+
+case add_column_not_null_default_pending
+ddl:
+  ALTER TABLE T ADD COLUMN Added TIMESTAMP NOT NULL DEFAULT (PENDING_COMMIT_TIMESTAMP()) OPTIONS (allow_commit_timestamp = true)
+expect:
+  ok
+expect@spanner:
+  same
+query:
+  SELECT Id, Added IS NOT NULL FROM T
+expect:
+  columns: Id INT64, BOOL
+  ["1",true]
+expect@spanner:
+  same

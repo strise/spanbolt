@@ -20,6 +20,8 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Table T has too many keys (17); the limit is 16.
+expect@spanner:
+  same
 
 case index_key_columns_17
 ddl:
@@ -29,6 +31,8 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Index I has too many keys (17); the limit is 16.
+expect@spanner:
+  same
 
 case index_key_columns_16
 ddl:
@@ -52,6 +56,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Table T has too many columns; the limit is 1024.
+expect@spanner:
+  same
 
 case add_column_1025
 ddl:
@@ -61,6 +67,9 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Table T has too many columns; the limit is 1024.
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot add column Extra to table T because it would have too many columns; the limit is 1024.
 
 case indexes_per_table_128
 ddl:
@@ -328,6 +337,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot add index I128 to table A: too many indices (limit 128 per table).
+expect@spanner:
+  same
 
 case non_key_size_at_limit
 ddl:
@@ -339,6 +350,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Total size of non-key columns in Table T 2107637760 exceeds the limit of 2097152000.
+expect@spanner:
+  same
 
 case non_key_size_string
 ddl:
@@ -346,6 +359,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Total size of non-key columns in Table T 2107637760 exceeds the limit of 2097152000.
+expect@spanner:
+  same
 
 case non_key_size_json
 ddl:
@@ -353,6 +368,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Total size of non-key columns in Table T 2107637760 exceeds the limit of 2097152000.
+expect@spanner:
+  same
 
 case non_key_size_array
 ddl:
@@ -360,6 +377,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Total size of non-key columns in Table T 2107637760 exceeds the limit of 2097152000.
+expect@spanner:
+  same
 
 case non_key_size_key_columns_free
 ddl:
@@ -373,6 +392,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot add column Extra. Total size of non-key columns in table T 2097152001 exceeds the limit of 2097152000.
+expect@spanner:
+  same
 
 case non_key_size_add_fixed_width_column
 ddl:
@@ -388,6 +409,8 @@ ddl:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot increase length of column Y. Total size of non-key columns in table T is 2107637000 which exceeds the limit of 2097152000.
+expect@spanner:
+  same
 
 case non_key_size_alter_column_narrower
 ddl:

@@ -68,6 +68,115 @@ pub fn lower(s: &str) -> String {
     s.to_lowercase()
 }
 
+/// Longest run of single letters Cloud Spanner joins into one token; a longer run is cut into
+/// tokens of this many letters.
+const MAX_JOINED_LETTERS: usize = 21;
+
+/// Which characters of `chars` Cloud Spanner's fulltext tokenizer drops to join runs of single
+/// ASCII letters into one token. Fitted to DEBUG_TOKENLIST recordings
+/// (`conformance/cases/sql/search_letters.case`); the emulator splits them.
+/// - Letters separated by one `.` or one `-`, the same separator throughout, join whatever their
+///   case: `U.S.A.` is `usa` (a `.` run also drops the period after its last letter), `x-y-zz` is
+///   `xy, zz`.
+/// - Then letters separated only by spaces (not tabs or newlines) and of the same case join: `x y z`
+///   is `xyz`, `I J` is `ij`, but `x I` stays `x, i`. A letter right before a `.` is an initial and
+///   joins nothing (`x y.` is `x, y`), nor does a letter already in a `.`/`-` run (`x y-z` is
+///   `x, yz`).
+///
+/// A token is a run of characters between delimiters (`is_delimiter`), so `é` or `x1` is no single
+/// letter.
+pub fn joined_letters(chars: &[char]) -> Vec<bool> {
+    let delim = |c: char| c.is_ascii() && is_delimiter(c as u8);
+    let mut toks: Vec<(usize, usize)> = Vec::new();
+    let mut start = None;
+    for (i, &c) in chars.iter().enumerate() {
+        match (delim(c), start) {
+            (true, Some(s)) => {
+                toks.push((s, i));
+                start = None;
+            }
+            (false, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        toks.push((s, chars.len()));
+    }
+    let n = toks.len();
+    let mut drop = vec![false; chars.len()];
+    let mut used = vec![false; n];
+    let single = |i: usize| toks[i].1 - toks[i].0 == 1 && chars[toks[i].0].is_ascii_alphabetic();
+    let gap = |i: usize| &chars[toks[i].1..toks[i + 1].0];
+    let after = |i: usize| chars.get(toks[i].1).copied();
+    // Joins tokens `a..=b`, in chunks of MAX_JOINED_LETTERS.
+    let join = |a: usize, b: usize, used: &mut [bool], drop: &mut [bool]| {
+        for k in a..=b {
+            used[k] = true;
+            if k < b && (k - a) % MAX_JOINED_LETTERS != MAX_JOINED_LETTERS - 1 {
+                drop[toks[k].1..toks[k + 1].0].fill(true);
+            }
+        }
+    };
+    let mut i = 0;
+    while i < n {
+        let sep = match (i + 1 < n).then(|| gap(i)) {
+            Some(&[c @ ('.' | '-')]) if single(i) && single(i + 1) => c,
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        let mut j = i + 1;
+        while j + 1 < n && single(j + 1) && gap(j) == [sep] {
+            j += 1;
+        }
+        join(i, j, &mut used, &mut drop);
+        if sep == '.' && after(j) == Some('.') {
+            drop[toks[j].1] = true;
+        }
+        i = j + 1;
+    }
+    let eligible = |i: usize, used: &[bool]| single(i) && !used[i] && after(i) != Some('.');
+    let upper = |i: usize| chars[toks[i].0].is_ascii_uppercase();
+    let mut i = 0;
+    while i < n {
+        if !eligible(i, &used) {
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j + 1 < n
+            && eligible(j + 1, &used)
+            && upper(j) == upper(j + 1)
+            && gap(j).iter().all(|&c| c == ' ')
+        {
+            j += 1;
+        }
+        if j > i {
+            join(i, j, &mut used, &mut drop);
+        }
+        i = j + 1;
+    }
+    drop
+}
+
+/// `s` with runs of single letters joined as Cloud Spanner's fulltext tokenizer joins them
+/// (`joined_letters`).
+pub fn join_letters(s: &str) -> std::borrow::Cow<'_, str> {
+    let chars: Vec<char> = s.chars().collect();
+    let drop = joined_letters(&chars);
+    if !drop.contains(&true) {
+        return s.into();
+    }
+    chars
+        .iter()
+        .zip(drop)
+        .filter(|(_, d)| !d)
+        .map(|(c, _)| c)
+        .collect::<String>()
+        .into()
+}
+
 /// Encodes tokens as a TOKENLIST value: each token is a LEB128 length followed by its bytes.
 pub fn encode<T: AsRef<[u8]>>(tokens: &[T]) -> Value {
     let mut out = Vec::with_capacity(tokens.iter().map(|t| t.as_ref().len() + 1).sum());
@@ -190,7 +299,9 @@ fn each_text(
     }
 }
 
-pub fn tokenize_fulltext(args: &[Value]) -> Result<Value> {
+/// `emulator` splits runs of single letters like the emulator; Cloud Spanner joins them
+/// (`joined_letters`).
+pub fn tokenize_fulltext(args: &[Value], emulator: bool) -> Result<Value> {
     let text = &args[0];
     let toks = std::cell::RefCell::new(vec![
         format!("{FULLTEXT}-{}", bool_digit(text.is_null())).into_bytes(),
@@ -198,7 +309,11 @@ pub fn tokenize_fulltext(args: &[Value]) -> Result<Value> {
     each_text(
         text,
         |s| {
-            let l = lower(s);
+            let l = if emulator {
+                lower(s)
+            } else {
+                lower(&join_letters(s))
+            };
             toks.borrow_mut()
                 .extend(split(l.as_bytes()).map(<[u8]>::to_vec));
             Ok(())
@@ -498,4 +613,71 @@ pub fn tokenlist_concat(args: &[Value]) -> Result<Value> {
         out.push(GAP);
     }
     Ok(encode(&out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Prod's fulltext tokens, from DEBUG_TOKENLIST recordings.
+    fn prod_tokens(s: &str) -> Vec<String> {
+        let l = lower(&join_letters(s));
+        split(l.as_bytes())
+            .map(|t| String::from_utf8(t.to_vec()).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn joins_single_letters_like_prod() {
+        for (text, want) in [
+            ("x y z w", "xyzw"),
+            ("hello b c world", "hello bc world"),
+            ("x yz w", "x yz w"),
+            ("x, y z", "x yz"),
+            ("x-y z", "xy z"),
+            ("x y-z", "x yz"),
+            ("1 2 3", "1 2 3"),
+            ("X Y", "xy"),
+            ("x Y z", "x y z"),
+            ("x I y", "x i y"),
+            ("Z x y", "z xy"),
+            ("é f g", "é fg"),
+            ("ß x y", "ß xy"),
+            ("x  y\nz", "xy z"),
+            ("x\ty", "x y"),
+            ("b. c", "b c"),
+            ("x y.", "x y"),
+            ("x y, z", "xy z"),
+            ("(x y)", "xy"),
+            ("U.S.A. today", "usa today"),
+            ("U.S. A", "us a"),
+            ("x.Y", "xy"),
+            ("x-y-zz", "xy zz"),
+            ("xx-y", "xx y"),
+            ("x.y-z", "xy z"),
+            ("x.-y", "x y"),
+            ("x . y z", "x yz"),
+            ("1x y z", "1x yz"),
+            (
+                "a b c d e f g h i j k l m n o p q r s t u v w x y z",
+                "abcdefghijklmnopqrstu vwxyz",
+            ),
+            (
+                "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z",
+                "abcdefghijklmnopqrstu vwxyz",
+            ),
+        ] {
+            assert_eq!(prod_tokens(text).join(" "), want, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn joins_query_text() {
+        assert_eq!(join_letters("-x y z"), "-xyz");
+        assert_eq!(join_letters("x -y z"), "x -yz");
+        assert_eq!(join_letters("x* y"), "x* y");
+        assert_eq!(join_letters("x y*"), "xy*");
+        assert_eq!(join_letters("\"x y\" OR z"), "\"xy\" OR z");
+        assert_eq!(join_letters("no letters here"), "no letters here");
+    }
 }

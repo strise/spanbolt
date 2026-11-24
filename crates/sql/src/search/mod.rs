@@ -16,6 +16,8 @@
 //! - SCORE values, fitted to prod recordings (`score`), and stopwords dropped from SEARCH and SCORE
 //!   queries;
 //! - SCORE_NGRAMS values (padded trigram Jaccard, `eval::score_ngrams_prod`);
+//! - TOKENIZE_FULLTEXT joins runs of single letters (`x y z` and `U.S.A.` are one token each),
+//!   and SEARCH, SCORE and SNIPPET read queries the same way (`tokens::joined_letters`);
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
@@ -81,7 +83,7 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
     let emu = sig.emulator_compat;
     Some(match sig.name {
         "token" => f(|_, a| tokens::token(a)),
-        "tokenize_fulltext" => f(|_, a| tokens::tokenize_fulltext(a)),
+        "tokenize_fulltext" => f(move |_, a| tokens::tokenize_fulltext(a, emu)),
         "tokenize_substring" => f(|_, a| tokens::tokenize_substring(a)),
         "tokenize_ngrams" => f(move |_, a| {
             tokens::tokenize_ngrams(a, emu).map_err(|e| {

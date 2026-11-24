@@ -6,7 +6,8 @@
 //! the lexer, so a query term with letters such as `ø` splits into two terms and fails to parse,
 //! and two separators in a row (`a  b`, `a, b`) are a syntax error. Prod mode (the default) follows
 //! Cloud Spanner: Unicode letters and digits are term characters (lower-cased with Unicode rules),
-//! other non-ASCII characters separate terms, and a run of separators is one separator.
+//! other non-ASCII characters separate terms, and a run of separators is one separator. It reads
+//! runs of single letters as one term, as its tokenizer stores them (`tokens::joined_letters`).
 
 use spanbolt_storage::{Error, Result};
 
@@ -526,7 +527,11 @@ pub fn parse(query: &str, emulator: bool) -> Result<Option<Node>> {
         .rev()
         .find(|&i| !trimmed_at(b, i, emulator))
         .unwrap_or(start);
-    let s = &b[start..last + utf8_len(b, last)];
+    let orig = &b[start..last + utf8_len(b, last)];
+    // Prod reads runs of single letters as one term, like its tokenizer (`x y` is `xy`).
+    let joined =
+        (!emulator).then(|| super::tokens::join_letters(&query[start..last + utf8_len(b, last)]));
+    let s = joined.as_deref().map_or(orig, str::as_bytes);
     let mut p = Parser {
         s,
         emulator,
@@ -545,7 +550,7 @@ pub fn parse(query: &str, emulator: bool) -> Result<Option<Node>> {
     parsed.map(Some).map_err(|e| {
         Error::invalid_argument(format!(
             "Error(s) parsing search query `{}`, has error(s):\n-{e}",
-            String::from_utf8_lossy(s)
+            String::from_utf8_lossy(orig)
         ))
     })
 }

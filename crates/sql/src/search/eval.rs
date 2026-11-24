@@ -10,7 +10,8 @@ use super::rquery::{self, Node};
 use super::score::{self, ScoreQuery};
 use super::tokens::{
     self, FULLTEXT, GAP, NGRAMS, PHRASE, SUBSTRING, VALUE_PREFIX, VALUE_SUFFIX, WORD_PREFIX,
-    WORD_SUFFIX, arg, decode, int_arg, is_signature, lower, split, str_arg,
+    WORD_SUFFIX, arg, decode, int_arg, is_signature, join_letters, joined_letters, lower, split,
+    str_arg,
 };
 
 const DEFAULT_MAX_ALLOWED_GAP: i64 = 5;
@@ -67,8 +68,9 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
     Ok((map, source_null))
 }
 
-/// `GetNormalizedTerms`.
-fn normalized_terms(q: &str) -> Vec<Vec<u8>> {
+/// `GetNormalizedTerms`. Prod joins runs of single letters first, like its tokenizer.
+fn normalized_terms(q: &str, emulator: bool) -> Vec<Vec<u8>> {
+    let q = if emulator { q.into() } else { join_letters(q) };
     split(q.as_bytes())
         .map(|t| match std::str::from_utf8(t) {
             Ok(t) => lower(t).into_bytes(),
@@ -174,7 +176,7 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
         parse,
         simple,
         terms,
-        words: normalized_terms(q),
+        words: normalized_terms(q, emulator),
         score,
     });
     if let Ok(mut c) = QUERIES.lock() {
@@ -562,13 +564,13 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
     }
     match dialect(args)? {
         Dialect::Words => {
-            let terms = normalized_terms(q);
+            let terms = normalized_terms(q, emulator);
             Ok(Value::Bool(
                 !terms.is_empty() && terms.iter().all(|t| map.contains_key(t.as_slice())),
             ))
         }
         Dialect::WordsPhrase => {
-            let terms = normalized_terms(q);
+            let terms = normalized_terms(q, emulator);
             let toks = toks.unwrap_or_default();
             Ok(Value::Bool(
                 !terms.is_empty()
@@ -620,7 +622,7 @@ pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
     if source_null {
         return Ok(Value::Float64(0.0));
     }
-    let terms = normalized_terms(q);
+    let terms = normalized_terms(q, emulator);
     let score = if dialect(args)? == Dialect::WordsPhrase {
         let toks = toks.unwrap_or_default();
         if terms.is_empty() || toks.len() < terms.len() {
@@ -646,7 +648,10 @@ fn score_prod(args: &[Value]) -> Result<Value> {
         let Value::String(q) = &args[1] else {
             return None;
         };
-        let terms: Vec<Node> = normalized_terms(q).into_iter().map(Node::Term).collect();
+        let terms: Vec<Node> = normalized_terms(q, false)
+            .into_iter()
+            .map(Node::Term)
+            .collect();
         (!terms.is_empty()).then(|| {
             ScoreQuery::new(&if phrase {
                 Node::Phrase(terms)
@@ -1069,8 +1074,25 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
             source.push(i);
         }
     }
-    // Spanner trims the text and collapses each run of whitespace to one space; the source
-    // offsets still point into the original value.
+    // Spanner shows runs of single letters joined, as its tokenizer reads them (`x-y z` is
+    // `xy z`), trims the text and collapses each run of whitespace to one space; the source
+    // offsets still point into the original value, except that a joined token's letters count
+    // from its first letter (`x y z w` ends at source 5).
+    let chars: Vec<char> = text.chars().collect();
+    let drop = joined_letters(&chars);
+    let mut joined_text = String::with_capacity(text.len());
+    let mut joined_source = Vec::with_capacity(source.len());
+    for (i, (&c, &s)) in chars.iter().zip(&source).enumerate() {
+        if drop[i] {
+            continue;
+        }
+        joined_text.push(c);
+        joined_source.push(match joined_source.last() {
+            Some(&prev) if i > 0 && drop[i - 1] => prev + 1,
+            _ => s,
+        });
+    }
+    let (text, source) = (joined_text, joined_source);
     let (text, source) = collapse_whitespace(&text, &source);
     if text.is_empty() {
         return Ok(Value::Json(Arc::from("{\"snippets\":[]}")));
@@ -1083,6 +1105,9 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         char_at[b] = n;
     }
     char_at[text.len()] = chars.len();
+    // Runs of single letters are one term (`x y` highlights xy), so a negated run (`-x y`)
+    // highlights nothing.
+    let query = without_negated(&join_letters(query));
     let terms: Vec<String> = split(query.as_bytes())
         .map(|t| regex::escape(&String::from_utf8_lossy(t)))
         .collect();
@@ -1112,8 +1137,10 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         .map(|(s, e)| format!("{{\"begin\":{},\"end\":{}}}", s - begin + 1, e - begin + 1))
         .collect();
     let source_begin = source.get(begin).map_or(1, |i| i + 1);
+    // Prod ends the snippet at the source position of the next character, so a joined token
+    // at the end of the text ends where its letters, counted from its first, end.
     let source_end = if end > begin {
-        source[end - 1] + 2
+        source.get(end).map_or(source[end - 1] + 2, |s| s + 1)
     } else {
         source_begin
     };
@@ -1122,6 +1149,31 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         "{{\"snippets\":[{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}]}}",
         highlights.join(",")
     ))))
+}
+
+/// `query` without its negated words (`-x`, `-"x y"`), which SNIPPET doesn't highlight.
+fn without_negated(query: &str) -> String {
+    let mut out = String::with_capacity(query.len());
+    let mut chars = query.chars().peekable();
+    let mut word_start = true;
+    while let Some(c) = chars.next() {
+        if word_start && c == '-' {
+            if chars.peek() == Some(&'"') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if c == '"' {
+                        break;
+                    }
+                }
+            } else {
+                while chars.next_if(|c| !c.is_whitespace()).is_some() {}
+            }
+            continue;
+        }
+        word_start = c.is_whitespace();
+        out.push(c);
+    }
+    out
 }
 
 /// The character span of a snippet cut from text wider than `width`. Cloud Spanner keeps words
@@ -1300,7 +1352,7 @@ mod tests {
     }
 
     fn ft(x: &str) -> Value {
-        tokens::tokenize_fulltext(&[s(x)]).unwrap()
+        tokens::tokenize_fulltext(&[s(x)], true).unwrap()
     }
 
     fn hit(doc: &str, q: &str) -> bool {
@@ -1323,8 +1375,9 @@ mod tests {
         assert!(!hit(d, "spanner AROUND(0) runs"));
         assert!(hit(d, "runs AROUND(2) spanner"));
         assert!(!hit(d, ""));
-        let a = tokens::tokenize_fulltext(&[Value::Array(Arc::from(vec![s("a b"), s("c d")]))])
-            .unwrap();
+        let a =
+            tokens::tokenize_fulltext(&[Value::Array(Arc::from(vec![s("a b"), s("c d")]))], true)
+                .unwrap();
         assert_eq!(
             search(&[a.clone(), s("\"a b\"")], true).unwrap(),
             Value::Bool(true)
@@ -1334,7 +1387,7 @@ mod tests {
             Value::Bool(false)
         );
         assert_eq!(search(&[ft("x"), Value::Null], true).unwrap(), Value::Null);
-        let n = tokens::tokenize_fulltext(&[Value::Null]).unwrap();
+        let n = tokens::tokenize_fulltext(&[Value::Null], true).unwrap();
         assert_eq!(search(&[n, s("x")], true).unwrap(), Value::Null);
     }
 
@@ -1356,6 +1409,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(v, Value::Float64(3.0));
+    }
+
+    #[test]
+    fn snippet_prod_joins_single_letters() {
+        let snip = |t: &str, q: &str| match snippet(&[s(t), s(q)], false).unwrap() {
+            Value::Json(j) => j.to_string(),
+            v => panic!("{v:?}"),
+        };
+        // Recorded from Cloud Spanner (`search_letters.case`, `snippet_whitespace.case`).
+        assert_eq!(
+            snip("x y z w", "x y z w"),
+            r#"{"snippets":[{"highlights":[{"begin":1,"end":5}],"snippet":"xyzw","source_begin":1,"source_end":5}]}"#
+        );
+        assert_eq!(
+            snip("x y!", "x"),
+            r#"{"snippets":[{"highlights":[],"snippet":"xy","source_begin":1,"source_end":4}]}"#
+        );
+        assert_eq!(
+            snip("x--y z", "x"),
+            r#"{"snippets":[{"highlights":[{"begin":1,"end":2}],"snippet":"x--yz","source_begin":1,"source_end":6}]}"#
+        );
+        assert_eq!(
+            snip("xy x y xyz", "-x y"),
+            r#"{"snippets":[{"highlights":[],"snippet":"xy xy xyz","source_begin":1,"source_end":11}]}"#
+        );
     }
 
     #[test]

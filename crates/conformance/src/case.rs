@@ -33,6 +33,7 @@ pub enum Verb {
     ListOperations,
     ListDatabaseRoles,
     DropDatabase,
+    CompareTs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -434,6 +435,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
         "list_operations" => Verb::ListOperations,
         "list_database_roles" => Verb::ListDatabaseRoles,
         "drop_database" => Verb::DropDatabase,
+        "compare_ts" => Verb::CompareTs,
         other => return Err(format!("unknown directive `{other}`")),
     };
     let needs_table = matches!(verb, Verb::Write(_) | Verb::Delete | Verb::Read);
@@ -474,6 +476,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
             | Verb::ListOperations
             | Verb::ListDatabaseRoles
             | Verb::DropDatabase
+            | Verb::CompareTs
     );
     if wants_body && (!has_body || b.body.iter().all(|l| l.trim().is_empty())) {
         return Err(format!("`{verb_text}` needs a body"));
@@ -485,6 +488,9 @@ fn parse_step(b: &Block) -> Result<Step, String> {
         verb,
         Verb::CreateSession | Verb::GetSession | Verb::SessionLastUse
     );
+    if verb == Verb::CompareTs && flags.len() != 2 {
+        return Err("`compare_ts` takes two saved timestamps: `compare_ts A B`".into());
+    }
     if names_session && !opts.contains_key("session") {
         return Err(format!("`{verb_text}` needs session="));
     }

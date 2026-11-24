@@ -1,0 +1,129 @@
+# The read timestamp a read-only transaction or single-use read reports with
+# `return_read_timestamp`: when the read is served (or the stale bound's timestamp), not the last
+# commit before it. Each case waits a couple of seconds after its commit before reading.
+# Cloud Spanner sometimes serves a strong single-use Read at the last commit's timestamp instead
+# (recorded both ways in strong_read and strong_read_then_commit); spanbolt always reads at now.
+tags: txn
+schema:
+  CREATE TABLE Acct (
+    Id INT64 NOT NULL,
+    Balance INT64 NOT NULL,
+  ) PRIMARY KEY (Id)
+
+case strong_ro_txn
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+begin txn=ro ro wait=2s save=r
+compare_ts r c
+expect:
+  counts: [1]
+expect@spanner:
+  same
+
+case strong_read
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+read Acct cols=Id wait=2s save=r:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+compare_ts r c
+expect:
+  counts: [1]
+expect@spanner:
+  same
+
+case strong_query
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+query wait=2s save=r:
+  SELECT Id FROM Acct
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+compare_ts r c
+expect:
+  counts: [1]
+expect@spanner:
+  same
+
+case exact_staleness_ro_txn
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+begin txn=ro ro bound=exact_staleness:1s wait=3s save=r
+compare_ts r c
+expect:
+  counts: [1]
+expect@spanner:
+  same
+
+case exact_staleness_read
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+read Acct cols=Id bound=exact_staleness:1s wait=3s save=r:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+compare_ts r c
+expect:
+  counts: [1]
+expect@spanner:
+  same
+
+case read_timestamp_read
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+read Acct cols=Id bound=read_timestamp:c wait=2s save=r:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+compare_ts r c
+expect:
+  counts: [0]
+expect@spanner:
+  same
+
+case max_staleness_read
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+read Acct cols=Id bound=max_staleness:1s wait=3s save=r:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+compare_ts r c
+expect:
+  counts: [1]
+expect@spanner:
+  same
+
+case strong_read_then_commit
+insert Acct cols=Id,Balance save=c:
+  [1, 100]
+read Acct cols=Id wait=2s save=r:
+  all
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+insert Acct cols=Id,Balance save=c2:
+  [2, 50]
+compare_ts c2 r
+expect:
+  counts: [0]
+expect@spanner:
+  same

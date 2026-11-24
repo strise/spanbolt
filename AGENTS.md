@@ -7,7 +7,8 @@ docs/building.md cover setup.
 - Checks: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`.
   Before handing in a change run `scripts/gate.sh`: fmt, clippy (with and without the SQL engine),
   tests, license checks and the conformance suite against the recorded baselines, in both server
-  modes. `GATE_EXTRA='<command>'` adds a project-specific check at the end.
+  modes. `GATE_EXTRA='<command>'` adds a project-specific check at the end. The conformance servers
+  run on a free port the OS picks, or on `GATE_PORT` (fails if it is taken); the gate prints it.
 - Commits: conventional format `type(scope): description`.
 - Never run destructive git (reset, checkout --, restore, stash, clean).
 - Native dependency: `googlesql-sys` (the GoogleSQL analyser shim), `spanbolt-sql` (the SQL

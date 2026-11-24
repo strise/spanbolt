@@ -23,7 +23,8 @@ const MAX_SCHEMAS: usize = 16;
 /// Commit write sets kept for conflict checks. Transactions that started before the oldest
 /// entry abort rather than risk a missed conflict.
 const MAX_LOG: usize = 16384;
-const RETENTION: Duration = Duration::from_secs(3600);
+/// Longest DDL text an abort message quotes.
+const MAX_DDL_IN_MESSAGE: usize = 300;
 
 /// One committed database state.
 #[derive(Debug)]
@@ -74,8 +75,14 @@ impl ReadSet {
     }
 }
 
-/// What a commit wrote. `None` = schema change (conflicts with everything older).
-type WriteLog = Option<Arc<[(Target, Key)]>>;
+/// What a commit changed, for conflict checks.
+enum WriteLog {
+    /// The keys a data commit wrote.
+    Keys(Arc<[(Target, Key)]>),
+    /// A schema change, which conflicts with every older transaction; `ddl` says which, when the
+    /// caller described it.
+    Schema { ddl: Option<Arc<str>> },
+}
 
 /// Versions for stale reads, oldest first, with the number of distinct schemas among them.
 struct History {
@@ -123,6 +130,21 @@ struct CommitLog {
     truncated: bool,
 }
 
+impl CommitLog {
+    /// The abort for a transaction whose catalog predates the latest schema: names the newest
+    /// schema change still in the log.
+    fn schema_abort(&self) -> Error {
+        self.entries
+            .iter()
+            .rev()
+            .find_map(|(ts, e)| match e {
+                WriteLog::Schema { ddl } => Some(schema_change_aborted(*ts, ddl.as_deref())),
+                WriteLog::Keys(_) => None,
+            })
+            .unwrap_or_else(aborted)
+    }
+}
+
 /// The parts of a transaction the commit needs.
 pub struct CommitInput<'a> {
     /// Snapshot timestamp of the transaction's reads; `None` for blind writes.
@@ -163,6 +185,27 @@ pub(crate) fn aborted() -> Error {
     Error::aborted(
         "Transaction was aborted due to a conflicting concurrent transaction. Retry the transaction.",
     )
+}
+
+/// The abort for a transaction that a schema change committed at `ts` overtook, quoting the
+/// change's DDL when known, so suites that apply DDL in parallel can tell which one it was.
+fn schema_change_aborted(ts: Timestamp, ddl: Option<&str>) -> Error {
+    let mut msg = format!(
+        "Transaction was aborted due to a concurrent schema change committed at {}. Retry the \
+         transaction.",
+        ts.to_rfc3339()
+    );
+    if let Some(ddl) = ddl {
+        msg.push_str(" Schema change: ");
+        match ddl.char_indices().nth(MAX_DDL_IN_MESSAGE) {
+            Some((cut, _)) => {
+                msg.push_str(&ddl[..cut]);
+                msg.push_str("...");
+            }
+            None => msg.push_str(ddl),
+        }
+    }
+    Error::aborted(msg)
 }
 
 impl Database {
@@ -231,8 +274,30 @@ impl Database {
         }
     }
 
+    /// How long old versions stay readable: the latest schema's `version_retention_period`.
+    pub fn version_retention(&self) -> Duration {
+        self.latest().state.schema.version_retention()
+    }
+
+    /// The oldest timestamp a stale read can still use: the retention period back from now,
+    /// or the oldest version kept once the history has been pruned below that.
+    pub fn earliest_version_time(&self) -> Timestamp {
+        let by_retention = Timestamp::from_nanos(
+            self.clock.now().as_nanos() - self.version_retention().as_nanos() as i128,
+        );
+        if !self.history_truncated.load(Ordering::Acquire) {
+            return by_retention;
+        }
+        let history = self.history.read();
+        history
+            .versions
+            .front()
+            .map_or(by_retention, |v| v.ts.max(by_retention))
+    }
+
     fn version_at(&self, ts: Timestamp) -> Result<Arc<Version>> {
-        let horizon = self.clock.now().as_nanos() - RETENTION.as_nanos() as i128;
+        let retention = self.version_retention();
+        let horizon = self.clock.now().as_nanos() - retention.as_nanos() as i128;
         if ts.as_nanos() <= horizon {
             return Err(Error::failed_precondition(format!(
                 "Read-only transaction timestamp {} has exceeded the maximum timestamp staleness",
@@ -280,7 +345,7 @@ impl Database {
         }
         let latest = self.latest();
         if !Arc::ptr_eq(&latest.state.catalog, input.catalog) {
-            return Err(aborted());
+            return Err(log.schema_abort());
         }
         // The read set is checked before the mutations are applied: a transaction whose reads
         // went stale must abort (and retry) rather than fail a constraint against the winner's
@@ -303,7 +368,7 @@ impl Database {
             // Nothing changed: no new version, but the timestamp is still consumed.
             return Ok(CommitOutcome { ts, mutation_count });
         }
-        self.publish(&mut log, ts, state, Some(Arc::from(written)));
+        self.publish(&mut log, ts, state, WriteLog::Keys(Arc::from(written)));
         Ok(CommitOutcome { ts, mutation_count })
     }
 
@@ -315,18 +380,23 @@ impl Database {
         let schema = f(&latest.state)?;
         let state = latest.state.with_schema_at(schema, self.clock.now())?;
         let ts = self.clock.next_commit_ts();
-        self.publish(&mut log, ts, state, None);
+        self.publish(&mut log, ts, state, WriteLog::Schema { ddl: None });
         Ok(ts)
     }
 
     /// Replaces the whole state (schema and migrated data) with what `f` derives from the latest
-    /// one, under the same rules as `update_schema`.
-    pub fn update_state(&self, f: impl FnOnce(&DbState) -> Result<DbState>) -> Result<Timestamp> {
+    /// one, under the same rules as `update_schema`. `f` also returns the DDL it applied, which
+    /// the transactions this change aborts are told about.
+    pub fn update_state(
+        &self,
+        f: impl FnOnce(&DbState) -> Result<(DbState, String)>,
+    ) -> Result<Timestamp> {
         let mut log = self.commit.lock();
         let latest = self.latest();
-        let state = f(&latest.state)?;
+        let (state, ddl) = f(&latest.state)?;
         let ts = self.clock.next_commit_ts();
-        self.publish(&mut log, ts, state, None);
+        let ddl = (!ddl.is_empty()).then(|| Arc::from(ddl));
+        self.publish(&mut log, ts, state, WriteLog::Schema { ddl });
         Ok(ts)
     }
 
@@ -338,7 +408,8 @@ impl Database {
         {
             let mut history = self.history.write();
             history.push(version.clone());
-            let horizon = Timestamp::from_nanos(ts.as_nanos() - RETENTION.as_nanos() as i128);
+            let retention = version.state.schema.version_retention();
+            let horizon = Timestamp::from_nanos(ts.as_nanos() - retention.as_nanos() as i128);
             while history.versions.len() > MAX_VERSIONS
                 || history.schemas > MAX_SCHEMAS
                 || (history.versions.len() > 1 && history.versions[1].ts < horizon)
@@ -363,12 +434,13 @@ fn check_reads(log: &CommitLog, read_ts: Timestamp, reads: &ReadSet) -> Result<u
     if start == 0 && log.truncated {
         return Err(aborted());
     }
-    for (_, entry) in log.entries.range(start..) {
-        let Some(keys) = entry else {
-            return Err(aborted());
-        };
-        if keys.iter().any(|wk| reads.hit(wk.0, &wk.1)) {
-            return Err(aborted());
+    for (ts, entry) in log.entries.range(start..) {
+        match entry {
+            WriteLog::Schema { ddl } => return Err(schema_change_aborted(*ts, ddl.as_deref())),
+            WriteLog::Keys(keys) if keys.iter().any(|wk| reads.hit(wk.0, &wk.1)) => {
+                return Err(aborted());
+            }
+            WriteLog::Keys(_) => {}
         }
     }
     Ok(start)
@@ -381,9 +453,8 @@ fn check_writes(log: &CommitLog, start: usize, written: &[(Target, Key)]) -> Res
     }
     let own: HashSet<&(Target, Key)> = written.iter().collect();
     for (_, entry) in log.entries.range(start..) {
-        if entry
-            .as_ref()
-            .is_some_and(|keys| keys.iter().any(|wk| own.contains(wk)))
+        if let WriteLog::Keys(keys) = entry
+            && keys.iter().any(|wk| own.contains(wk))
         {
             return Err(aborted());
         }

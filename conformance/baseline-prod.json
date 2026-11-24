@@ -19,9 +19,9 @@
     "api": {
       "error": 0,
       "fail": 0,
-      "pass": 10,
+      "pass": 18,
       "skipped": 0,
-      "total": 10,
+      "total": 18,
       "unimplemented": 0
     },
     "array": {
@@ -74,11 +74,11 @@
     },
     "ddl": {
       "error": 0,
-      "fail": 0,
-      "pass": 76,
+      "fail": 2,
+      "pass": 248,
       "skipped": 1,
-      "total": 77,
-      "unimplemented": 0
+      "total": 263,
+      "unimplemented": 12
     },
     "diverges-from-emulator": {
       "error": 0,
@@ -91,9 +91,9 @@
     "dml": {
       "error": 0,
       "fail": 0,
-      "pass": 34,
+      "pass": 131,
       "skipped": 0,
-      "total": 34,
+      "total": 131,
       "unimplemented": 0
     },
     "expression": {
@@ -128,6 +128,14 @@
       "total": 2702,
       "unimplemented": 7
     },
+    "graph": {
+      "error": 0,
+      "fail": 0,
+      "pass": 16,
+      "skipped": 0,
+      "total": 16,
+      "unimplemented": 0
+    },
     "index": {
       "error": 0,
       "fail": 0,
@@ -139,9 +147,9 @@
     "information_schema": {
       "error": 0,
       "fail": 0,
-      "pass": 11,
+      "pass": 41,
       "skipped": 0,
-      "total": 11,
+      "total": 41,
       "unimplemented": 0
     },
     "int64": {
@@ -179,9 +187,9 @@
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 58,
+      "pass": 101,
       "skipped": 0,
-      "total": 58,
+      "total": 101,
       "unimplemented": 0
     },
     "net": {
@@ -203,9 +211,9 @@
     "oracle": {
       "error": 0,
       "fail": 0,
-      "pass": 29,
+      "pass": 143,
       "skipped": 0,
-      "total": 29,
+      "total": 143,
       "unimplemented": 0
     },
     "oracle2": {
@@ -248,6 +256,14 @@
       "total": 51,
       "unimplemented": 0
     },
+    "retention": {
+      "error": 0,
+      "fail": 0,
+      "pass": 13,
+      "skipped": 0,
+      "total": 13,
+      "unimplemented": 0
+    },
     "search": {
       "error": 0,
       "fail": 18,
@@ -267,9 +283,9 @@
     "sql": {
       "error": 0,
       "fail": 21,
-      "pass": 3318,
+      "pass": 3559,
       "skipped": 1,
-      "total": 3347,
+      "total": 3588,
       "unimplemented": 7
     },
     "string": {
@@ -283,9 +299,9 @@
     "struct": {
       "error": 0,
       "fail": 0,
-      "pass": 22,
+      "pass": 136,
       "skipped": 0,
-      "total": 22,
+      "total": 136,
       "unimplemented": 0
     },
     "subquery": {
@@ -307,9 +323,9 @@
     "txn": {
       "error": 0,
       "fail": 0,
-      "pass": 34,
+      "pass": 57,
       "skipped": 6,
-      "total": 40,
+      "total": 63,
       "unimplemented": 0
     },
     "values": {
@@ -404,6 +420,214 @@
     },
     {
       "detail": null,
+      "name": "api/sessions/delete_session_twice",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/delete_session_never_created",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/delete_session_multiplexed",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/delete_session_malformed_names",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/last_use_untouched",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/last_use_advances_with_a_query",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/last_use_is_the_get_session_call",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "api/sessions/last_use_multiplexed",
+      "status": "pass",
+      "tags": [
+        "api"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/timestamp_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/date_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/numeric_float_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/numeric_float_literal_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/numeric_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/float32_float_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/int64_float_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/bytes_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/json_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/string_int_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/bool_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/timestamp_bad_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/date_bad_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/timestamp_string_expression",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/timestamp_string_literal_parens",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/date_in_create",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/set_default_string_literal",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/default_coercion/information_schema_default",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
       "name": "ddl/fidelity/filtered_index_where_lowercase",
       "status": "pass",
       "tags": [
@@ -490,6 +714,531 @@
       "tags": [
         "ddl",
         "admin"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/table_constraints",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/referential_constraints",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/check_constraints",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/get_ddl_omits_generated_names",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/violations_name_the_constraint",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/named_schema_check",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/alter_adds_the_next_free_number",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_names/dropped_numbers_are_reused",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/create_virtual_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/create_stored_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/add_virtual_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/add_stored_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/alter_virtual_to_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/virtual_key_not_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/virtual_cycle",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/generated_not_null/virtual_key",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_with_options",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_plain",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_hdd",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_hdd_with_spill",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_duplicate",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_if_not_exists",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_if_not_exists_new",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/create_named_like_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/unknown_option",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/bad_storage",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_merges_options",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_to_hdd_with_spill",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_null",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_missing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_default",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_default_quoted",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop_missing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop_if_exists_missing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop_referenced_by_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop_referenced_by_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop_referenced_by_index",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/drop_after_reference_removed",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/alter_table_and_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/add_column_with_option",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/column_with_commit_timestamp",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/index_option",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/interleaved_table_option",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/unknown_group_on_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/unknown_group_on_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/unknown_group_on_index",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/unknown_group_in_alter_table",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/unknown_table_option",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/locality/column_options_inherit",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/default_retention",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/set_hours",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/set_seconds_kept_as_written",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/set_days",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/reset_to_null",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/below_one_hour",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/above_seven_days",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/zero",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/unparsable",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/uppercase_unit",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/compound_duration",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/not_a_string",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/retention/stale_read_within_longer_retention",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "retention"
       ]
     },
     {
@@ -625,6 +1374,518 @@
       "tags": [
         "ddl",
         "admin"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/add_without_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/add_without_column_if_not_exists",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/drop_without_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/drop_without_column_missing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_without_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_without_column_set_default",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_without_column_drop_default",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 93:\n  message:\n    - Check constraint `A`.`CkW` is violated for key (1)\n    + Check constraint `A`.`CkW` is violated for key {Int64(1)}",
+      "name": "ddl/syntax/add_constraint_still_parses",
+      "status": "fail",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_on_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_on_nullable_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_on_column_after_default",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_on_column_with_options",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_element",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_element_first",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_element_empty",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_element_interleave",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_element_and_trailing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_two_columns",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_column_and_element",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_column_and_trailing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_two_elements",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 244:\n  message:\n    - table X references nonexistent key column Nope.\n    + Table X references nonexistent key column Nope.",
+      "name": "ddl/syntax/pk_missing_column",
+      "status": "fail",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/pk_on_column_in_alter",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_table_if_exists_missing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_table_if_exists_present",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_table_if_exists_missing_drop",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_table_if_exists_present_error",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/change_stream_if_not_exists",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/search_index_if_not_exists_existing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/search_index_if_not_exists_new",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_add_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_add_stored_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_drop_stored_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_drop_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_drop_last_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_add_existing_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_add_missing_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_add_non_tokenlist",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_drop_unindexed_column",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_add_stored_twice",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_drop_missing_stored",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_missing",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_without_column_keyword",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/alter_search_index_used_by_search",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/interleave_in_on_delete_cascade",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/interleave_in_on_delete_no_action",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/interleave_in_set_on_delete",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/syntax/interleave_in_without_on_delete",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 12: UNIMPLEMENTED: CREATE PROTO BUNDLE is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/create_proto_bundle",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 22: UNIMPLEMENTED: ALTER PROTO BUNDLE is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/alter_proto_bundle",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 32: UNIMPLEMENTED: CREATE QUEUE is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/create_queue",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 43: UNIMPLEMENTED: CREATE PLACEMENT is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/create_placement",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 58: UNIMPLEMENTED: An index key expression is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/expression_index",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 71: UNIMPLEMENTED: CREATE FUNCTION is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/create_function",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 87: UNIMPLEMENTED: CREATE VECTOR INDEX is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/create_vector_index",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 100: UNIMPLEMENTED: DROP VECTOR INDEX is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/drop_vector_index",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/unsupported/unknown_create",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/unsupported/unknown_alter",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/unsupported/unknown_drop",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 138: UNIMPLEMENTED: Reading a change stream is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/read_change_stream",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/unsupported/read_missing_change_stream",
+      "status": "pass",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 160: UNIMPLEMENTED: GET_NEXT_SEQUENCE_VALUE is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/sequence_next_value",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 171: UNIMPLEMENTED: GET_INTERNAL_SEQUENCE_STATE is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/sequence_internal_state",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
+      ]
+    },
+    {
+      "detail": "line 180: UNIMPLEMENTED: GET_NEXT_SEQUENCE_VALUE is not supported by spanbolt yet.",
+      "name": "ddl/unsupported/sequence_default",
+      "status": "unimplemented",
+      "tags": [
+        "ddl"
       ]
     },
     {
@@ -1381,6 +2642,86 @@
     },
     {
       "detail": null,
+      "name": "mutations/default_key_update/update_omits_default_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_key_update/insert_or_update_omits_default_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_key_update/replace_omits_default_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_key_update/insert_omits_default_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_key_update/dml_update_default_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_keys/insert_or_update_rows_one_mutation",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_keys/insert_or_update_mutations_one_commit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_keys/insert_mutations_one_commit",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_keys/key_lookup_by_generated_id",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/default_keys/interleaved_child_default_key",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
       "name": "mutations/filtered_index/unique_ignores_filtered_rows",
       "status": "pass",
       "tags": [
@@ -1425,6 +2766,303 @@
       "status": "pass",
       "tags": [
         "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_query",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_read",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_where",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_force_index",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_index_read",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_after_update_mutation",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_after_insert_or_update",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_after_replace",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_dml_insert_returning",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_dml_update_returning",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_dml_update_then_index",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_pdml_update",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_write_rejected",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/virtual_dml_write_rejected",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/dependency_order_query",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/dependency_order_update",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/dependency_order_dml_insert",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/dependency_order_insert_null",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_columns/add_virtual_column_backfills",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_omitted_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_omitted_insert_or_update_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_omitted_insert",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_omitted_insert_or_update",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_omitted_replace",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_omitted_update",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_all_given",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_default_omitted_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_default_explicit_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_default_omitted_insert",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_named_in_literal_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_generated_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_generated_insert_select_dml",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_key_inputs/generated_key_input_generated_insert",
+      "status": "pass",
+      "tags": [
+        "mutations",
+        "dml"
       ]
     },
     {
@@ -2435,6 +4073,542 @@
     },
     {
       "detail": null,
+      "name": "sql/commit_timestamp/dml_current_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/dml_current_timestamp_after_read_in_txn",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/dml_current_timestamp_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/batch_current_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/dml_recent_past",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/dml_one_hour_ahead",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/batch_one_hour_ahead",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/mutation_past",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/mutation_far_future",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/dml_pending_commit_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp/mutation_pending_commit_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/get_ddl",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/information_schema_columns",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/mutation_insert_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/mutation_insert_or_update_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/mutation_replace_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_insert_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_insert_default_keyword",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_insert_default_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_insert_default_then_return_pending",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_insert_default_then_select",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/mutation_update_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/mutation_insert_or_update_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/mutation_update_explicit_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_update_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_update_explicit_value",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_update_on_update_then_select",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_update_on_update_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/dml_update_no_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/add_column_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_set_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_set_on_update_without_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_drop_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_drop_on_update_none",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_drop_default_with_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_set_default_with_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_retype_drops_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/alter_column_retype_with_on_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_without_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_without_allow_commit_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_other_expression",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_literal",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_differs_from_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_lowercase",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_before_default",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_after_options",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/on_update_key_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/default_pending_without_allow_commit_timestamp",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/default_pending_in_expression",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/default_pending_key_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/add_column_default_pending",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_columns/add_column_not_null_default_pending",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "ddl",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_generated_key/mutation_insert",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_generated_key/mutation_insert_or_update",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/commit_timestamp_generated_key/dml_insert",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/correlated_nonkey/exists_string",
       "status": "pass",
       "tags": [
@@ -3012,6 +5186,87 @@
     {
       "detail": null,
       "name": "sql/dml/select_as_dml",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys/dml_insert_default_key_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys/dml_insert_explicit_default_key_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys/dml_insert_select_default_key_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys/dml_insert_generated_key_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys/dml_insert_or_update_keeps_omitted_columns",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys/dml_insert_key_from_volatile_column_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys_more/dml_insert_or_update_key_literal_names_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys_more/dml_insert_identity_key_then_return",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "dml"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/dml_default_keys_more/dml_insert_or_ignore_default_key_then_return",
       "status": "pass",
       "tags": [
         "sql",
@@ -28303,6 +30558,150 @@
     },
     {
       "detail": null,
+      "name": "sql/graph/property_graphs_listed",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/property_graph_metadata",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/match_node_filter_order_limit",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/edge_properties_and_labels",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/dangling_edges_do_not_match",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/quantified_path",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/quantified_path_for_and_next",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/optional_match",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/any_direction",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/paths_sharing_a_variable",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/filter_statement",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/label_shared_by_tables",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/graph_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/returning_a_node_is_rejected",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/graph_over_a_missing_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/graph/drop_property_graph",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "graph"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/hints/force_index",
       "status": "pass",
       "tags": [
@@ -28518,6 +30917,204 @@
     {
       "detail": null,
       "name": "sql/information_schema/info_schema_in_rw_txn",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/referential_constraints",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/table_constraints",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/indexes",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/index_columns",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/key_column_usage",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/constraint_table_usage",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/constraint_column_usage",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_fk/mito_foreign_key_targets",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/view_columns",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/change_streams",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/change_stream_set_for",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/change_stream_options",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/change_stream_options_bool_and_null",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/change_stream_routines",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/dropped_change_stream_routines",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/synonyms",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/synonym_after_rename",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/synonym_in_named_schema",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/roles",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/vector_length_type",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/schemata",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/new_index_columns",
       "status": "pass",
       "tags": [
         "sql",
@@ -32448,6 +35045,1146 @@
     },
     {
       "detail": null,
+      "name": "sql/struct_field_access/retention_candidates_shape",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_returned_and_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_in_where",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_without_limit_read_in_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_in_unnest_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_in_scalar_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_per_unnest_row",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_of_literals",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_unnested_in_array_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_through_with",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_field_from_inner_select",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_in_order_by",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/information_schema_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_array_filtered_by_exists",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_of_table_array_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_joined_to_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/array_over_with_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_unnested_in_from",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_returned_inside_struct",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_returned_reversed",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_in_exists_unnest",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_rebuilt_from_unnest_fields",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/union_all_branch_reads_field",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/field_read_above_union_all",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/ifnull_wrapped_table_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_array_filtered_by_in_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/array_rebuilt_from_unnest_then_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_array_order_limit",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/join_of_two_unnests",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_of_nested_array_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_in_join_condition",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_inside_scalar_struct_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/scalar_aggregate_with_having",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_with_offset",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_of_generate_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_of_empty_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/two_element_unnest_of_outer_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_correlated_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/single_row_correlated_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/unnest_of_outer_column_with_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/read_through_array_reverse",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/read_through_scalar_subquery_element",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/read_through_array_concat",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/read_through_array_first",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/read_through_safe_ordinal",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_of_select_struct",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/single_row_limit_zero",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_but_not_returned",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_over_table_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_of_outer_table_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_of_outer_table_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_element_null_and_length",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_read_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_returned_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/struct_field_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_returned_and_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_returned",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_read_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_read_in_where",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_read_in_order_by",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_unnested_in_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_read_in_scalar_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_through_with",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_written_twice",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_length",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_element_is_null",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_field_from_inner_select",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_per_outer_row",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_per_outer_row_where",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_per_outer_row_order_by",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_per_outer_row_unnested",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_per_outer_row_read_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_read_in_array_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_with_table_scalar_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_derived_table_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/two_table_arrays_one_returned_one_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/same_array_text_in_two_joined_subqueries",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_dropped_by_outer_select",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_length_returned",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/table_array_counted_through_unnest",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_with_table_scalar_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/derived_scalar_subquery_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/derived_scalar_aggregate_over_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_with_correlated_table_subquery",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/scalar_aggregate_over_unnest",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_with_table_subquery_per_row",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_array_length_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/any_value_of_table_array_grouped_by_field",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_constant_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/no_from_array_limit_one",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/scalar_aggregate_over_table",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/scalar_aggregate_limit_one",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/derived_single_row_constant_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/cross_join_of_one_element_unnests",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/cross_join_of_single_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/scalar_aggregate_order_by",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_derived_single_row",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/single_row_with_entry",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_of_outer_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/scalar_aggregate_with_correlated_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/left_join_of_single_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_in_single_row_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_in_no_from_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_in_single_row_array_read_in_where",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_returned_through_field",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_in_single_row_array_read_only",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_table_in_single_row_array_outer_field_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/nested_single_row_in_single_row_array",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_false_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_one_equals_two",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_null_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/derived_single_row_false_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_field_access/one_element_unnest_true_filter",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/subqueries/in_subquery",
       "status": "pass",
       "tags": [
@@ -32610,6 +36347,22 @@
     },
     {
       "detail": null,
+      "name": "sql/table_not_found/user_table_typo",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/table_not_found/info_table_typo",
+      "status": "pass",
+      "tags": [
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
       "name": "txn/dml_errors/batch_failure_then_commit",
       "status": "pass",
       "tags": [
@@ -32701,6 +36454,213 @@
     {
       "detail": null,
       "name": "txn/dml_errors/dml_runtime_error_then_commit",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_other_columns",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_count_star",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_star",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/filter_on_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_other_table",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_after_update",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/then_return_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/then_return_star",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/then_return_other_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/update_then_return_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/second_insert_same_table",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/update_other_column_after_pending",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/update_filter_on_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/read_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/read_other_columns",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/read_index_on_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/read_index_storing_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/read_other_index",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/query_force_index_on_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/query_force_index_storing_pending_column",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/mutation_then_select",
+      "status": "pass",
+      "tags": [
+        "txn",
+        "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/pending_commit_timestamp/select_after_commit",
       "status": "pass",
       "tags": [
         "txn",
@@ -33804,14 +37764,14 @@
       ]
     }
   ],
-  "target": "127.0.0.1:26259",
+  "target": "127.0.0.1:32088",
   "totals": {
     "error": 0,
-    "fail": 26,
-    "pass": 3618,
+    "fail": 28,
+    "pass": 4041,
     "skipped": 7,
-    "total": 3658,
-    "unimplemented": 7
+    "total": 4095,
+    "unimplemented": 19
   },
   "unimplemented": "skip"
 }

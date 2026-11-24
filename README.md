@@ -118,6 +118,14 @@ library. `docs/building.md` covers the shim and building it with Bazel.
 
 Useful flags: `--snapshot <file>` loads a snapshot at startup, `spanbolt snapshot <path>` asks a
 running server to write one, and `--emulator-compat` follows the emulator instead of production.
+`--database projects/P/instances/I/databases/D` (repeatable, or comma-separated in
+`SPANBOLT_DATABASES`) creates an empty database, and its instance, at startup, so a docker-compose
+service or CI job can connect without creating them first:
+
+```sh
+docker run --rm -p 9010:9010 -e SPANBOLT_DATABASES=projects/test/instances/test/databases/app \
+  ghcr.io/strise/spanbolt:0.2
+```
 
 ## How we check correctness
 

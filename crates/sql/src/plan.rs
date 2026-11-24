@@ -81,7 +81,9 @@ pub struct Options {
 impl Options {
     /// Language features enabled on top of the shim's. Both the emulator and Spanner parse
     /// `INSERT ... ON CONFLICT`. Production Spanner also analyses window functions and NULLS
-    /// FIRST/LAST, then rejects them while planning.
+    /// FIRST/LAST, then rejects them while planning, and accepts pipe syntax (`FROM t |> WHERE
+    /// ...`), which the emulator rejects. Pipe operators resolve to the usual scans; any that
+    /// don't plan are UNIMPLEMENTED.
     pub fn extra_features(&self) -> &'static [&'static str] {
         if self.emulator_compat {
             &["FEATURE_INSERT_ON_CONFLICT_CLAUSE"]
@@ -90,6 +92,7 @@ impl Options {
                 "FEATURE_INSERT_ON_CONFLICT_CLAUSE",
                 "FEATURE_ANALYTIC_FUNCTIONS",
                 "FEATURE_NULLS_FIRST_LAST_IN_ORDER_BY",
+                "FEATURE_PIPES",
             ]
         }
     }

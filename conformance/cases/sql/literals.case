@@ -107,6 +107,9 @@ query:
 expect:
   columns: a ARRAY<INT64>, fy STRING, arr ARRAY<STRUCT<a INT64, b STRING>>
   [["1","2",null],"y",[["1","a"],["2",null]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: This query returns a STRUCT value constructed by a scalar subquery or struct construction syntax. Spanner does not yet support returning STRUCT except as arrays-of-structs. Rephrase your query to produce the struct value with an array subquery: ARRAY(SELECT AS STRUCT expr ...) or flatten the structs fields into the result.
 
 case struct_in_array_result
 query:

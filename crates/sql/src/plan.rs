@@ -2164,7 +2164,7 @@ impl<'c> Planner<'c> {
                     .ok_or_else(|| Error::internal("literal without type"))?;
                 // The emulator's query validator rejects any NULL ARRAY<STRUCT> literal, as in
                 // `CASE ... ELSE NULL END`. Production rejects only result columns that can be a
-                // NULL ARRAY<STRUCT>, wherever the NULL comes from, and not yet in spanbolt.
+                // NULL ARRAY<STRUCT>, wherever the NULL comes from (`struct_result`).
                 if self.opts.emulator_compat
                     && v.value.as_ref().is_none_or(|x| x.value.is_none())
                     && crate::struct_shape::is_struct_array(tp)

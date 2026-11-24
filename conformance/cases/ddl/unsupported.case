@@ -31,6 +31,13 @@ expect@spanner:
 case create_queue
 ddl:
   CREATE QUEUE Q (Id INT64, Payload BYTES(MAX) NOT NULL) PRIMARY KEY (Id)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE QUEUE Q (\n  Id INT64,\n  Payload BYTES(MAX) NOT NULL,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
 
 case create_placement
 ddl:
@@ -38,19 +45,56 @@ ddl:
 expect@spanner:
   error: NOT_FOUND
   message: Instance partition not found: projects/strise-stage/instances/mito-api/instancePartitions/p1
+get_ddl
+expect:
+  statements:
+  "CREATE PLACEMENT p OPTIONS ( instance_partition = 'p1' )"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
 
 case expression_index
 ddl:
   CREATE INDEX AByCity ON A((JSON_VALUE(D, '$.city')))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n  _ExpressionIndex_AByCity_0 STRING(MAX) AS (JSON_VALUE(D, '$.city')) HIDDEN,\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByCity ON A()"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE INDEX AByCity ON A((JSON_VALUE(D, '$.city')))"
 
 case create_function
 ddl:
   CREATE SCHEMA s;
   CREATE FUNCTION s.AddOne(x INT64) RETURNS INT64 SQL SECURITY INVOKER AS (x + 1)
+get_ddl
+expect:
+  statements:
+  "CREATE SCHEMA s"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE FUNCTION s.AddOne(x INT64) RETURNS INT64 SQL SECURITY INVOKER AS (x + 1)"
+expect@spanner:
+  statements:
+  "CREATE SCHEMA s"
+  "CREATE FUNCTION s.AddOne(`x` INT64) RETURNS INT64 SQL SECURITY INVOKER AS (\n  x + 1\n)"
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
 
 case create_vector_index
 ddl:
   CREATE VECTOR INDEX AByE ON A(E) WHERE E IS NOT NULL OPTIONS (distance_type = 'COSINE')
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE VECTOR INDEX AByE ON A(E) WHERE E IS NOT NULL OPTIONS ( distance_type = 'COSINE' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE A (\n  K INT64 NOT NULL,\n  D JSON,\n  E ARRAY<FLOAT32>(vector_length=>2),\n) PRIMARY KEY(K)"
+  "CREATE VECTOR INDEX AByE ON A(E) WHERE E IS NOT NULL OPTIONS (\n  distance_type = 'COSINE'\n)"
 
 case drop_vector_index
 ddl:

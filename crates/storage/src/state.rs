@@ -887,6 +887,9 @@ impl Writer {
             } => {
                 let catalog = self.state.catalog.clone();
                 let tm = catalog.table(*table);
+                if tm.computed {
+                    crate::expr::check_generated_key_inputs(tm, *kind, columns)?;
+                }
                 let key_pos: Vec<Option<usize>> = tm
                     .pk
                     .iter()

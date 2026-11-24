@@ -571,7 +571,8 @@ pub fn execute(
             let mut kept_defaults: Vec<Vec<usize>> = Vec::new();
             for (r, (row, key)) in rows.into_iter().zip(keys).enumerate() {
                 let enc = encode_key(&key, &tm.pk_desc)?;
-                let exists = state.tables[d.table].get(&enc[..]).is_some() || seen.contains(&enc);
+                let repeated = seen.contains(&enc);
+                let exists = repeated || state.tables[d.table].get(&enc[..]).is_some();
                 if exists && *mode == WriteKind::Insert {
                     if *ignore {
                         continue;
@@ -579,8 +580,9 @@ pub fn execute(
                     return Err(Error::constraint(
                         Code::AlreadyExists,
                         format!(
-                            "Failed to insert row with primary key {} due to previously existing row",
-                            pk_debug(&tm, &key)
+                            "Failed to insert row with primary key {} due to previously {} row",
+                            pk_debug(&tm, &key),
+                            if repeated { "inserted" } else { "existing" }
                         ),
                     ));
                 }

@@ -1,0 +1,133 @@
+tags: mutations dml
+# A write must give every column a stored generated primary key reads, unless that column has a
+# DEFAULT (an Update must give them, or the key itself). Names inside string literals don't count.
+schema:
+  CREATE TABLE P (
+    A STRING(MAX),
+    B STRING(MAX),
+    K STRING(MAX) NOT NULL AS (CONCAT(IFNULL(A, ''), IFNULL(B, ''))) STORED,
+  ) PRIMARY KEY (K);
+  CREATE TABLE PD (
+    A STRING(MAX),
+    B STRING(MAX) DEFAULT ('d'),
+    K STRING(MAX) NOT NULL AS (CONCAT(IFNULL(A, ''), IFNULL(B, ''))) STORED,
+  ) PRIMARY KEY (K);
+  CREATE TABLE Q (
+    A STRING(MAX),
+    B STRING(MAX),
+    K STRING(MAX) NOT NULL AS (CONCAT(A, 'B')) STORED,
+  ) PRIMARY KEY (K);
+  CREATE TABLE C (
+    Src STRING(MAX) NOT NULL,
+    Tag STRING(36) DEFAULT (GENERATE_UUID()),
+    Mid STRING(MAX) AS (CONCAT(Tag, '-', Src)) STORED,
+    K STRING(MAX) NOT NULL AS (UPPER(Mid)) STORED,
+  ) PRIMARY KEY (K)
+
+case generated_key_input_omitted_dml
+dml:
+  INSERT INTO P (A) VALUES ('x'), ('x')
+expect:
+  error: ALREADY_EXISTS
+  message: Failed to insert row with primary key ({pk#K:"x"}) due to previously inserted row
+
+case generated_key_input_omitted_insert_or_update_dml
+dml:
+  INSERT OR UPDATE INTO P (A) VALUES ('x')
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `P.K` cannot be evaluated since value of all its dependent columns is not specified.
+
+case generated_key_input_omitted_insert
+insert P cols=A:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `P.K` cannot be evaluated since value of all its dependent columns is not specified.
+
+case generated_key_input_omitted_insert_or_update
+insert_or_update P cols=A:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `P.K` cannot be evaluated since value of all its dependent columns is not specified.
+
+case generated_key_input_omitted_replace
+replace P cols=A:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `P.K` cannot be evaluated since value of all its dependent columns is not specified.
+
+case generated_key_input_omitted_update
+insert P cols=A,B:
+  ["x", "y"]
+expect:
+  ok
+update P cols=A:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `P.K` must be explicitly specified or else its non-key dependent columns must be specified in Update mutations.
+
+case generated_key_input_all_given
+insert P cols=A,B:
+  ["x", "y"]
+expect:
+  ok
+read P cols=K,A,B:
+  all
+expect:
+  columns: K STRING, A STRING, B STRING
+  ["xy","x","y"]
+
+case generated_key_input_default_omitted_dml
+dml:
+  INSERT INTO PD (A) VALUES ('x') THEN RETURN K
+expect:
+  count: 1
+  columns: K STRING
+  ["xd"]
+
+case generated_key_input_default_explicit_dml
+dml:
+  INSERT INTO PD (A, B) VALUES ('x', DEFAULT) THEN RETURN K
+expect:
+  count: 1
+  columns: K STRING
+  ["xd"]
+
+case generated_key_input_default_omitted_insert
+insert PD cols=A:
+  ["x"]
+expect:
+  ok
+
+case generated_key_input_named_in_literal_dml
+dml:
+  INSERT INTO Q (A) VALUES ('x') THEN RETURN K
+expect:
+  count: 1
+  columns: K STRING
+  ["xB"]
+
+case generated_key_input_generated_dml
+dml:
+  INSERT INTO C (Src, Tag) VALUES ('a', 't')
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `C.K` cannot be evaluated since value of all its dependent columns is not specified.
+
+case generated_key_input_generated_insert_select_dml
+dml:
+  INSERT OR IGNORE INTO C (Src) SELECT 'a'
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `C.K` cannot be evaluated since value of all its dependent columns is not specified.
+
+case generated_key_input_generated_insert
+insert C cols=Src:
+  ["a"]
+expect:
+  error: FAILED_PRECONDITION
+  message: The value of generated primary key column `C.K` cannot be evaluated since value of all its dependent columns is not specified.

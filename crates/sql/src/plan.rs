@@ -436,6 +436,12 @@ pub fn type_of(e: &AnyResolvedExprProto) -> Result<Type> {
 const EMULATOR_NULL_STRUCT_ARRAY: &str = "Unsupported query shape: Spanner does not support array \
     constructor syntax for a null-valued array of struct.";
 
+/// A NULL literal (`NULL`, of whatever type).
+fn is_null_literal(e: &AnyResolvedExprProto) -> bool {
+    matches!(e.node.as_ref(), Some(E::ResolvedLiteralNode(l))
+        if l.value.as_ref().is_some_and(|v| v.value.as_ref().is_none_or(|x| x.value.is_none())))
+}
+
 pub fn call_base(e: &AnyResolvedExprProto) -> Option<&ResolvedFunctionCallBaseProto> {
     match e.node.as_ref()? {
         E::ResolvedFunctionCallBaseNode(b) => match b.node.as_ref()? {
@@ -1324,6 +1330,13 @@ impl<'c> Planner<'c> {
         }
         match rel {
             Relation::Table(tid) => {
+                let cols = &self.cat.storage.table(tid).columns;
+                if idx.iter().any(|&i| {
+                    cols.get(i)
+                        .is_some_and(|c| crate::types::is_bundle_type(&c.ty))
+                }) {
+                    return Err(unimplemented("Reading a PROTO or ENUM column in SQL"));
+                }
                 let op = self.base_table(tid, t, &base.hint_list, &layout, &idx, outer, conj)?;
                 Ok(Planned { op, layout })
             }
@@ -1746,6 +1759,16 @@ impl<'c> Planner<'c> {
         let Some(Relation::Table(tid)) = self.cat.relation(full).cloned() else {
             return Err(unimplemented(format!("DML on {full}")));
         };
+        if self
+            .cat
+            .storage
+            .table(tid)
+            .columns
+            .iter()
+            .any(|c| crate::types::is_bundle_type(&c.ty))
+        {
+            return Err(unimplemented("DML on a table with PROTO or ENUM columns"));
+        }
         let n = self.cat.storage.table(tid).columns.len();
         let mut layout: Vec<i64> = (0..n).map(|c| -1_000_000 - c as i64).collect();
         for (c, &i) in base.column_list.iter().zip(&ts.column_index_list) {
@@ -2331,6 +2354,14 @@ impl<'c> Planner<'c> {
                     .ok_or_else(|| Error::internal("cast without expr"))?;
                 if graph_plan::is_graph_type(expr_type(e)) {
                     return self.expr(inner, scope);
+                }
+                // The emulator folds `CAST(NULL AS ARRAY<STRUCT<...>>)` into a NULL ARRAY<STRUCT>
+                // literal, which its validator rejects like the one above (`struct_depth.case`).
+                if self.opts.emulator_compat
+                    && expr_type(e).is_some_and(crate::struct_shape::is_struct_array)
+                    && is_null_literal(inner)
+                {
+                    return Err(Error::new(Code::Unimplemented, EMULATOR_NULL_STRUCT_ARRAY));
                 }
                 let from = type_of(inner)?;
                 let to = type_of(e)?;

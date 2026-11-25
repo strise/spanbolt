@@ -1,0 +1,474 @@
+# More TOKENIZE_FULLTEXT symbol cases for #119: the rules spanbolt had to guess from
+# search_tokenizer_symbols (`+`/`#` after a letter, numbers with `.` and `,`, symbol runs, non-ASCII
+# symbols), and how queries with them read.
+tags: sql search
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "a+b"]
+  [2, "foo+"]
+  [3, "c+"]
+  [4, "x#"]
+  [5, "foo#bar"]
+  [6, "f#"]
+  [7, "1.2.3"]
+  [8, "1,000,000"]
+  [9, "1,00"]
+  [10, "-1"]
+  [11, "+1"]
+  [12, "$5"]
+  [13, "£5"]
+  [14, "¥5"]
+  [15, "5%"]
+  [16, "℃"]
+  [17, "foo→bar"]
+  [18, "foo😀bar"]
+  [19, "foo&>bar"]
+  [20, "foo&<bar"]
+  [21, "a--b c"]
+  [22, "foo_&bar"]
+  [23, "Ab&Cd"]
+  [24, "foo&_bar"]
+  [25, "1.5"]
+  [26, "v1.2"]
+  [27, "3.14.15"]
+  [28, "e.g."]
+  [29, "x++"]
+  [30, "cpp++"]
+  [31, "foo/bar"]
+  [32, "a/b"]
+  [33, "x->y"]
+  [34, "<-"]
+  [35, "=>"]
+  [36, "->"]
+  [37, "<="]
+  [38, "||"]
+  [39, "::"]
+  [40, "..."]
+  [41, "foo...bar"]
+  [42, "a~b"]
+  [43, "x*y"]
+  [44, "foo'bar"]
+  [45, "ﬁle"]
+  [46, "Straße"]
+  [47, "İstanbul"]
+  [48, "foo²"]
+  [49, "x́y"]
+  [50, "日本語"]
+  [51, "foo¢bar"]
+  [52, "foo§bar"]
+  [53, "foo°bar"]
+  [54, "foo×bar"]
+  [55, "foo÷bar"]
+  [56, "foo¿bar"]
+  [57, "foo¶bar"]
+  [58, "foo«bar»"]
+  [59, "Ⅻ"]
+  [60, "foo$bar"]
+  [61, "foo#"]
+  [62, "#"]
+  [63, "##tag"]
+  [64, "@"]
+  [65, "&&&"]
+  [66, "--x--"]
+  [67, "<--"]
+  [68, "--->"]
+  [69, "/"]
+  [70, "//"]
+  [71, "foo//bar"]
+  [72, "http://example.com/a_b"]
+  [73, "foo_bar_"]
+  [74, "a_"]
+  [75, "_a"]
+  [76, "1_000"]
+  [77, "x&&"]
+  [78, "&&x"]
+  [79, "c++11"]
+  [80, "c#6"]
+  [81, "3,14"]
+  [82, "0.5x"]
+
+case tokens
+query:
+  SELECT Id, Body, DEBUG_TOKENLIST(Tok) AS t FROM T ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:18]
+expect@spanner:
+  columns: Id INT64, Body STRING, t STRING
+  ["1","a+b","a(boundary), b(end_boundary)"]
+  ["2","foo+","foo+(boundary, end_boundary)"]
+  ["3","c+","c+(boundary, end_boundary)"]
+  ["4","x#","x#(boundary, end_boundary)"]
+  ["5","foo#bar","foo(boundary), bar(end_boundary)"]
+  ["6","f#","f#(boundary, end_boundary)"]
+  ["7","1.2.3","1.2(boundary), 3(end_boundary)"]
+  ["8","1,000,000","1000000(boundary, end_boundary)"]
+  ["9","1,00","1(boundary), 00(end_boundary)"]
+  ["10","-1","1(boundary, end_boundary)"]
+  ["11","+1","1(boundary, end_boundary)"]
+  ["12","$5","[$5, 5](boundary, end_boundary)"]
+  ["13","£5","5(boundary, end_boundary)"]
+  ["14","¥5","5(boundary, end_boundary)"]
+  ["15","5%","5(boundary, end_boundary)"]
+  ["16","℃","℃(boundary, end_boundary)"]
+  ["17","foo→bar","foo(boundary), →, bar(end_boundary)"]
+  ["18","foo😀bar","foo(boundary), 😀, bar(end_boundary)"]
+  ["19","foo&>bar","foo(boundary), &>, bar(end_boundary)"]
+  ["20","foo&<bar","foo(boundary), &<, bar(end_boundary)"]
+  ["21","a--b c","a(boundary), --, bc(end_boundary)"]
+  ["22","foo_&bar","foo_&bar(boundary, end_boundary)"]
+  ["23","Ab&Cd","ab&cd(boundary, end_boundary)"]
+  ["24","foo&_bar","foo&_bar(boundary, end_boundary)"]
+  ["25","1.5","1.5(boundary, end_boundary)"]
+  ["26","v1.2","v1(boundary), 2(end_boundary)"]
+  ["27","3.14.15","3.14(boundary), 15(end_boundary)"]
+  ["28","e.g.","eg(boundary, end_boundary)"]
+  ["29","x++","x(boundary), ++(end_boundary)"]
+  ["30","cpp++","cpp(boundary), ++(end_boundary)"]
+  ["31","foo/bar","foo(boundary), bar(end_boundary)"]
+  ["32","a/b","a(boundary), b(end_boundary)"]
+  ["33","x->y","x(boundary), ->, y(end_boundary)"]
+  ["34","<-","<-(boundary, end_boundary)"]
+  ["35","=>","=>(boundary, end_boundary)"]
+  ["36","->","->(boundary, end_boundary)"]
+  ["37","<=","<=(boundary, end_boundary)"]
+  ["38","||","||(boundary, end_boundary)"]
+  ["39","::","::(boundary, end_boundary)"]
+  ["40","...",""]
+  ["41","foo...bar","foo(boundary), bar(end_boundary)"]
+  ["42","a~b","a(boundary), b(end_boundary)"]
+  ["43","x*y","x(boundary), y(end_boundary)"]
+  ["44","foo'bar","foo(boundary), bar(end_boundary)"]
+  ["45","ﬁle","file(boundary, end_boundary)"]
+  ["46","Straße","straße(boundary, end_boundary)"]
+  ["47","İstanbul","istanbul(boundary, end_boundary)"]
+  ["48","foo²","foo²(boundary, end_boundary)"]
+  ["49","x́y","x́y(boundary, end_boundary)"]
+  ["50","日本語","日本(boundary), 語(end_boundary)"]
+  ["51","foo¢bar","foo(boundary), bar(end_boundary)"]
+  ["52","foo§bar","foo(boundary), bar(end_boundary)"]
+  ["53","foo°bar","foo(boundary), bar(end_boundary)"]
+  ["54","foo×bar","foo(boundary), bar(end_boundary)"]
+  ["55","foo÷bar","foo(boundary), bar(end_boundary)"]
+  ["56","foo¿bar","foo(boundary), bar(end_boundary)"]
+  ["57","foo¶bar","foo(boundary), bar(end_boundary)"]
+  ["58","foo«bar»","foo(boundary), bar(end_boundary)"]
+  ["59","Ⅻ","ⅻ(boundary, end_boundary)"]
+  ["60","foo$bar","foo(boundary), bar(end_boundary)"]
+  ["61","foo#","foo(boundary, end_boundary)"]
+  ["62","#",""]
+  ["63","##tag","##(boundary), tag(end_boundary)"]
+  ["64","@",""]
+  ["65","&&&","&&&(boundary, end_boundary)"]
+  ["66","--x--","--(boundary), x, --(end_boundary)"]
+  ["67","<--","<--(boundary, end_boundary)"]
+  ["68","--->",""]
+  ["69","/",""]
+  ["70","//",""]
+  ["71","foo//bar","foo(boundary), bar(end_boundary)"]
+  ["72","http://example.com/a_b","http(boundary), example, com, a_b(end_boundary)"]
+  ["73","foo_bar_","[foo_bar, foo_bar_](boundary, end_boundary)"]
+  ["74","a_","[a, a_](boundary, end_boundary)"]
+  ["75","_a","[_a, a](boundary, end_boundary)"]
+  ["76","1_000","1_000(boundary, end_boundary)"]
+  ["77","x&&","x(boundary), &&(end_boundary)"]
+  ["78","&&x","&&(boundary), x(end_boundary)"]
+  ["79","c++11","c(boundary), ++, 11(end_boundary)"]
+  ["80","c#6","c(boundary), 6(end_boundary)"]
+  ["81","3,14","3(boundary), 14(end_boundary)"]
+  ["82","0.5x","0.5(boundary), x(end_boundary)"]
+
+case search
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'a--b') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["21"]
+  ["32"]
+  ["42"]
+  ["72"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '&>') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["19"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '1,000') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["8"]
+  ["76"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '1000000') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["8"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'a+b') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["21"]
+  ["32"]
+  ["42"]
+  ["72"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["32"]
+  ["42"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'c++11') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `c++11`, has error(s): -Syntax error on column 4: Expecting 'AROUND(
+expect@spanner:
+  columns: Id INT64
+  ["79"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'x#') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+  ["29"]
+  ["33"]
+  ["43"]
+  ["66"]
+  ["77"]
+  ["78"]
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo&') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["5"]
+  ["19"]
+  ["20"]
+  ["22"]
+  ["24"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["60"]
+  ["61"]
+  ["71"]
+  ["73"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '&foo') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["5"]
+  ["19"]
+  ["20"]
+  ["22"]
+  ["24"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["60"]
+  ["61"]
+  ["71"]
+  ["73"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '3.14.15') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["27"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo_') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["5"]
+  ["19"]
+  ["20"]
+  ["22"]
+  ["24"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["60"]
+  ["61"]
+  ["71"]
+  ["73"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '_a') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["21"]
+  ["32"]
+  ["42"]
+  ["72"]
+  ["74"]
+  ["75"]
+expect@spanner:
+  columns: Id INT64
+  ["75"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'a_') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["21"]
+  ["32"]
+  ["42"]
+  ["72"]
+  ["74"]
+  ["75"]
+expect@spanner:
+  columns: Id INT64
+  ["74"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo--bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["19"]
+  ["20"]
+  ["22"]
+  ["24"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["60"]
+  ["71"]
+  ["73"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '-- foo') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-- foo`, has error(s): -Encountered error on column 3 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '---') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `---`, has error(s): -Encountered error on column 3 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '&&') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["77"]
+  ["78"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo -- bar') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `foo -- bar`, has error(s): -Encountered error on column 7 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '1.5') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["25"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '##tag') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["63"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo#bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["19"]
+  ["20"]
+  ["22"]
+  ["24"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["60"]
+  ["71"]
+  ["73"]
+expect@spanner:
+  columns: Id INT64
+  ["5"]
+  ["17"]
+  ["18"]
+  ["19"]
+  ["20"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["51"]
+  ["52"]
+  ["53"]
+  ["54"]
+  ["55"]
+  ["56"]
+  ["57"]
+  ["58"]
+  ["60"]
+  ["71"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo/bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["19"]
+  ["20"]
+  ["22"]
+  ["24"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["60"]
+  ["71"]
+  ["73"]
+expect@spanner:
+  columns: Id INT64
+  ["5"]
+  ["31"]
+  ["41"]
+  ["44"]
+  ["51"]
+  ["52"]
+  ["53"]
+  ["54"]
+  ["55"]
+  ["56"]
+  ["57"]
+  ["58"]
+  ["60"]
+  ["71"]

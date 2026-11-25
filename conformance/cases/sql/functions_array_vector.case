@@ -268,6 +268,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: ARRAY_MIN cannot be used on argument of type ARRAY<STRUCT<a INT64>> because the array's element type does not support ordering [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: ARRAY_MIN cannot be used on argument of type ARRAY<STRUCT<a INT64>> because the array\'s element type does not support ordering [at 1:8]
 
 case array_min_array_of_array
 query:
@@ -817,6 +820,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function ARRAY_INCLUDES_ANY Argument types: ARRAY<INT64>, ARRAY<FLOAT64> Signature: ARRAY_INCLUDES_ANY(ARRAY<T1>, ARRAY<T1>) Unable to coerce type ARRAY<INT64> to inferred array type ARRAY<FLOAT64> for argument <array<T1>> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_INCLUDES_ANY\n Argument types: ARRAY<INT64>, ARRAY<FLOAT64>\n Signature: ARRAY_INCLUDES_ANY(ARRAY<T1>, ARRAY<T1>)\n Unable to coerce type ARRAY<INT64> to inferred array type ARRAY<FLOAT64> for argument <array<T1>> [at 1:8]
 
 case array_includes_all_hit
 query:
@@ -999,6 +1005,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function ARRAY_INCLUDES_ALL Argument types: ARRAY<INT64>, ARRAY<FLOAT64> Signature: ARRAY_INCLUDES_ALL(ARRAY<T1>, ARRAY<T1>) Unable to coerce type ARRAY<INT64> to inferred array type ARRAY<FLOAT64> for argument <array<T1>> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_INCLUDES_ALL\n Argument types: ARRAY<INT64>, ARRAY<FLOAT64>\n Signature: ARRAY_INCLUDES_ALL(ARRAY<T1>, ARRAY<T1>)\n Unable to coerce type ARRAY<INT64> to inferred array type ARRAY<FLOAT64> for argument <array<T1>> [at 1:8]
 
 case array_includes_any_not_where
 query:
@@ -1094,6 +1103,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function ARRAY_FILTER Argument types: ARRAY<INT64>, LAMBDA Signature: ARRAY_FILTER(ARRAY<T1>, FUNCTION<T1->BOOL>) Argument 2: failed to resolve lambda body, error: Lambda should return type BOOL, but returns INT64 Signature: ARRAY_FILTER(ARRAY<T1>, FUNCTION<(T1, INT64)->BOOL>) Argument 2: lambda requires 2 arguments but 1 is provided [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_FILTER\n Argument types: ARRAY<INT64>, LAMBDA\n Signature: ARRAY_FILTER(ARRAY<T1>, FUNCTION<T1->BOOL>)\n Argument 2: failed to resolve lambda body, error: Lambda should return type BOOL, but returns INT64\n Signature: ARRAY_FILTER(ARRAY<T1>, FUNCTION<(T1, INT64)->BOOL>)\n Argument 2: lambda requires 2 arguments but 1 is provided [at 1:8]
 
 case array_transform_basic
 query:
@@ -1154,6 +1166,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function ARRAY_TRANSFORM Argument types: ARRAY<INT64>, LAMBDA Signature: ARRAY_TRANSFORM(ARRAY<T1>, FUNCTION<T1->T2>) <array<T2>> is inferred to be array of array, which is not supported Signature: ARRAY_TRANSFORM(ARRAY<T1>, FUNCTION<(T1, INT64)->T2>) Argument 2: lambda requires 2 arguments but 1 is provided [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_TRANSFORM\n Argument types: ARRAY<INT64>, LAMBDA\n Signature: ARRAY_TRANSFORM(ARRAY<T1>, FUNCTION<T1->T2>)\n <array<T2>> is inferred to be array of array, which is not supported\n Signature: ARRAY_TRANSFORM(ARRAY<T1>, FUNCTION<(T1, INT64)->T2>)\n Argument 2: lambda requires 2 arguments but 1 is provided [at 1:8]
 
 case array_transform_error
 query:
@@ -1214,6 +1229,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function ARRAY_INCLUDES Argument types: ARRAY<INT64>, LAMBDA Signature: ARRAY_INCLUDES(ARRAY<T1>, T1) Argument 2: expected T1, found LAMBDA Signature: ARRAY_INCLUDES(ARRAY<T1>, FUNCTION<T1->BOOL>) Argument 2: lambda requires 1 arguments but 2 is provided [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function ARRAY_INCLUDES\n Argument types: ARRAY<INT64>, LAMBDA\n Signature: ARRAY_INCLUDES(ARRAY<T1>, T1)\n Argument 2: expected T1, found LAMBDA\n Signature: ARRAY_INCLUDES(ARRAY<T1>, FUNCTION<T1->BOOL>)\n Argument 2: lambda requires 1 arguments but 2 is provided [at 1:8]
 
 case array_filter_subquery_in_body
 query:
@@ -1249,6 +1267,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function COSINE_DISTANCE Argument types: ARRAY<INT64>, ARRAY<INT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT32> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function COSINE_DISTANCE\n Argument types: ARRAY<INT64>, ARRAY<INT64>\n Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT64>\n Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT32> [at 1:8]
 
 case cosine_distance_mixed_float
 query:
@@ -1256,6 +1277,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function COSINE_DISTANCE Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function COSINE_DISTANCE\n Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64>\n Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64>\n Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> [at 1:8]
 
 case cosine_distance_length_mismatch
 query:
@@ -1357,6 +1381,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function COSINE_DISTANCE Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Named argument `options` does not exist in signature Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Named argument `options` does not exist in signature [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function COSINE_DISTANCE\n Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON\n Signature: COSINE_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Named argument `options` does not exist in signature\n Signature: COSINE_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Named argument `options` does not exist in signature [at 1:8]
 
 case euclidean_distance_basic
 query:
@@ -1378,6 +1405,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function EUCLIDEAN_DISTANCE Argument types: ARRAY<INT64>, ARRAY<INT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT32> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function EUCLIDEAN_DISTANCE\n Argument types: ARRAY<INT64>, ARRAY<INT64>\n Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT64>\n Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Argument 1: Unable to coerce type ARRAY<INT64> to expected type ARRAY<FLOAT32> [at 1:8]
 
 case euclidean_distance_mixed_float
 query:
@@ -1385,6 +1415,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function EUCLIDEAN_DISTANCE Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function EUCLIDEAN_DISTANCE\n Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64>\n Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64>\n Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> [at 1:8]
 
 case euclidean_distance_length_mismatch
 query:
@@ -1486,6 +1519,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function EUCLIDEAN_DISTANCE Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Named argument `options` does not exist in signature Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Named argument `options` does not exist in signature [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function EUCLIDEAN_DISTANCE\n Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON\n Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Named argument `options` does not exist in signature\n Signature: EUCLIDEAN_DISTANCE(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Named argument `options` does not exist in signature [at 1:8]
 
 case dot_product_basic
 query:
@@ -1514,6 +1550,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function DOT_PRODUCT Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64> Signature: DOT_PRODUCT(ARRAY<INT64>, ARRAY<INT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<INT64> Signature: DOT_PRODUCT(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32> Signature: DOT_PRODUCT(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function DOT_PRODUCT\n Argument types: ARRAY<FLOAT32>, ARRAY<FLOAT64>\n Signature: DOT_PRODUCT(ARRAY<INT64>, ARRAY<INT64>)\n Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<INT64>\n Signature: DOT_PRODUCT(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Argument 2: Unable to coerce type ARRAY<FLOAT64> to expected type ARRAY<FLOAT32>\n Signature: DOT_PRODUCT(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Argument 1: Unable to coerce type ARRAY<FLOAT32> to expected type ARRAY<FLOAT64> [at 1:8]
 
 case dot_product_length_mismatch
 query:
@@ -1615,6 +1654,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function DOT_PRODUCT Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON Signature: DOT_PRODUCT(ARRAY<INT64>, ARRAY<INT64>) Named argument `options` does not exist in signature Signature: DOT_PRODUCT(ARRAY<FLOAT32>, ARRAY<FLOAT32>) Named argument `options` does not exist in signature Signature: DOT_PRODUCT(ARRAY<FLOAT64>, ARRAY<FLOAT64>) Named argument `options` does not exist in signature [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function DOT_PRODUCT\n Argument types: ARRAY<FLOAT64>, ARRAY<FLOAT64>, options => JSON\n Signature: DOT_PRODUCT(ARRAY<INT64>, ARRAY<INT64>)\n Named argument `options` does not exist in signature\n Signature: DOT_PRODUCT(ARRAY<FLOAT32>, ARRAY<FLOAT32>)\n Named argument `options` does not exist in signature\n Signature: DOT_PRODUCT(ARRAY<FLOAT64>, ARRAY<FLOAT64>)\n Named argument `options` does not exist in signature [at 1:8]
 
 case cosine_distance_null_elem_second
 query:

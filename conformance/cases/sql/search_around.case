@@ -1,0 +1,1276 @@
+# The AROUND operator (#122): `a AROUND b` without a distance, AROUND(n) bounds, order, phrases,
+# chains and malformed operators. Row k (1 to 10) has k-1 words between alpha and omega.
+tags: sql search
+schema:
+  CREATE TABLE D (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DIdx ON D(Tok)
+insert D cols=Id,Body:
+  [1, "alpha omega"]
+  [2, "alpha pad omega"]
+  [3, "alpha pad pad omega"]
+  [4, "alpha pad pad pad omega"]
+  [5, "alpha pad pad pad pad omega"]
+  [6, "alpha pad pad pad pad pad omega"]
+  [7, "alpha pad pad pad pad pad pad omega"]
+  [8, "alpha pad pad pad pad pad pad pad omega"]
+  [9, "alpha pad pad pad pad pad pad pad pad omega"]
+  [10, "alpha pad pad pad pad pad pad pad pad pad omega"]
+  [11, "omega alpha"]
+  [12, "omega pad pad alpha"]
+  [13, "omega pad pad pad pad pad pad pad alpha"]
+  [14, "alpha the of and omega"]
+  [15, "alpha"]
+  [16, "alpha alpha pad pad pad pad pad pad pad pad pad pad omega omega"]
+  [20, "quick brown fox jumps over the lazy dog"]
+  [21, "the lazy dog jumps over the quick brown fox"]
+  [22, "fox fox"]
+  [23, "fox"]
+  [24, "brown quick fox"]
+
+case default_distance
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'omega AROUND alpha') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha  AROUND  omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND omega`, has error(s): -Syntax error on column 8: Expecting 'AROUND(
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha around omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha Around omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'fox AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["22"]
+
+case distances
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(0) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["11"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["11"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(2) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(3) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["11"]
+  ["12"]
+  ["14"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(4) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["11"]
+  ["12"]
+  ["14"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(5) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(6) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["11"]
+  ["12"]
+  ["14"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(8) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(100) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'omega AROUND(2) alpha') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(00002) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(2147483648) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid distance specified in AROUND expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(99999999999999999999) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid distance specified in AROUND expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(-1) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(-1) omega`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1.5) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1.5) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+
+case phrases
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick brown" AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick brown" AROUND(0) fox') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND "lazy dog"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND(3) "lazy dog"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick-brown AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick AROUND fox"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+
+case chains
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND fox AROUND dog') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["21"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND(1) fox AROUND(6) dog') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND(1) fox AROUND dog') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["21"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick | lazy AROUND(1) fox') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND(1) fox | dog') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND fox jumps') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND omega pad') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND fox OR alpha AROUND omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case malformed
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND -fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid use of negation found in search query. Negation may not be used within AROUND.
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-quick AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid use of negation found in search query. Negation may not be used within AROUND.
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'AROUND') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND AROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND( 2 ) fox') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND( 2 ) fox`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND (2) fox') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND (2) fox`, has error(s): -Encountered error on column 14 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND(2)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND(2)`, has error(s): -Syntax error on column 15: Expecting '<SEPARATOR>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND() fox') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `quick AROUND() fox`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND | fox') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quick AROUND-fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'quickAROUND fox') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case quoted
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick brown AROUND fox"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick AROUND(1) fox"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"quick AROUND(1) fox"`, has error(s): -Encountered error on column 8 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"alpha AROUND(1) omega"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"alpha AROUND(1) omega"`, has error(s): -Encountered error on column 8 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"alpha AROUND omega"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"brown AROUND quick"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["24"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick AROUND"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"lazy dog AROUND quick brown"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"quick" AROUND "fox"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["24"]
+
+case distance_forms
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(2147483647) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(9) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1x) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1x) omega`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1 ) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1 ) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["11"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(7)omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(7)omega`, has error(s): -Syntax error on column 16: Expecting '<SEPARATOR>
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1 2) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1 2) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1-2) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1-2) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(7 omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(7 omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(one) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(one) omega`, has error(s): -Syntax error on column 14: Expecting '<NUMBER>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1) omega AROUND pad') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1)`, has error(s): -Syntax error on column 15: Expecting '<SEPARATOR>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1) ') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1)`, has error(s): -Syntax error on column 15: Expecting '<SEPARATOR>
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND ') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1) | omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(1) | omega`, has error(s): -Syntax error on column 16: Expecting '<SEPARATOR>
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND omega | zzz') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND the omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the AROUND omega') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["14"]
+
+case distance_limit
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(101) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(255) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1000) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(65536) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1000000) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(2147483646) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(0.5) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(0.5) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(9.0) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(9.0) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(256) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(300) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(400) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(500) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(511) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(512) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(513) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(600) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(768) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(999) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]

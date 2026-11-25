@@ -2409,6 +2409,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected STRING; Got INT64 [at 1:8]
+expect@spanner:
+  same
 
 case format_051
 query:
@@ -2416,6 +2418,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected STRING; Got BOOL [at 1:8]
+expect@spanner:
+  same
 
 case format_052
 query:
@@ -2423,6 +2427,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected integer; Got STRING [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid type for argument 2 to FORMAT; Expected INT64; Got STRING [at 1:8]
 
 case format_053
 query:
@@ -2430,6 +2437,8 @@ query:
 expect:
   columns: STRING
   ["1.250000"]
+expect@spanner:
+  same
 
 case format_054
 query:
@@ -2437,6 +2446,8 @@ query:
 expect:
   columns: STRING
   ["1.3"]
+expect@spanner:
+  same
 
 case format_055
 query:
@@ -2444,6 +2455,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected integer; Got NUMERIC [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid type for argument 2 to FORMAT; Expected INT64; Got NUMERIC [at 1:8]
 
 case format_056
 query:
@@ -2451,6 +2465,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Too few arguments to FORMAT for pattern "%s"; Expected 2; Got 1 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too few arguments to FORMAT for pattern \"%s\"; Expected 2; Got 1 [at 1:8]
 
 case format_057
 query:
@@ -2458,6 +2475,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Too many arguments to FORMAT for pattern "%s"; Expected 2; Got 3 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too many arguments to FORMAT for pattern \"%s\"; Expected 2; Got 3 [at 1:8]
 
 case format_058
 query:
@@ -2465,6 +2485,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "z" in FORMAT string: "%z" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"z\" in FORMAT string: \"%z\" [at 1:8]
 
 case format_059
 query:
@@ -2472,6 +2495,8 @@ query:
 expect:
   columns: STRING
   ["abc"]
+expect@spanner:
+  same
 
 case format_060
 query:
@@ -2549,6 +2574,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected integer; Got FLOAT64 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid type for argument 2 to FORMAT; Expected INT64; Got FLOAT64 [at 1:8]
 
 case format_071
 query:
@@ -2612,6 +2640,231 @@ query:
 expect:
   columns: STRING
   ["b\"\\xff\""]
+
+case format_invalid_percent_empty_table
+query:
+  SELECT FORMAT('%5%') FROM Dummy
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%5%" [at 1:8]
+expect@spanner:
+  columns: STRING
+
+case format_invalid_percent_minus
+query:
+  SELECT FORMAT('%-%')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%-%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%-%'.
+
+case format_invalid_percent_precision
+query:
+  SELECT FORMAT('%.2%')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%.2%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%.2%'.
+
+case format_invalid_percent_grouping
+query:
+  SELECT FORMAT("%'%")
+expect:
+  columns: STRING
+  ["%"]
+expect@spanner:
+  same
+
+case format_invalid_percent_then_spec
+query:
+  SELECT FORMAT('%5%d', 1)
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%5%d" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too many arguments to FORMAT for pattern \"%5%d\"; Expected 1; Got 2 [at 1:8]
+
+case format_invalid_percent_extra_arg
+query:
+  SELECT FORMAT('%5%', 1)
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%5%" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too many arguments to FORMAT for pattern \"%5%\"; Expected 1; Got 2 [at 1:8]
+
+case format_invalid_percent_param
+query:
+  SELECT FORMAT(@p)
+params:
+  @p STRING = "%5%"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid FORMAT string: "%5%"
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%5%'.
+
+case format_invalid_trailing_param
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "%"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid FORMAT string: "%"
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%'.
+
+case format_invalid_specifier_param
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "%a"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid format specifier character "a" in FORMAT string: "%a"
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; unsupported format specifier %a.
+
+case format_invalid_type_param
+query:
+  SELECT FORMAT(@p, 'a')
+params:
+  @p STRING = "%d"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 2 to FORMAT; Expected integer; Got STRING
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 1 to FORMAT; Expected integer; Got STRING.
+
+case format_runtime_too_many
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "abc"
+expect:
+  error: OUT_OF_RANGE
+  message: Too many arguments to FORMAT for pattern "abc"; Expected 1; Got 2
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 1 arguments provided, but pattern requires 0.
+
+case format_runtime_too_few
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "%d %d"
+expect:
+  error: OUT_OF_RANGE
+  message: Too few arguments to FORMAT for pattern "%d %d"; Expected 3; Got 2
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 1 arguments provided, but pattern requires 2.
+
+case format_runtime_flagged_percent_with_arg
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "%5%%d"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid FORMAT string: "%5%%d"
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%5%%d'.
+
+case format_runtime_float_type
+query:
+  SELECT FORMAT(@p, 'a')
+params:
+  @p STRING = "%f"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 2 to FORMAT; Expected FLOAT64; Got STRING
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 1 to FORMAT; Expected floating point or numeric; Got STRING.
+
+case format_runtime_string_type
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "%s"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 2 to FORMAT; Expected STRING; Got INT64
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 1 to FORMAT; Expected string; Got INT64.
+
+case format_runtime_star_type
+query:
+  SELECT FORMAT(@p, 'a', 1)
+params:
+  @p STRING = "%*d"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 2 to FORMAT; Expected integer; Got STRING
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 1 to FORMAT; Expected int64; Got STRING.
+
+case format_runtime_specifier_no_arg
+query:
+  SELECT FORMAT(@p)
+params:
+  @p STRING = "%a"
+expect:
+  error: OUT_OF_RANGE
+  message: Too few arguments to FORMAT for pattern "%a"; Expected 2; Got 1
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 0 arguments provided, but pattern requires 1.
+
+case format_runtime_unsigned
+query:
+  SELECT FORMAT(@p, 1)
+params:
+  @p STRING = "%u"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 2 to FORMAT; Expected UINT; Got INT64
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 1 to FORMAT; Expected unsigned integer; Got INT64.
+
+case format_runtime_second_arg_type
+query:
+  SELECT FORMAT(@p, 1, 'x')
+params:
+  @p STRING = "%d %d"
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 3 to FORMAT; Expected integer; Got STRING
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid type for argument 2 to FORMAT; Expected integer; Got STRING.
+
+case format_runtime_valid
+query:
+  SELECT FORMAT(@p, 1, 'x')
+params:
+  @p STRING = "%d-%s"
+expect:
+  columns: STRING
+  ["1-x"]
+expect@spanner:
+  same
 
 case regex_001
 query:
@@ -2696,6 +2949,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 3 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 3 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
 
 case regex_013
 query:
@@ -2703,6 +2959,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 4 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 4 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
 
 case regex_014
 query:
@@ -2710,6 +2969,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 4 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 4 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
 
 case regex_015
 query:
@@ -2717,6 +2979,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 3 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 3 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
 
 case regex_016
 query:
@@ -2724,6 +2989,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 3 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 3 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
 
 case regex_017
 query:
@@ -3627,6 +3895,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "c" in FORMAT string: "%c" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"c\" in FORMAT string: \"%c\" [at 1:8]
 
 case regex_146
 query:
@@ -3641,6 +3912,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "a" in FORMAT string: "%a" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"a\" in FORMAT string: \"%a\" [at 1:8]
 
 case regex_148
 query:
@@ -3648,6 +3922,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "l" in FORMAT string: "%ld" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"l\" in FORMAT string: \"%ld\" [at 1:8]
 
 case regex_149
 query:
@@ -3655,6 +3932,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid FORMAT string: "%5%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%5%'.
 
 case regex_150
 query:
@@ -3662,6 +3942,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid FORMAT string: "%" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: \"%\" [at 1:8]
 
 case regex_151
 query:
@@ -3942,6 +4225,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Unknown date part 'DATETIME' [at 1:16]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unknown date part \'DATETIME\' [at 1:16]
 
 case time_031
 query:
@@ -3949,6 +4235,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Unknown date part 'TIME' [at 1:16]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unknown date part \'TIME\' [at 1:16]
 
 case time_032
 query:
@@ -5198,6 +5487,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function DATE Argument types: DATE Signature: DATE(TIMESTAMP, [STRING]) Argument 1: Unable to coerce type DATE to expected type TIMESTAMP Signature: DATE(INT64, INT64, INT64) Signature requires at least 3 arguments, found 1 argument [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function DATE\n Argument types: DATE\n Signature: DATE(TIMESTAMP, [STRING])\n Argument 1: Unable to coerce type DATE to expected type TIMESTAMP\n Signature: DATE(INT64, INT64, INT64)\n Signature requires at least 3 arguments, found 1 argument [at 1:8]
 
 case time_210
 query:
@@ -5205,6 +5497,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function TIMESTAMP Argument types: TIMESTAMP Signature: TIMESTAMP(STRING, [STRING]) Argument 1: Unable to coerce type TIMESTAMP to expected type STRING Signature: TIMESTAMP(DATE, [STRING]) Argument 1: Unable to coerce type TIMESTAMP to expected type DATE [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function TIMESTAMP\n Argument types: TIMESTAMP\n Signature: TIMESTAMP(STRING, [STRING])\n Argument 1: Unable to coerce type TIMESTAMP to expected type STRING\n Signature: TIMESTAMP(DATE, [STRING])\n Argument 1: Unable to coerce type TIMESTAMP to expected type DATE [at 1:8]
 
 case time_211
 query:
@@ -5331,6 +5626,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Could not cast literal "2020-01-01x" to type TIMESTAMP [at 1:13]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Could not cast literal \"2020-01-01x\" to type TIMESTAMP [at 1:13]
 
 case time_229
 query:
@@ -5345,6 +5643,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Could not cast literal " 2020-01-01 " to type TIMESTAMP [at 1:13]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Could not cast literal \" 2020-01-01 \" to type TIMESTAMP [at 1:13]
 
 case time_231
 query:
@@ -7494,6 +7795,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid JSON literal: number overflow parsing '1e400' [at 1:20]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid JSON literal: number overflow parsing \'1e400\' [at 1:20]
 
 case json_178
 query:
@@ -14802,6 +15106,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Too few arguments to FORMAT for pattern "%d %q"; Expected 3; Got 2
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 1 arguments provided, but pattern requires 2.
 
 case time_zones_117
 query:
@@ -14809,6 +15116,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Too few arguments to FORMAT for pattern "%s %s"; Expected 3; Got 2
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 1 arguments provided, but pattern requires 2.
 
 case time_zones_118
 query:
@@ -14816,6 +15126,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Too many arguments to FORMAT for pattern "%d"; Expected 2; Got 3
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 2 arguments provided, but pattern requires 1.
 
 case time_zones_119
 query:

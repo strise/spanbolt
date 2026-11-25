@@ -19,6 +19,7 @@ mod func_net;
 mod func_string;
 mod func_time;
 mod graph;
+mod graph_ddl;
 mod graph_exec;
 mod info_schema;
 mod limits;

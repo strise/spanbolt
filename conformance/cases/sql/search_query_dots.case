@@ -1,0 +1,340 @@
+# Search queries with `.` and other connectors next to a space or at an end (#121). The
+# emulator's rquery grammar rejects a connector that doesn't join two terms; Cloud Spanner
+# accepts some of them.
+tags: sql search
+schema:
+  CREATE TABLE D (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DIdx ON D(Tok)
+insert D cols=Id,Body:
+  [1, "apple banana"]
+  [2, "apple. banana"]
+  [3, "apple.banana"]
+  [4, "banana apple"]
+  [5, "apple"]
+  [6, "x y"]
+  [7, "x. y"]
+  [8, "apple pie banana"]
+
+case dots
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple banana.') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple banana.`, has error(s): -Encountered error on column 13 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple. banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple. banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple .banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple .banana`, has error(s): -Encountered error on column 7 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple . banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple . banana`, has error(s): -Encountered error on column 7 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple.') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple.`, has error(s): -Encountered error on column 6 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '.apple') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `.apple`, has error(s): -Encountered error on column 1 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple banana .') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple banana .`, has error(s): -Encountered error on column 14 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'x y.') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x y.`, has error(s): -Encountered error on column 4 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["7"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'x. y') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x. y`, has error(s): -Encountered error on column 3 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["7"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"apple banana."') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"apple banana."`, has error(s): -Encountered error on column 15 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"apple. banana"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple.. banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple.. banana`, has error(s): -Encountered error on column 8 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple., banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple., banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple.banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple . pie banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple . pie banana`, has error(s): -Encountered error on column 7 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '.') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `.`, has error(s): -Encountered error on column 1 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '. .') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `. .`, has error(s): -Encountered error on column 1 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple. | banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple. | banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple. banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-apple. banana`, has error(s): -Encountered error on column 8 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+
+case connectors
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple/ banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple/ banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple= banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple= banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple: banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple: banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, "apple' banana") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple' banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple- banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple- banana`, has error(s): -Encountered error on column 7 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple -') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple -`, has error(s): -Encountered error on column 7 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple :banana') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple :banana`, has error(s): -Encountered error on column 7 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple banana:') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple banana:`, has error(s): -Encountered error on column 13 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple banana/') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `apple banana/`, has error(s): -Encountered error on column 13 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'apple\\. banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["8"]
+expect@spanner:
+  same

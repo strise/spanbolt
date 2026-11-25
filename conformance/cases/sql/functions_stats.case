@@ -245,6 +245,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for aggregate function STDDEV_SAMP Argument types: STRING Signature: STDDEV_SAMP(NUMERIC) Argument 1: Unable to coerce type STRING to expected type NUMERIC Signature: STDDEV_SAMP(FLOAT64) Argument 1: Unable to coerce type STRING to expected type FLOAT64 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for aggregate function STDDEV_SAMP\n Argument types: STRING\n Signature: STDDEV_SAMP(NUMERIC)\n Argument 1: Unable to coerce type STRING to expected type NUMERIC\n Signature: STDDEV_SAMP(FLOAT64)\n Argument 1: Unable to coerce type STRING to expected type FLOAT64 [at 1:8]
 
 case stddev_window
 query:
@@ -262,6 +265,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for aggregate function VAR_SAMP Argument types: INT64, INT64 Signature: VAR_SAMP(NUMERIC) Signature accepts at most 1 argument, found 2 arguments Signature: VAR_SAMP(FLOAT64) Signature accepts at most 1 argument, found 2 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for aggregate function VAR_SAMP\n Argument types: INT64, INT64\n Signature: VAR_SAMP(NUMERIC)\n Signature accepts at most 1 argument, found 2 arguments\n Signature: VAR_SAMP(FLOAT64)\n Signature accepts at most 1 argument, found 2 arguments [at 1:8]
 
 case stddev_random_0
 query:

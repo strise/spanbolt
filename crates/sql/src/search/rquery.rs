@@ -692,8 +692,8 @@ impl Parser<'_> {
 /// Prod's distance for a bare `AROUND` and for one it can't read (`AROUND(1.5)`).
 const DEFAULT_GAP: i64 = 5;
 
-/// The largest distance prod honours; `AROUND(2147483647)` is `AROUND(5)`.
-const MAX_GAP: i64 = i32::MAX as i64 - 1;
+/// The largest distance prod honours; `AROUND(256)` is `AROUND(5)`.
+const MAX_GAP: i64 = 255;
 
 /// A node no document matches (an empty term).
 fn never_node() -> Node {
@@ -969,6 +969,8 @@ mod tests {
         assert_eq!(prod("alpha AROUND( 2 ) omega"), "(ar alpha 2 omega)");
         assert_eq!(prod("alpha AROUND(1.5) omega"), "(ar alpha 5 omega)");
         assert_eq!(prod("alpha AROUND(2147483647) omega"), "(ar alpha 5 omega)");
+        assert_eq!(prod("alpha AROUND(255) omega"), "(ar alpha 255 omega)");
+        assert_eq!(prod("alpha AROUND(256) omega"), "(ar alpha 5 omega)");
         assert_eq!(prod("alpha AROUND(1) | omega"), "(ar alpha 5 omega)");
         assert_eq!(prod("alpha AROUND(-1) omega"), "");
         assert_eq!(prod("alpha AROUND() omega"), "");

@@ -341,8 +341,14 @@ impl Walk<'_> {
                             .map(|r| r.name().to_string())
                             .unwrap_or_default();
                         is_in = name.ends_with(":$in");
-                        let operator = name.rsplit(':').next().is_some_and(|n| n.starts_with('$'));
-                        let cost = if operator {
+                        let short = name.rsplit(':').next().unwrap_or_default();
+                        let operator = short.starts_with('$');
+                        let cost = if matches!(short, "concat" | "array_concat") {
+                            // `a || b || ...` nests a call per `||` (in default mode), which
+                            // costs Spanner no measurable stack: 1100 operands still meet the
+                            // nesting limit (`conformance/cases/sql/concat_nesting.case`).
+                            (0.0, 0.0)
+                        } else if operator {
                             (1.0 / STACK_OPERATORS, 1.0 / STACK_OPERATORS)
                         } else {
                             (1.0 / STACK_CALLS_QUERY, 1.0 / STACK_CALLS_FUNCTION)

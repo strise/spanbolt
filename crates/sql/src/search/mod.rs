@@ -29,14 +29,15 @@
 //! DEBUG_TOKENLIST, which only prod has, prints token lists in prod's format (`debug`). It is
 //! UNIMPLEMENTED until the analyser's catalog declares it (`engine.rs`).
 //!
-//! Not followed yet: SCORE with `enhance_query => true`; SNIPPET's preference for snippets that
-//! don't cross a sentence end, and for the occurrence of a repeated term nearest the other terms.
+//! Not followed yet: SCORE with `enhance_query => true`; SNIPPET widths of scripts Arial doesn't
+//! cover (Georgian, Armenian, Indic, Thai) and of texts with no letters or digits.
 
 mod debug;
 mod eval;
 mod index;
 mod rquery;
 mod score;
+mod snippet_widths;
 mod tokens;
 
 pub use index::search_keys;
@@ -123,7 +124,10 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
                 })
             })
         }),
-        "snippet" => f(move |_, a| eval::snippet(a, emu)),
+        "snippet" => {
+            let cache = eval::SnippetCache::default();
+            f(move |_, a| eval::snippet(a, emu, &cache))
+        }
         _ => return None,
     })
 }

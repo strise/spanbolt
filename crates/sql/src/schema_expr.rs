@@ -4,9 +4,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use spanbolt_ddl::ColumnType;
+use spanbolt_ddl::{ColumnType, ProtoBundle};
 use spanbolt_storage::expr::{ExprEvaluator, ExprKind, SchemaChange};
 use spanbolt_storage::{DbState, Error, Result, TableMeta, Value};
 
@@ -20,6 +20,8 @@ pub struct SchemaExprs {
     engine: Engine,
     state: DbState,
     cat: Arc<SqlCatalog>,
+    /// Catalogs of databases with a proto bundle, most recent last.
+    bundles: Mutex<Vec<(Arc<ProtoBundle>, Arc<SqlCatalog>)>>,
 }
 
 impl SchemaExprs {
@@ -32,7 +34,50 @@ impl SchemaExprs {
         let engine = Engine::new(opts);
         let state = DbState::default();
         let cat = engine.catalog(&state)?;
-        Ok(SchemaExprs { engine, state, cat })
+        Ok(SchemaExprs {
+            engine,
+            state,
+            cat,
+            bundles: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// The catalog for `table`'s expressions: with the database's proto bundle when it has one.
+    fn catalog(&self, table: &TableMeta) -> Result<Arc<SqlCatalog>> {
+        const KEEP: usize = 8;
+        let Some(bundle) = &table.proto_bundle else {
+            return Ok(self.cat.clone());
+        };
+        let same = |b: &ProtoBundle| {
+            Arc::ptr_eq(&b.descriptors, &bundle.descriptors) && b.types == bundle.types
+        };
+        let mut cache = self.bundles.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, cat)) = cache.iter().find(|(b, _)| same(b)) {
+            return Ok(cat.clone());
+        }
+        let schema = spanbolt_ddl::Schema {
+            proto_bundle: Some((**bundle).clone()),
+            ..Default::default()
+        };
+        let state = DbState {
+            schema: Arc::new(schema),
+            ..DbState::default()
+        };
+        let cat = self.engine.catalog(&state)?;
+        if cache.len() >= KEEP {
+            cache.remove(0);
+        }
+        cache.push((bundle.clone(), cat.clone()));
+        Ok(cat)
+    }
+}
+
+/// A column type as SQL text spells it: PROTO and ENUM types by their names.
+fn sql_type(t: &ColumnType) -> String {
+    match t {
+        ColumnType::Proto(n) | ColumnType::Enum(n) => format!("`{n}`"),
+        ColumnType::Array(e) => format!("ARRAY<{}>", sql_type(e)),
+        other => types::gsql_name(other),
     }
 }
 
@@ -78,7 +123,7 @@ fn assignable(found: &ColumnType, col: &ColumnType) -> bool {
         )
 }
 
-/// GoogleSQL's literal coercions beyond `assignable`: a STRING literal to DATE or TIMESTAMP and a
+/// GoogleSQL's literal coercions beyond `assignable`: a STRING literal to DATE, TIMESTAMP or an ENUM, and a
 /// FLOAT64 literal to NUMERIC. Only a literal coerces (`CONCAT('1970-01-01', '')` doesn't),
 /// parentheses around it are fine.
 fn literal_coerces(expr: &str, found: &ColumnType, col: &ColumnType) -> bool {
@@ -87,7 +132,9 @@ fn literal_coerces(expr: &str, found: &ColumnType, col: &ColumnType) -> bool {
         e = inner.trim();
     }
     match (found, col) {
-        (ColumnType::String(_), ColumnType::Date | ColumnType::Timestamp) => is_string_literal(e),
+        (ColumnType::String(_), ColumnType::Date | ColumnType::Timestamp | ColumnType::Enum(_)) => {
+            is_string_literal(e)
+        }
         (ColumnType::Float64, ColumnType::Numeric) => {
             !e.is_empty()
                 && e.chars()
@@ -196,7 +243,8 @@ impl ExprEvaluator for SchemaExprs {
                 )),
             })
         };
-        let stmt = match crate::analyze::statement(&self.cat, &sql, &row_param(table)) {
+        let cat = self.catalog(table)?;
+        let stmt = match crate::analyze::statement(&cat, &sql, &row_param(table)) {
             Ok(s) => s,
             Err(e) if e.code == spanbolt_storage::Code::Unimplemented => return Err(e),
             Err(e) => return Err(wrap(&e.message)),
@@ -267,9 +315,10 @@ impl ExprEvaluator for SchemaExprs {
         let params = row_param(table);
         let sql = format!(
             "SELECT CAST(({expr}) AS {}) FROM UNNEST(@__row)",
-            types::gsql_name(ty)
+            sql_type(ty)
         );
-        let p = self.engine.prepare_sql(&self.cat, &sql, params)?;
+        let cat = self.catalog(table)?;
+        let p = self.engine.prepare_sql(&cat, &sql, params)?;
         let Body::Query { op, positions } = &p.body else {
             return Err(Error::internal("schema expression is not a query"));
         };
@@ -277,7 +326,7 @@ impl ExprEvaluator for SchemaExprs {
         let params = vec![arg];
         let cx = Cx {
             state: &self.state,
-            cat: &self.cat,
+            cat: &cat,
             params: &params,
             now,
             rw: None,

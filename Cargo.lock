@@ -1482,6 +1482,7 @@ dependencies = [
  "md-5",
  "parking_lot",
  "prost",
+ "prost-reflect",
  "prost-types",
  "regex",
  "regex-syntax",

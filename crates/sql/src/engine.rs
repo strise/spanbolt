@@ -464,6 +464,21 @@ impl Engine {
                             "Returning graph elements or paths from a query",
                         ));
                     }
+                    // Proto fields of the integer types Spanner lacks: the emulator can't
+                    // name the result type, production fails inside.
+                    if let Some(name) = c.r#type.as_ref().and_then(crate::types::narrow_int) {
+                        return Err(if self.opts.emulator_compat {
+                            Error::new(
+                                spanbolt_storage::Code::InvalidArgument,
+                                format!("Type not found: {name}"),
+                            )
+                        } else {
+                            Error::new(
+                                spanbolt_storage::Code::Internal,
+                                "Internal error encountered.",
+                            )
+                        });
+                    }
                     ids.push(c.column_id.unwrap_or(-1));
                     // Anonymous columns (`$col1`) have no name on the wire.
                     let name = oc

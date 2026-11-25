@@ -49,6 +49,8 @@ pub struct SqlCatalog {
     pub graph_index: crate::graph_exec::IndexCache,
     /// Emulator-shaped INFORMATION_SCHEMA (`--emulator-compat`) rather than production's.
     pub emulator_compat: bool,
+    /// The proto bundle's types, when it has any.
+    pub protos: Option<Arc<crate::protos::Bundle>>,
     /// INFORMATION_SCHEMA rows, built on first use. They depend on the schema alone.
     info_rows: Mutex<HashMap<String, Arc<InfoRows>>>,
     pub hits: std::sync::atomic::AtomicU64,
@@ -200,6 +202,8 @@ fn parse_info_tables(tsv: &str) -> Vec<Arc<InfoTable>> {
 pub struct TableCache {
     tables: Mutex<HashMap<String, Weak<googlesql_sys::Table>>>,
     views: Mutex<HashMap<String, Arc<AnalysedView>>>,
+    /// The last proto bundle built, for the next schema version with the same bundle.
+    bundle: Mutex<Weak<crate::protos::Bundle>>,
 }
 
 const MAX_VIEWS: usize = 1024;
@@ -247,13 +251,31 @@ fn same_deps(
 }
 
 impl TableCache {
-    fn get(&self, def: String) -> Result<Arc<googlesql_sys::Table>> {
-        if let Some(t) = self.tables.lock().get(&def).and_then(Weak::upgrade) {
+    /// The table for `def`; `protos` when its columns use the bundle's types, which then key it
+    /// too (a table refers to the bundle's GoogleSQL types).
+    fn get(
+        &self,
+        def: String,
+        protos: Option<&Arc<googlesql_sys::Protos>>,
+    ) -> Result<Arc<googlesql_sys::Table>> {
+        let key = match protos {
+            // The table holds its Protos, so the address names one bundle while the table lives.
+            Some(p) => format!("{:p}\n{def}", Arc::as_ptr(p)),
+            None => def,
+        };
+        if let Some(t) = self.tables.lock().get(&key).and_then(Weak::upgrade) {
             return Ok(t);
         }
+        let json = match protos {
+            Some(_) => &key[key.find('\n').map_or(0, |i| i + 1)..],
+            None => key.as_str(),
+        };
+        let built = match protos {
+            Some(p) => googlesql_sys::Table::with_protos(json, p),
+            None => googlesql_sys::Table::new(json),
+        };
         let t = Arc::new(
-            googlesql_sys::Table::new(&def)
-                .map_err(|e| Error::internal(format!("cannot build a GoogleSQL table: {e}")))?,
+            built.map_err(|e| Error::internal(format!("cannot build a GoogleSQL table: {e}")))?,
         );
         let mut tables = self.tables.lock();
         // Tables no catalog uses any more; amortised over the inserts.
@@ -261,8 +283,24 @@ impl TableCache {
             tables.retain(|_, w| w.strong_count() > 0);
         }
         // A concurrent build may have made the same table; either copy works.
-        tables.insert(def, Arc::downgrade(&t));
+        tables.insert(key, Arc::downgrade(&t));
         Ok(t)
+    }
+
+    /// The types of `schema`'s proto bundle, if it has any.
+    fn bundle(&self, schema: &Schema) -> Result<Option<Arc<crate::protos::Bundle>>> {
+        let Some(b) = schema.proto_bundle.as_ref().filter(|b| !b.types.is_empty()) else {
+            return Ok(None);
+        };
+        if let Some(cached) = self.bundle.lock().upgrade()
+            && Arc::ptr_eq(&cached.descriptors, &b.descriptors)
+            && cached.types.iter().eq(b.types.keys())
+        {
+            return Ok(Some(cached));
+        }
+        let built = Arc::new(crate::protos::Bundle::new(b)?);
+        *self.bundle.lock() = Arc::downgrade(&built);
+        Ok(Some(built))
     }
 
     /// Definitions held, live or not yet pruned.
@@ -277,7 +315,8 @@ impl TableCache {
 
 struct Builder<'a> {
     cache: &'a TableCache,
-    features: &'static [&'static str],
+    features: Vec<&'static str>,
+    protos: Option<Arc<crate::protos::Bundle>>,
     tables: Vec<Arc<googlesql_sys::Table>>,
     /// Lowercase names of `tables`.
     names: Vec<String>,
@@ -286,8 +325,13 @@ struct Builder<'a> {
 
 impl Builder<'_> {
     fn add(&mut self, name: &str, columns: &[Col], pk: &[usize], rel: Relation) -> Result<()> {
+        let protos = self
+            .protos
+            .as_ref()
+            .filter(|_| columns.iter().any(|c| types::is_bundle_type(c.1)))
+            .map(|b| &b.gsql);
         self.tables
-            .push(self.cache.get(table_json(name, columns, pk))?);
+            .push(self.cache.get(table_json(name, columns, pk), protos)?);
         let lower = name.to_ascii_lowercase();
         self.names.push(lower.clone());
         self.relations.insert(lower, rel);
@@ -326,8 +370,12 @@ impl Builder<'_> {
     }
 
     fn gsql(&self) -> Result<googlesql_sys::Catalog> {
-        googlesql_sys::Catalog::from_tables(self.tables.clone(), self.features)
-            .map_err(|e| Error::internal(format!("cannot build the GoogleSQL catalog: {e}")))
+        googlesql_sys::Catalog::from_tables_with_protos(
+            self.tables.clone(),
+            &self.features,
+            self.protos.as_ref().map(|b| b.gsql.clone()),
+        )
+        .map_err(|e| Error::internal(format!("cannot build the GoogleSQL catalog: {e}")))
     }
 }
 
@@ -382,9 +430,15 @@ pub fn build(
     features: &'static [&'static str],
     emulator_compat: bool,
 ) -> Result<SqlCatalog> {
+    let protos = cache.bundle(&schema)?;
+    let mut features = features.to_vec();
+    if protos.is_some() {
+        features.extend_from_slice(crate::protos::FEATURES);
+    }
     let mut b = Builder {
         cache,
         features,
+        protos: protos.clone(),
         tables: Vec::with_capacity(storage.tables.len() + 64),
         names: Vec::with_capacity(storage.tables.len() + 64),
         relations: HashMap::new(),
@@ -473,6 +527,7 @@ pub fn build(
         relations: b.relations,
         plans: Mutex::new(HashMap::new()),
         emulator_compat,
+        protos,
         info_rows: Mutex::new(HashMap::new()),
         hits: Default::default(),
         misses: Default::default(),

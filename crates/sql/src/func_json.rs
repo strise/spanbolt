@@ -626,6 +626,15 @@ fn json_value(j: &J) -> Value {
     Value::Json(Arc::from(text(j)))
 }
 
+/// A JSON value from JSON text that serde wrote (`TO_JSON` of a proto).
+pub(crate) fn from_serde(j: &serde_json::Value) -> Result<Value> {
+    let s = j.to_string();
+    parse(&s)
+        .and_then(|j| canonical(j, Wide::Round))
+        .map(|j| json_value(&j))
+        .map_err(|e| Error::internal(format!("proto JSON: {e}")))
+}
+
 // ---- JSONPath
 
 #[derive(Debug, Clone)]

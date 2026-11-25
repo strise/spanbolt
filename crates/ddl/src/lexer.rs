@@ -450,19 +450,26 @@ pub fn identifiers(sql: &str) -> Option<Vec<String>> {
 }
 
 /// The identifiers `sql` may use as column names: [`identifiers`] without function names (an
-/// unquoted identifier before `(`), so a call to `UPPER` doesn't read a column `Upper`.
+/// unquoted identifier before `(`), so a call to `UPPER` doesn't read a column `Upper`, and
+/// without names after a dot, so a proto or struct field `Info.genre` doesn't read a column
+/// `Genre`.
 pub fn column_references(sql: &str) -> Option<Vec<String>> {
     let toks = tokenize(sql).ok()?;
     let mut out = Vec::new();
     let mut it = toks.into_iter().peekable();
+    // A name after a dot is a field (`Info.genre`), not a column.
+    let mut after_dot = false;
     while let Some(t) = it.next() {
+        let dot = matches!(t.tok, Tok::Sym("."));
         match t.tok {
+            _ if after_dot => {}
             Tok::Ident(w) if !matches!(it.peek().map(|n| &n.tok), Some(Tok::Sym("("))) => {
                 out.push(w)
             }
             Tok::QuotedIdent(w) => out.push(w),
             _ => {}
         }
+        after_dot = dot;
     }
     Some(out)
 }

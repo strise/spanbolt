@@ -62,8 +62,13 @@ suite and the conformance cases exercise.
 - Not supported: `APPROX_*` distance functions with `options`, backups, IAM policies, the
   emulator's own command-line flags (see below for what to use instead), change stream reads (`READ_<stream>`), sequence values
   (`GET_NEXT_SEQUENCE_VALUE`; sequences themselves are stored), `ListDatabaseRoles`, and these
-  DDL statements: proto bundles, queues, placements, user-defined functions, vector indexes and
-  expression index keys.
+  DDL statements: queues, placements, user-defined functions, vector indexes and expression
+  index keys.
+- Proto bundles (`CREATE/ALTER/DROP PROTO BUNDLE`) and PROTO and ENUM columns: DDL, mutations,
+  the Read API, `INFORMATION_SCHEMA`, and SQL (field access, `NEW`, `REPLACE_FIELDS`, casts to and
+  from STRING, BYTES and INT64, `TO_JSON`, DML and `UPDATE ... SET col.field`). Not supported:
+  `UPDATE` of a field deeper than one level or of a NULL proto, and STRUCT fields in
+  `REPLACE_FIELDS`.
 - Locality groups are validated and stored (DDL, `INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS`) but
   don't change where or how data is stored.
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the

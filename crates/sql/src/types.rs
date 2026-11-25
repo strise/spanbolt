@@ -28,16 +28,14 @@ pub fn production_proto_name(name: &str) -> String {
     }
 }
 
-/// The type of a column read from a table or returned by a query. Unlike [`from_proto`], it
-/// accepts `PROTO_BUNDLE`'s PROTO type, which spanbolt can scan and return but nothing else.
-pub fn column_from_proto(t: &TypeProto) -> Result<Type> {
-    if t.type_kind == Some(TypeKind::TypeProto as i32)
-        && let Some(name) = t.proto_type.as_ref().and_then(|p| p.proto_name.as_deref())
-        && name == FILE_DESCRIPTOR_SET
-    {
-        return Ok(Type::Proto(name.to_string()));
+/// A PROTO or ENUM type from the database's proto bundle (arrays included).
+pub fn is_bundle_type(t: &Type) -> bool {
+    match t {
+        Type::Proto(name) => name != FILE_DESCRIPTOR_SET,
+        Type::Enum(_) => true,
+        Type::Array(e) => is_bundle_type(e),
+        _ => false,
     }
-    from_proto(t)
 }
 
 /// A query result column's type as the mode reports it: production names PROTO types
@@ -49,12 +47,43 @@ pub fn result_type(t: Type, emulator_compat: bool) -> Type {
     }
 }
 
+/// The name of an integer type Spanner lacks, also as an array element.
+pub fn narrow_int(t: &TypeProto) -> Option<&'static str> {
+    let kind = |k| t.type_kind == Some(k as i32);
+    if kind(TypeKind::TypeInt32) {
+        Some("INT32")
+    } else if kind(TypeKind::TypeUint32) {
+        Some("UINT32")
+    } else if kind(TypeKind::TypeUint64) {
+        Some("UINT64")
+    } else if kind(TypeKind::TypeArray) {
+        t.array_type
+            .as_ref()
+            .and_then(|a| a.element_type.as_deref())
+            .and_then(narrow_int)
+    } else {
+        None
+    }
+}
+
 pub fn from_proto(t: &TypeProto) -> Result<Type> {
     let kind = t.type_kind.and_then(|k| TypeKind::try_from(k).ok());
     Ok(match kind {
         Some(TypeKind::TypeBool) => Type::Bool,
-        // Enum-typed arguments (date parts) are carried as their numbers.
-        Some(TypeKind::TypeInt64) | Some(TypeKind::TypeEnum) => Type::Int64,
+        Some(TypeKind::TypeInt64) => Type::Int64,
+        Some(TypeKind::TypeEnum) => match t.enum_type.as_ref() {
+            // GoogleSQL's own enums (date parts and other function arguments) are carried as
+            // their numbers.
+            Some(e)
+                if e.is_opaque != Some(true)
+                    && e.enum_name
+                        .as_deref()
+                        .is_some_and(|n| !n.starts_with("googlesql.")) =>
+            {
+                Type::Enum(e.enum_name.clone().unwrap_or_default())
+            }
+            _ => Type::Int64,
+        },
         Some(TypeKind::TypeFloat) => Type::Float32,
         Some(TypeKind::TypeDouble) => Type::Float64,
         Some(TypeKind::TypeNumeric) => Type::Numeric,
@@ -86,8 +115,14 @@ pub fn from_proto(t: &TypeProto) -> Result<Type> {
             }
             Type::Struct(fields)
         }
-        // Only scanning and returning PROTO_BUNDLE is supported (`column_from_proto`).
-        Some(TypeKind::TypeProto) => return Err(unimplemented("Using a PROTO value")),
+        // A bundle type, or PROTO_BUNDLE's (whose fields and casts `proto_plan` leaves
+        // UNIMPLEMENTED).
+        Some(TypeKind::TypeProto) => {
+            match t.proto_type.as_ref().and_then(|p| p.proto_name.as_deref()) {
+                Some(name) => Type::Proto(name.to_string()),
+                None => return Err(Error::internal("PROTO type without a name")),
+            }
+        }
         // Graph elements are carried as structs (see `graph_exec`).
         Some(TypeKind::TypeGraphElement) => {
             Type::Struct(vec![(Some("$graph_element".into()), Type::Int64)])
@@ -144,6 +179,11 @@ pub fn spanner_type(t: &Type) -> pb::Type {
             proto_type_fqn: name.clone(),
             ..Default::default()
         },
+        Type::Enum(name) => pb::Type {
+            code: C::Enum as i32,
+            proto_type_fqn: name.clone(),
+            ..Default::default()
+        },
         Type::Array(e) => pb::Type {
             code: C::Array as i32,
             array_element_type: Some(Box::new(spanner_type(e))),
@@ -189,6 +229,13 @@ pub fn from_spanner(t: &pb::Type) -> Result<Type> {
                 .ok_or_else(|| Error::invalid_argument("Array type is missing an element type."))?;
             Type::Array(Box::new(from_spanner(e)?))
         }
+        C::Proto if !t.proto_type_fqn.is_empty() => Type::Proto(t.proto_type_fqn.clone()),
+        C::Enum if !t.proto_type_fqn.is_empty() => Type::Enum(t.proto_type_fqn.clone()),
+        C::Proto | C::Enum => {
+            return Err(Error::invalid_argument(
+                "PROTO and ENUM parameter types need a proto_type_fqn.",
+            ));
+        }
         C::Struct => {
             let mut fields = Vec::new();
             for f in t.struct_type.iter().flat_map(|s| &s.fields) {
@@ -228,8 +275,9 @@ pub fn gsql_name(t: &Type) -> String {
         Type::Interval => "INTERVAL".into(),
         Type::Uuid => "UUID".into(),
         Type::TokenList => "TOKENLIST".into(),
-        // The shim builds this one PROTO type by this name.
+        // The shim resolves these against the bundle (and PROTO_BUNDLE's type by name).
         Type::Proto(name) => format!("PROTO<{name}>"),
+        Type::Enum(name) => format!("ENUM<{name}>"),
         Type::Array(e) => format!("ARRAY<{}>", gsql_name(e)),
         Type::Struct(fields) => {
             let parts: Vec<String> = fields
@@ -250,6 +298,7 @@ pub fn spanner_name(t: &Type) -> String {
         Type::Float32 => "FLOAT32".into(),
         Type::Float64 => "FLOAT64".into(),
         Type::Proto(name) => format!("PROTO<{}>", production_proto_name(name)),
+        Type::Enum(name) => format!("ENUM<{name}>"),
         Type::Array(e) => format!("ARRAY<{}>", spanner_name(e)),
         Type::Struct(fields) => {
             let parts: Vec<String> = fields
@@ -294,21 +343,14 @@ mod tests {
     }
 
     #[test]
-    fn proto_bundle_is_only_a_column_type() {
-        let t = proto_type(FILE_DESCRIPTOR_SET);
-        assert_eq!(
-            column_from_proto(&t).ok(),
-            Some(Type::Proto(FILE_DESCRIPTOR_SET.into()))
-        );
-        assert_eq!(
-            from_proto(&t).err().map(|e| e.code),
-            Some(Code::Unimplemented)
-        );
-        let other = proto_type("google.protobuf.FileDescriptorProto");
-        assert_eq!(
-            column_from_proto(&other).err().map(|e| e.code),
-            Some(Code::Unimplemented)
-        );
+    fn proto_types_by_name() {
+        // PROTO_BUNDLE's type, and any bundle type.
+        for name in [FILE_DESCRIPTOR_SET, "examples.music.SingerInfo"] {
+            assert_eq!(
+                from_proto(&proto_type(name)).ok(),
+                Some(Type::Proto(name.into()))
+            );
+        }
     }
 
     #[test]

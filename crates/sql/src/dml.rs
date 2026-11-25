@@ -478,8 +478,23 @@ fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fie
             .target
             .as_ref()
             .ok_or_else(|| Error::internal("update without target"))?;
+        let mut val = value(p, item.set_value.as_ref(), &scope)?;
         let id = match target.node.as_ref() {
             Some(E::ResolvedColumnRefNode(c)) => nid(&c.column),
+            Some(E::ResolvedGetProtoFieldNode(_)) => {
+                let Val::Expr(v) = val else {
+                    return Err(unimplemented("UPDATE of a proto field to DEFAULT"));
+                };
+                let (id, ev) = p.proto_field_update(target, v, &scope)?;
+                let read = crate::plan::columns_read(&[target], ts, &layout);
+                p.reads.push(crate::prepared::ScanRead {
+                    table,
+                    index: None,
+                    columns: read,
+                });
+                val = Val::Expr(ev);
+                id
+            }
             _ => return Err(unimplemented("UPDATE of a nested field")),
         };
         let col = layout
@@ -491,7 +506,6 @@ fn update(p: &mut Planner, up: &ResolvedUpdateStmtProto) -> Result<(DmlPlan, Fie
                 "Cannot modify a primary key column with UPDATE",
             ));
         }
-        let val = value(p, item.set_value.as_ref(), &scope)?;
         if matches!(val, Val::Default) && has_default(p, table, col) {
             return Err(unimplemented("DEFAULT values in DML"));
         }

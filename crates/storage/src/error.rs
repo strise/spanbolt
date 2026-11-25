@@ -76,6 +76,8 @@ impl From<spanbolt_ddl::DdlError> for Error {
             D::NotFound(m) => Error::not_found(m),
             // Spanner reports duplicate schema objects as FAILED_PRECONDITION.
             D::AlreadyExists(m) => Error::failed_precondition(m),
+            D::Exists(m) => Error::new(Code::AlreadyExists, m),
+            D::Internal(m) => Error::internal(m),
             D::Unimplemented(m) => Error::new(Code::Unimplemented, m),
         }
     }

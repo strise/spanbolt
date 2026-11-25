@@ -10,8 +10,8 @@ use super::rquery::{self, Node};
 use super::score::{self, ScoreQuery};
 use super::tokens::{
     self, FULLTEXT, GAP, NGRAMS, PHRASE, SUBSTRING, VALUE_PREFIX, VALUE_SUFFIX, WORD_PREFIX,
-    WORD_SUFFIX, arg, decode, int_arg, is_signature, join_letters, joined_letters, lower, split,
-    str_arg,
+    WORD_SUFFIX, arg, decode, fulltext_tokens, int_arg, is_signature, join_letters, joined_letters,
+    lower, split, str_arg,
 };
 
 const DEFAULT_MAX_ALLOWED_GAP: i64 = 5;
@@ -60,6 +60,10 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
             return Err(not_match(func, "TOKENIZE_FULLTEXT"));
         } else if t == GAP {
             pos += 1000;
+        } else if let Some(t) = t.strip_prefix(&[tokens::ALT][..]) {
+            // At the position of the token before it.
+            map.entry(t).or_default().push(pos - 1 - sigs);
+            continue;
         } else {
             map.entry(t).or_default().push(pos - sigs);
         }
@@ -70,7 +74,13 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
 
 /// `GetNormalizedTerms`. Prod joins runs of single letters first, like its tokenizer.
 fn normalized_terms(q: &str, emulator: bool) -> Vec<Vec<u8>> {
-    let q = if emulator { q.into() } else { join_letters(q) };
+    if !emulator {
+        return fulltext_tokens(&lower(&join_letters(q)))
+            .into_iter()
+            .filter(|(_, alt)| !alt)
+            .map(|(t, _)| t.into_bytes())
+            .collect();
+    }
     split(q.as_bytes())
         .map(|t| match std::str::from_utf8(t) {
             Ok(t) => lower(t).into_bytes(),
@@ -198,6 +208,14 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
 
 /// One pass over a fulltext TOKENLIST with `BuildTokenMap`'s validation, collecting the
 /// positions of `terms` only. Returns whether the tokenized source was NULL.
+/// Tokens without the ones prod stores at the position of the token before them
+/// (`tokens::ALT`); the `words_phrase` dialect matches the first token at each position.
+fn primary_tokens(toks: Vec<&[u8]>) -> Vec<&[u8]> {
+    toks.into_iter()
+        .filter(|t| t.first() != Some(&tokens::ALT))
+        .collect()
+}
+
 fn term_positions(
     bytes: &[u8],
     func: &str,
@@ -223,10 +241,18 @@ fn term_positions(
         } else if t == GAP {
             pos += 1000;
         } else {
+            // A token at the position of the token before it.
+            let (t, at) = match t.strip_prefix(&[tokens::ALT][..]) {
+                Some(t) => (t, pos - 1),
+                None => (t, pos),
+            };
             for (i, term) in terms.iter().enumerate() {
                 if term.as_slice() == t {
-                    out[i].push(pos - sigs);
+                    out[i].push(at - sigs);
                 }
+            }
+            if at < pos {
+                continue;
             }
         }
         first = false;
@@ -602,7 +628,7 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         }
         Dialect::WordsPhrase => {
             let terms = normalized_terms(q, emulator);
-            let toks = toks.unwrap_or_default();
+            let toks = primary_tokens(toks.unwrap_or_default());
             Ok(Value::Bool(
                 !terms.is_empty()
                     && toks.len() >= terms.len()
@@ -654,7 +680,7 @@ pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
     }
     let terms = normalized_terms(q, emulator);
     let score = if dialect(args)? == Dialect::WordsPhrase {
-        let toks = toks.unwrap_or_default();
+        let toks = primary_tokens(toks.unwrap_or_default());
         if terms.is_empty() || toks.len() < terms.len() {
             0.0
         } else {

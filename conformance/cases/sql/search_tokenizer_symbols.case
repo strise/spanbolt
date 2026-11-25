@@ -1,0 +1,1121 @@
+# TOKENIZE_FULLTEXT around `_`, `&`, `@`, `--`, `</` and non-ASCII spaces (#119). Cloud Spanner
+# keeps some of these inside a token, adds a second token at the same position for others, and
+# splits on Unicode spaces; the emulator splits on all of them.
+tags: sql search
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "foo_bar"]
+  [2, "_foo"]
+  [3, "foo_"]
+  [4, "foo__bar"]
+  [5, "a_b_c"]
+  [6, "foo_1"]
+  [7, "1_2"]
+  [8, "foo _ bar"]
+  [9, "__init__"]
+  [10, "é_f"]
+  [11, "AT&T"]
+  [12, "foo&bar"]
+  [13, "foo & bar"]
+  [14, "&foo"]
+  [15, "foo&"]
+  [16, "a&&b"]
+  [17, "x&y&z"]
+  [18, "1&2"]
+  [19, "foo&amp;bar"]
+  [20, "foo@bar"]
+  [21, "foo@bar.com"]
+  [22, "first.last@example.co.uk"]
+  [23, "@foo"]
+  [24, "foo@"]
+  [25, "a@b@c"]
+  [26, "foo @ bar"]
+  [27, "1@2"]
+  [28, "x@y z"]
+  [29, "first-last@ex.com"]
+  [30, "foo@@bar"]
+  [31, "Foo@Bar"]
+  [32, "--"]
+  [33, "foo--bar"]
+  [34, "foo -- bar"]
+  [35, "---"]
+  [36, "foo---bar"]
+  [37, "----"]
+  [38, "-"]
+  [39, "--foo"]
+  [40, "foo--"]
+  [41, "1--2"]
+  [42, "foo—bar"]
+  [43, "</"]
+  [44, "a</b"]
+  [45, "x </ y"]
+  [46, "<"]
+  [47, "<foo"]
+  [48, "foo>"]
+  [49, "/>"]
+  [50, "<!--"]
+  [51, "-->"]
+  [52, "<br/>"]
+  [53, "x<y"]
+  [54, "<>"]
+  [55, "</>"]
+  [56, "<//"]
+  [57, "foo</"]
+  [58, "<p>hello</p>"]
+  [59, "foo bar"]
+  [60, "foo　bar"]
+  [61, "foo bar"]
+  [62, "foo bar"]
+  [63, "foo bar"]
+  [64, "foo​bar"]
+  [65, "foo bar"]
+  [66, "foo bar"]
+  [67, "foo bar"]
+  [68, "foo\u0085bar"]
+  [69, "foo\u000bbar"]
+  [70, "foo⁠bar"]
+  [71, "foo﻿bar"]
+  [72, "foo bar"]
+  [73, "x y"]
+  [74, "foo  bar"]
+  [75, "foo   bar"]
+  [76, "c++"]
+  [77, "c#"]
+  [78, "node.js"]
+  [79, "3.14"]
+  [80, "1,000"]
+  [81, "foo's"]
+  [82, "#tag"]
+  [83, "foo.bar"]
+  [84, "foo@bar_baz"]
+  [85, "foo_bar@baz"]
+  [86, "foo&bar_baz"]
+  [87, "foo_bar&baz"]
+  [88, "a@b.c"]
+  [89, "foo@bar baz@qux"]
+  [90, "foo@bar@baz"]
+  [91, "x--"]
+  [92, "--x"]
+  [93, "x--y--z"]
+  [94, "x </y"]
+  [95, "x</ y"]
+  [96, "x<</y"]
+  [97, "foo&-bar"]
+  [98, "foo-&bar"]
+  [99, "foo_-bar"]
+  [100, "FOO_BAR"]
+  [101, "Foo&Bar"]
+  [102, "foo　　bar"]
+  [103, "x y z"]
+  [104, "foo—bar"]
+  [105, "foo–bar"]
+  [106, "foo­bar"]
+  [107, "foo、bar"]
+  [108, "foo。bar"]
+  [109, "foo，bar"]
+  [110, "foo·bar"]
+  [111, "foo·bar baz"]
+  [112, "foo’s"]
+  [113, "foo“bar”"]
+  [114, "foo…bar"]
+  [115, "foo•bar"]
+  [116, "foo€bar"]
+  [117, "foo©bar"]
+  [118, "foo™bar"]
+  [119, "foo±bar"]
+  [120, "foo½bar"]
+
+case tokens
+query:
+  SELECT Id, Body, DEBUG_TOKENLIST(Tok) AS t FROM T ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:18]
+expect@spanner:
+  columns: Id INT64, Body STRING, t STRING
+  ["1","foo_bar","foo_bar(boundary, end_boundary)"]
+  ["2","_foo","[_foo, foo](boundary, end_boundary)"]
+  ["3","foo_","[foo, foo_](boundary, end_boundary)"]
+  ["4","foo__bar","foo__bar(boundary, end_boundary)"]
+  ["5","a_b_c","a_b_c(boundary, end_boundary)"]
+  ["6","foo_1","foo_1(boundary, end_boundary)"]
+  ["7","1_2","1_2(boundary, end_boundary)"]
+  ["8","foo _ bar","foo(boundary), _, bar(end_boundary)"]
+  ["9","__init__","[__init__, init](boundary, end_boundary)"]
+  ["10","é_f","é_f(boundary, end_boundary)"]
+  ["11","AT&T","at&t(boundary, end_boundary)"]
+  ["12","foo&bar","foo&bar(boundary, end_boundary)"]
+  ["13","foo & bar","foo(boundary), &, bar(end_boundary)"]
+  ["14","&foo","&foo(boundary, end_boundary)"]
+  ["15","foo&","foo&(boundary, end_boundary)"]
+  ["16","a&&b","a(boundary), &&, b(end_boundary)"]
+  ["17","x&y&z","x&y&z(boundary, end_boundary)"]
+  ["18","1&2","1&2(boundary, end_boundary)"]
+  ["19","foo&amp;bar","foo&amp(boundary), bar(end_boundary)"]
+  ["20","foo@bar","[foo, foo@bar](boundary), bar(end_boundary)"]
+  ["21","foo@bar.com","[foo, foo@bar.com](boundary), bar, com(end_boundary)"]
+  ["22","first.last@example.co.uk","[first, first.last@example.co.uk](boundary), last, example, co, uk(end_boundary)"]
+  ["23","@foo","[@foo, foo](boundary, end_boundary)"]
+  ["24","foo@","foo(boundary, end_boundary)"]
+  ["25","a@b@c","a(boundary), b, c(end_boundary)"]
+  ["26","foo @ bar","foo(boundary), bar(end_boundary)"]
+  ["27","1@2","[1, 1@2](boundary), 2(end_boundary)"]
+  ["28","x@y z","[x, x@y](boundary), y, z(end_boundary)"]
+  ["29","first-last@ex.com","[first, first-last@ex.com](boundary), last, ex, com(end_boundary)"]
+  ["30","foo@@bar","foo(boundary), @@, bar(end_boundary)"]
+  ["31","Foo@Bar","[foo, foo@bar](boundary), bar(end_boundary)"]
+  ["32","--","--(boundary, end_boundary)"]
+  ["33","foo--bar","foo(boundary), --, bar(end_boundary)"]
+  ["34","foo -- bar","foo(boundary), --, bar(end_boundary)"]
+  ["35","---","---(boundary, end_boundary)"]
+  ["36","foo---bar","foo(boundary), ---, bar(end_boundary)"]
+  ["37","----",""]
+  ["38","-",""]
+  ["39","--foo","--(boundary), foo(end_boundary)"]
+  ["40","foo--","foo(boundary), --(end_boundary)"]
+  ["41","1--2","1(boundary), --, 2(end_boundary)"]
+  ["42","foo—bar","foo(boundary), bar(end_boundary)"]
+  ["43","</","</(boundary, end_boundary)"]
+  ["44","a</b","a(boundary), </, b(end_boundary)"]
+  ["45","x </ y","x(boundary), </, y(end_boundary)"]
+  ["46","<",""]
+  ["47","<foo","foo(boundary, end_boundary)"]
+  ["48","foo>","foo(boundary, end_boundary)"]
+  ["49","/>","/>(boundary, end_boundary)"]
+  ["50","<!--",""]
+  ["51","-->","-->(boundary, end_boundary)"]
+  ["52","<br/>","br(boundary), />(end_boundary)"]
+  ["53","x<y","x(boundary), y(end_boundary)"]
+  ["54","<>","<>(boundary, end_boundary)"]
+  ["55","</>","</>(boundary, end_boundary)"]
+  ["56","<//",""]
+  ["57","foo</","foo(boundary), </(end_boundary)"]
+  ["58","<p>hello</p>","p(boundary), hello, </, p(end_boundary)"]
+  ["59","foo bar","foo(boundary), bar(end_boundary)"]
+  ["60","foo　bar","foo(boundary), bar(end_boundary)"]
+  ["61","foo bar","foo(boundary), bar(end_boundary)"]
+  ["62","foo bar","foo(boundary), bar(end_boundary)"]
+  ["63","foo bar","foo(boundary), bar(end_boundary)"]
+  ["64","foo​bar","foo(boundary), bar(end_boundary)"]
+  ["65","foo bar","foo(boundary), bar(end_boundary)"]
+  ["66","foo bar","foo(boundary), bar(end_boundary)"]
+  ["67","foo bar","foo(boundary), bar(end_boundary)"]
+  ["68","foobar","foo(boundary), bar(end_boundary)"]
+  ["69","foo\u000bbar","foo(boundary), bar(end_boundary)"]
+  ["70","foo⁠bar","foo(boundary), bar(end_boundary)"]
+  ["71","foo﻿bar","foo(boundary), bar(end_boundary)"]
+  ["72","foo bar","foo(boundary), bar(end_boundary)"]
+  ["73","x y","x(boundary), y(end_boundary)"]
+  ["74","foo  bar","foo(boundary), bar(end_boundary)"]
+  ["75","foo   bar","foo(boundary), bar(end_boundary)"]
+  ["76","c++","c++(boundary, end_boundary)"]
+  ["77","c#","c#(boundary, end_boundary)"]
+  ["78","node.js","node(boundary), js(end_boundary)"]
+  ["79","3.14","3.14(boundary, end_boundary)"]
+  ["80","1,000","1000(boundary, end_boundary)"]
+  ["81","foo's","[foo, foo\\'s](boundary, end_boundary)"]
+  ["82","#tag","[#tag, tag](boundary, end_boundary)"]
+  ["83","foo.bar","foo(boundary), bar(end_boundary)"]
+  ["84","foo@bar_baz","[foo, foo@bar_baz](boundary), bar_baz(end_boundary)"]
+  ["85","foo_bar@baz","[foo_bar, foo_bar@baz](boundary), baz(end_boundary)"]
+  ["86","foo&bar_baz","foo&bar_baz(boundary, end_boundary)"]
+  ["87","foo_bar&baz","foo_bar&baz(boundary, end_boundary)"]
+  ["88","a@b.c","[a, a@b.c](boundary), bc(end_boundary)"]
+  ["89","foo@bar baz@qux","[foo, foo@bar](boundary), bar, [baz, baz@qux], qux(end_boundary)"]
+  ["90","foo@bar@baz","foo(boundary), bar, baz(end_boundary)"]
+  ["91","x--","x(boundary), --(end_boundary)"]
+  ["92","--x","--(boundary), x(end_boundary)"]
+  ["93","x--y--z","x(boundary), --, y, --, z(end_boundary)"]
+  ["94","x </y","x(boundary), </, y(end_boundary)"]
+  ["95","x</ y","x(boundary), </, y(end_boundary)"]
+  ["96","x<</y","x(boundary), <</, y(end_boundary)"]
+  ["97","foo&-bar","foo(boundary), &-, bar(end_boundary)"]
+  ["98","foo-&bar","foo(boundary), -&, bar(end_boundary)"]
+  ["99","foo_-bar","[foo, foo_](boundary), bar(end_boundary)"]
+  ["100","FOO_BAR","foo_bar(boundary, end_boundary)"]
+  ["101","Foo&Bar","foo&bar(boundary, end_boundary)"]
+  ["102","foo　　bar","foo(boundary), bar(end_boundary)"]
+  ["103","x y z","x(boundary), y, z(end_boundary)"]
+  ["104","foo—bar","foo(boundary), bar(end_boundary)"]
+  ["105","foo–bar","foo(boundary), bar(end_boundary)"]
+  ["106","foo­bar","foobar(boundary, end_boundary)"]
+  ["107","foo、bar","foo(boundary), bar(end_boundary)"]
+  ["108","foo。bar","foo(boundary), bar(end_boundary)"]
+  ["109","foo，bar","foo(boundary), bar(end_boundary)"]
+  ["110","foo·bar","foo(boundary), bar(end_boundary)"]
+  ["111","foo·bar baz","foo(boundary), bar, baz(end_boundary)"]
+  ["112","foo’s","[foo, foo\\'s](boundary, end_boundary)"]
+  ["113","foo“bar”","foo(boundary), bar(end_boundary)"]
+  ["114","foo…bar","foo(boundary), bar(end_boundary)"]
+  ["115","foo•bar","foo(boundary), bar(end_boundary)"]
+  ["116","foo€bar","foo(boundary), €, bar(end_boundary)"]
+  ["117","foo©bar","foo(boundary), bar(end_boundary)"]
+  ["118","foo™bar","foo(boundary), ™, bar(end_boundary)"]
+  ["119","foo±bar","foo(boundary), bar(end_boundary)"]
+  ["120","foo½bar","foo½bar(boundary, end_boundary)"]
+
+case search
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo_bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["75"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["85"]
+  ["100"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo bar"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["26"]
+  ["31"]
+  ["42"]
+  ["59"]
+  ["60"]
+  ["61"]
+  ["62"]
+  ["63"]
+  ["64"]
+  ["65"]
+  ["66"]
+  ["67"]
+  ["68"]
+  ["69"]
+  ["70"]
+  ["71"]
+  ["72"]
+  ["74"]
+  ["75"]
+  ["83"]
+  ["89"]
+  ["90"]
+  ["99"]
+  ["102"]
+  ["104"]
+  ["105"]
+  ["107"]
+  ["108"]
+  ["109"]
+  ["110"]
+  ["111"]
+  ["113"]
+  ["114"]
+  ["115"]
+  ["117"]
+  ["119"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'init') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["9"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '_foo') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["6"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["15"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["23"]
+  ["24"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["39"]
+  ["40"]
+  ["47"]
+  ["48"]
+  ["57"]
+  ["75"]
+  ["81"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'at&t') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["11"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo&bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["75"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["12"]
+  ["101"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo@bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["75"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["31"]
+  ["89"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo@bar.com') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo bar com"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '--') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `--`, has error(s): -Encountered error on column 2 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["32"]
+  ["33"]
+  ["34"]
+  ["39"]
+  ["40"]
+  ["41"]
+  ["91"]
+  ["92"]
+  ["93"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo -- bar"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["33"]
+  ["34"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '</') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `/`, has error(s): -Encountered error on column 1 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["43"]
+  ["44"]
+  ["45"]
+  ["57"]
+  ["58"]
+  ["94"]
+  ["95"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'hello') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["58"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"hello p"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["58"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'c++') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+  ["25"]
+  ["76"]
+  ["77"]
+  ["88"]
+expect@spanner:
+  columns: Id INT64
+  ["76"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '#tag') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["82"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'tag') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["82"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '1000') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["80"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '3.14') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["79"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, "foo's") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["81"]
+expect@spanner:
+  columns: Id INT64
+  ["81"]
+  ["112"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["75"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["8"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["42"]
+  ["59"]
+  ["60"]
+  ["61"]
+  ["62"]
+  ["63"]
+  ["64"]
+  ["65"]
+  ["66"]
+  ["67"]
+  ["68"]
+  ["69"]
+  ["70"]
+  ["71"]
+  ["72"]
+  ["74"]
+  ["75"]
+  ["83"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["102"]
+  ["104"]
+  ["105"]
+  ["107"]
+  ["108"]
+  ["109"]
+  ["110"]
+  ["111"]
+  ["113"]
+  ["114"]
+  ["115"]
+  ["116"]
+  ["117"]
+  ["118"]
+  ["119"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo&amp') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["19"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '&') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["13"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo AND bar') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["8"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["42"]
+  ["59"]
+  ["60"]
+  ["61"]
+  ["62"]
+  ["63"]
+  ["64"]
+  ["65"]
+  ["66"]
+  ["67"]
+  ["68"]
+  ["69"]
+  ["70"]
+  ["71"]
+  ["72"]
+  ["74"]
+  ["75"]
+  ["83"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["102"]
+  ["104"]
+  ["105"]
+  ["107"]
+  ["108"]
+  ["109"]
+  ["110"]
+  ["111"]
+  ["113"]
+  ["114"]
+  ["115"]
+  ["116"]
+  ["117"]
+  ["118"]
+  ["119"]
+
+case alternates
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo@bar bar"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["31"]
+  ["89"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo@bar"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["31"]
+  ["89"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo@bar bar') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["75"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["31"]
+  ["89"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo bar"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+  ["21"]
+  ["26"]
+  ["31"]
+  ["42"]
+  ["59"]
+  ["60"]
+  ["61"]
+  ["62"]
+  ["63"]
+  ["64"]
+  ["65"]
+  ["66"]
+  ["67"]
+  ["68"]
+  ["69"]
+  ["70"]
+  ["71"]
+  ["72"]
+  ["74"]
+  ["75"]
+  ["83"]
+  ["89"]
+  ["90"]
+  ["99"]
+  ["102"]
+  ["104"]
+  ["105"]
+  ["107"]
+  ["108"]
+  ["109"]
+  ["110"]
+  ["111"]
+  ["113"]
+  ["114"]
+  ["115"]
+  ["117"]
+  ["119"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"_foo"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"_foo"`, has error(s): -Encountered error on column 2 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo s"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["81"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo''s') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: concatenated string literals must be separated by whitespace or comments [at 1:41]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo''s"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: concatenated string literals must be separated by whitespace or comments [at 1:42]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"__init__"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"__init__"`, has error(s): -Encountered error on column 2 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["9"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"#tag"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"#tag"`, has error(s): -Encountered error on column 2 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["82"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo_') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["6"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["15"]
+  ["19"]
+  ["20"]
+  ["21"]
+  ["23"]
+  ["24"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["39"]
+  ["40"]
+  ["47"]
+  ["48"]
+  ["57"]
+  ["75"]
+  ["81"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+  ["99"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo_ bar"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["8"]
+  ["12"]
+  ["13"]
+  ["20"]
+  ["21"]
+  ["26"]
+  ["30"]
+  ["31"]
+  ["33"]
+  ["34"]
+  ["36"]
+  ["83"]
+  ["84"]
+  ["85"]
+  ["86"]
+  ["87"]
+  ["89"]
+  ["90"]
+  ["97"]
+  ["98"]
+  ["99"]
+  ["100"]
+  ["101"]
+expect@spanner:
+  columns: Id INT64
+  ["99"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo bar com"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo com"') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"foo@bar com"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"bar com"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo AROUND(1) com') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'foo@bar AROUND(1) com') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["21"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id, SCORE(Tok, 'foo') AS s FROM T WHERE SEARCH(Tok, 'foo') AND Id IN (2, 3, 20, 21, 81, 82) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["2",1.0]
+  ["3",1.0]
+  ["20",1.0]
+  ["21",1.0]
+  ["81",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["2",1.2588917016983032]
+  ["3",1.2588917016983032]
+  ["20",1.2588917016983032]
+  ["21",1.2588917016983032]
+  ["81",1.2588917016983032]

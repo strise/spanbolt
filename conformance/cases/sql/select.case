@@ -292,4 +292,7 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected identifier "SELEC" [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected identifier \"SELEC\" [at 1:1]
 

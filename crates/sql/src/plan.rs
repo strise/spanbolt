@@ -1185,32 +1185,46 @@ impl<'c> Planner<'c> {
         Ok(keys)
     }
 
-    /// TABLESAMPLE. Rejects what the emulator's query validator rejects; the analyser already
-    /// checks the size's type and a literal's range, and rejects PARTITION BY. Filters above the
-    /// sample are not pushed into its input: they apply to the sampled rows.
+    /// TABLESAMPLE. Rejects what the emulator's query validator rejects, or in default mode what
+    /// production Spanner rejects, in its words (and WITH WEIGHT, which it doesn't support); the
+    /// analyser already checks the size's type and a literal's range, and rejects PARTITION BY.
+    /// Filters above the sample are not pushed into its input: they apply to the sampled rows.
     fn sample_scan(&mut self, x: &ResolvedSampleScanProto, outer: &Scope) -> Result<Planned> {
+        let emulator = self.opts.emulator_compat;
         if x.repeatable_argument.is_some() {
-            return Err(Error::invalid_argument("REPEATABLE is not supported"));
+            return Err(Error::invalid_argument(if emulator {
+                "REPEATABLE is not supported"
+            } else {
+                "REPEATABLE TABLESAMPLE is not supported."
+            }));
         }
-        let method = x.method.as_deref().unwrap_or("").to_ascii_lowercase();
+        let name = x.method.as_deref().unwrap_or("").to_ascii_lowercase();
         let unit = x.unit.unwrap_or(0);
         let rows = unit == resolved_sample_scan_enums::SampleUnit::Rows as i32;
-        let method = match method.as_str() {
-            "bernoulli" if rows => {
-                return Err(Error::invalid_argument("BERNOULLI/ROWS is not supported"));
-            }
-            "bernoulli" => SampleMethod::Bernoulli,
-            "reservoir" if !rows => {
-                return Err(Error::invalid_argument(
-                    "RESERVOIR/PERCENT is not supported",
-                ));
-            }
-            "reservoir" => SampleMethod::Reservoir,
-            "system" => {
-                return Err(Error::invalid_argument("SYSTEM sampling is not supported"));
-            }
-            m => return Err(Error::invalid_argument(format!("Unknown scan method {m}"))),
+        let method = match (name.as_str(), rows) {
+            ("bernoulli", false) => Some(SampleMethod::Bernoulli),
+            ("reservoir", true) => Some(SampleMethod::Reservoir),
+            _ => None,
         };
+        let Some(method) = method else {
+            if !emulator {
+                let unit = if rows { "ROWS" } else { "PERCENT" };
+                return Err(Error::invalid_argument(format!(
+                    "The specified sampling algorithm ({name}/{unit}) is not supported (check the spelling)."
+                )));
+            }
+            return Err(Error::invalid_argument(match name.as_str() {
+                "bernoulli" => "BERNOULLI/ROWS is not supported".to_string(),
+                "reservoir" => "RESERVOIR/PERCENT is not supported".to_string(),
+                "system" => "SYSTEM sampling is not supported".to_string(),
+                m => format!("Unknown scan method {m}"),
+            }));
+        };
+        if !emulator && x.weight_column.is_some() {
+            return Err(Error::invalid_argument(
+                "TABLESAMPLE WITH WEIGHT is not supported.",
+            ));
+        }
         if !x.partition_by_list.is_empty() {
             return Err(unimplemented("TABLESAMPLE with PARTITION BY"));
         }
@@ -1233,6 +1247,7 @@ impl<'c> Planner<'c> {
                 method,
                 size,
                 weight: weight.is_some(),
+                emulator,
             }),
             layout,
         })

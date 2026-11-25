@@ -15106,6 +15106,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Too few arguments to FORMAT for pattern "%d %q"; Expected 3; Got 2
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 1 arguments provided, but pattern requires 2.
 
 case time_zones_117
 query:
@@ -15113,6 +15116,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Too few arguments to FORMAT for pattern "%s %s"; Expected 3; Got 2
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 1 arguments provided, but pattern requires 2.
 
 case time_zones_118
 query:
@@ -15120,6 +15126,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Too many arguments to FORMAT for pattern "%d"; Expected 2; Got 3
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Wrong number of arguments provided to FORMAT; 2 arguments provided, but pattern requires 1.
 
 case time_zones_119
 query:

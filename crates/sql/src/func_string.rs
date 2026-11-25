@@ -1441,7 +1441,7 @@ fn format_check_spanner(pat: &str, types: &[Type]) -> Result<()> {
         ))
     };
     // What each argument must be: `None` for `*`, else the specifier it fills.
-    let mut want: Vec<Option<char>> = Vec::new();
+    let mut want: Vec<Option<char>> = Vec::with_capacity(types.len());
     let mut k = 0usize;
     while let Some(off) = b[k..].iter().position(|&c| c == b'%') {
         k += off + 1;

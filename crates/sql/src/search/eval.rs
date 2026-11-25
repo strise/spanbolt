@@ -583,7 +583,22 @@ fn null_search(c: &Compiled) -> Value {
     }
 }
 
+/// The arguments with the query's diacritics removed when the token list was made with
+/// `remove_diacritics => true` (`tokens::removes_diacritics`).
+fn query_without_diacritics(args: &[Value]) -> std::borrow::Cow<'_, [Value]> {
+    if let (Some(Value::TokenList(b)), Some(Value::String(q))) = (args.first(), args.get(1))
+        && tokens::removes_diacritics(b)
+        && let std::borrow::Cow::Owned(stripped) = super::fold::remove_diacritics(q)
+    {
+        let mut a = args.to_vec();
+        a[1] = Value::String(stripped.into());
+        return a.into();
+    }
+    args.into()
+}
+
 pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
+    let args = &*query_without_diacritics(args);
     if let Some(e) =
         invalid_query_type(&args[1]).or_else(|| invalid_enhance_query_options(args, emulator))
     {
@@ -718,6 +733,7 @@ pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
 /// Cloud Spanner's SCORE (see `score`): the same for every dialect, which only changes how the
 /// query is read.
 fn score_prod(args: &[Value]) -> Result<Value> {
+    let args = &*query_without_diacritics(args);
     let words_query = |phrase: bool| -> Option<ScoreQuery> {
         let Value::String(q) = &args[1] else {
             return None;

@@ -340,6 +340,15 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<&[u8]>> {
     iter(bytes).collect()
 }
 
+/// Whether a TOKENIZE_FULLTEXT list was made with `remove_diacritics => true` (its signature is
+/// `fulltext-<null>-rd`). Cloud Spanner then strips diacritics from SEARCH and SCORE queries over
+/// it too, and only then.
+pub fn removes_diacritics(bytes: &[u8]) -> bool {
+    iter(bytes).next().and_then(|t| t.ok()).is_some_and(|t| {
+        t.starts_with(FULLTEXT.as_bytes()) && t.split(|&c| c == b'-').skip(2).any(|p| p == b"rd")
+    })
+}
+
 /// `IsTokenizerSignature`.
 pub fn is_signature(t: &[u8]) -> bool {
     [
@@ -721,7 +730,12 @@ pub fn tokenize_fulltext(args: &[Value], emulator: bool) -> Result<Value> {
     // Only Cloud Spanner's TOKENIZE_FULLTEXT takes remove_diacritics (the shim declares it).
     let remove_diacritics = !emulator && matches!(arg(args, 4), Some(Value::Bool(true)));
     let toks = std::cell::RefCell::new(vec![
-        format!("{FULLTEXT}-{}", bool_digit(text.is_null())).into_bytes(),
+        format!(
+            "{FULLTEXT}-{}{}",
+            bool_digit(text.is_null()),
+            if remove_diacritics { "-rd" } else { "" }
+        )
+        .into_bytes(),
     ]);
     each_text(
         text,

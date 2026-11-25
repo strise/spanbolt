@@ -26,6 +26,8 @@
 //! - TOKENIZE_FULLTEXT and TOKENIZE_SUBSTRING, and SEARCH, SCORE and SEARCH_SUBSTRING queries,
 //!   normalise text (compatibility forms of letters, full case folding, NFC: `fold`) where the
 //!   emulator only lower-cases it;
+//! - the tokenizers take `remove_diacritics`, and SEARCH and SCORE over a TOKENIZE_FULLTEXT list
+//!   made with it strip diacritics from the query too (`tokens::removes_diacritics`);
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!

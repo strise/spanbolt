@@ -141,7 +141,7 @@ fn candidates(p: &Postings, n: &Node) -> Option<Set> {
     match n {
         Node::Term(t) => Some(p.map.get(t.as_slice()).cloned().unwrap_or_default()),
         Node::Number(_) | Node::Not(_) => None,
-        Node::And(c) | Node::Phrase(c) | Node::Around(c) => all(c),
+        Node::And(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => all(c),
         Node::Or(c) => {
             let mut acc = Set::new();
             for c in c {
@@ -156,7 +156,7 @@ fn candidates(p: &Postings, n: &Node) -> Option<Set> {
 fn not_in_around(n: &Node, around: bool) -> bool {
     match n {
         Node::Not(c) => around || not_in_around(c, around),
-        Node::Around(c) => c.iter().any(|c| not_in_around(c, true)),
+        Node::Around(c) | Node::InOrder(c) => c.iter().any(|c| not_in_around(c, true)),
         Node::And(c) | Node::Or(c) | Node::Phrase(c) => c.iter().any(|c| not_in_around(c, around)),
         Node::Term(_) | Node::Number(_) => false,
     }

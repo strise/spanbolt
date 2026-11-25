@@ -145,7 +145,7 @@ print("python client ok:", rows)
 db.drop()
 EOF
 
-step "conformance: --tag select"
-cargo run -q --release -p spanbolt-conformance -- check --target "$SMOKE_GRPC" --tag select
+step "conformance: --tag select (default mode, so Cloud Spanner expectations)"
+cargo run -q --release -p spanbolt-conformance -- check --target "$SMOKE_GRPC" --tag select --oracle spanner
 
 printf '\nSMOKE OK\n'

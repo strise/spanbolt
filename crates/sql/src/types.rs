@@ -40,6 +40,17 @@ pub fn column_from_proto(t: &TypeProto) -> Result<Type> {
     from_proto(t)
 }
 
+/// A PROTO or ENUM type from the database's proto bundle (arrays included), which SQL can't use
+/// yet.
+pub fn is_bundle_type(t: &Type) -> bool {
+    match t {
+        Type::Proto(name) => name != FILE_DESCRIPTOR_SET,
+        Type::Enum(_) => true,
+        Type::Array(e) => is_bundle_type(e),
+        _ => false,
+    }
+}
+
 /// A query result column's type as the mode reports it: production names PROTO types
 /// `proto2.*`, the emulator `google.protobuf.*`.
 pub fn result_type(t: Type, emulator_compat: bool) -> Type {
@@ -144,6 +155,11 @@ pub fn spanner_type(t: &Type) -> pb::Type {
             proto_type_fqn: name.clone(),
             ..Default::default()
         },
+        Type::Enum(name) => pb::Type {
+            code: C::Enum as i32,
+            proto_type_fqn: name.clone(),
+            ..Default::default()
+        },
         Type::Array(e) => pb::Type {
             code: C::Array as i32,
             array_element_type: Some(Box::new(spanner_type(e))),
@@ -189,6 +205,7 @@ pub fn from_spanner(t: &pb::Type) -> Result<Type> {
                 .ok_or_else(|| Error::invalid_argument("Array type is missing an element type."))?;
             Type::Array(Box::new(from_spanner(e)?))
         }
+        C::Proto | C::Enum => return Err(unimplemented("A PROTO or ENUM query parameter")),
         C::Struct => {
             let mut fields = Vec::new();
             for f in t.struct_type.iter().flat_map(|s| &s.fields) {
@@ -229,7 +246,12 @@ pub fn gsql_name(t: &Type) -> String {
         Type::Uuid => "UUID".into(),
         Type::TokenList => "TOKENLIST".into(),
         // The shim builds this one PROTO type by this name.
-        Type::Proto(name) => format!("PROTO<{name}>"),
+        Type::Proto(name) if name == FILE_DESCRIPTOR_SET => format!("PROTO<{name}>"),
+        // Placeholders until the shim knows the bundle's types: the planner rejects reading
+        // these columns (`is_bundle_type`) and the analyser's errors on a database with a bundle
+        // are UNIMPLEMENTED.
+        Type::Proto(_) => "BYTES".into(),
+        Type::Enum(_) => "INT64".into(),
         Type::Array(e) => format!("ARRAY<{}>", gsql_name(e)),
         Type::Struct(fields) => {
             let parts: Vec<String> = fields
@@ -250,6 +272,7 @@ pub fn spanner_name(t: &Type) -> String {
         Type::Float32 => "FLOAT32".into(),
         Type::Float64 => "FLOAT64".into(),
         Type::Proto(name) => format!("PROTO<{}>", production_proto_name(name)),
+        Type::Enum(name) => format!("ENUM<{name}>"),
         Type::Array(e) => format!("ARRAY<{}>", spanner_name(e)),
         Type::Struct(fields) => {
             let parts: Vec<String> = fields

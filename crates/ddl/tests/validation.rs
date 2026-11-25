@@ -45,7 +45,8 @@ fn kind(e: &DdlError) -> (&'static str, &str) {
         DdlError::Syntax(m) => ("Inv", m),
         DdlError::Precondition(m) => ("Pre", m),
         DdlError::NotFound(m) => ("Nf", m),
-        DdlError::AlreadyExists(m) => ("Dup", m),
+        DdlError::AlreadyExists(m) | DdlError::Exists(m) => ("Dup", m),
+        DdlError::Internal(m) => ("Internal", m),
         DdlError::Unimplemented(m) => ("Unimpl", m),
     }
 }
@@ -503,9 +504,6 @@ fn drop_stored_null_filter_column() {
 #[test]
 fn unsupported_ddl_is_unimplemented() {
     for (sql, what) in [
-        ("CREATE PROTO BUNDLE (foo.Bar)", "CREATE PROTO BUNDLE"),
-        ("ALTER PROTO BUNDLE INSERT (foo.Bar)", "ALTER PROTO BUNDLE"),
-        ("DROP PROTO BUNDLE", "DROP PROTO BUNDLE"),
         (
             "CREATE QUEUE Q (Id INT64, Payload BYTES(MAX) NOT NULL) PRIMARY KEY (Id)",
             "CREATE QUEUE",
@@ -1002,5 +1000,172 @@ fn database_object_count_limits() {
     assert_eq!(
         err.to_string(),
         "Cannot add Index OneTooMany : too many indexes (limit 10000 per database)."
+    );
+}
+
+/// Package `m`: messages `Info { optional Genre genre = 1; }` and `Other`, enum `Genre`.
+fn music_descriptors() -> std::sync::Arc<Vec<u8>> {
+    use prost::Message;
+    use prost_types::{
+        DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+    let message = |name: &str, field: Vec<FieldDescriptorProto>| DescriptorProto {
+        name: Some(name.into()),
+        field,
+        ..Default::default()
+    };
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("m.proto".into()),
+            package: Some("m".into()),
+            message_type: vec![
+                message(
+                    "Info",
+                    vec![FieldDescriptorProto {
+                        name: Some("genre".into()),
+                        number: Some(1),
+                        type_name: Some(".m.Genre".into()),
+                        ..Default::default()
+                    }],
+                ),
+                message("Other", vec![]),
+            ],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Genre".into()),
+                value: vec![EnumValueDescriptorProto {
+                    name: Some("A".into()),
+                    number: Some(0),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+    };
+    std::sync::Arc::new(set.encode_to_vec())
+}
+
+/// Applies `stmts` (bundle statements with `descriptors`), production rules unless `compat`.
+fn with_bundle(stmts: &[&str], descriptors: &[u8], compat: bool) -> Result<Schema, DdlError> {
+    let mut s = Schema::default();
+    for sql in stmts {
+        let mut stmt = parse_statement(sql)?;
+        if let spanbolt_ddl::Statement::CreateProtoBundle { descriptors: d, .. }
+        | spanbolt_ddl::Statement::AlterProtoBundle { descriptors: d, .. } = &mut stmt
+        {
+            *d = Some(std::sync::Arc::new(descriptors.to_vec()));
+        }
+        if compat {
+            s.apply_emulator_compat(&stmt)?;
+        } else {
+            s.apply(&stmt)?;
+        }
+    }
+    Ok(s)
+}
+
+#[test]
+fn proto_bundle_rules_follow_the_mode() {
+    let d = music_descriptors();
+    let setup = [
+        "CREATE PROTO BUNDLE (m.Info, m.Genre)",
+        "CREATE TABLE T (K INT64 NOT NULL, I m.Info, G m.Genre, GS ARRAY<m.Genre>) PRIMARY KEY (K)",
+    ];
+    let s = with_bundle(&setup, &d, false).unwrap_or_else(|e| panic!("{e}"));
+    let t = s.table("T").expect("table");
+    assert_eq!(
+        t.columns.iter().map(|c| c.ty.clone()).collect::<Vec<_>>(),
+        [
+            spanbolt_ddl::ColumnType::Int64,
+            spanbolt_ddl::ColumnType::Proto("m.Info".into()),
+            spanbolt_ddl::ColumnType::Enum("m.Genre".into()),
+            spanbolt_ddl::ColumnType::Array(Box::new(spanbolt_ddl::ColumnType::Enum(
+                "m.Genre".into()
+            ))),
+        ]
+    );
+    let err = |extra: &str, compat: bool| {
+        let mut stmts = setup.to_vec();
+        stmts.push(extra);
+        let e = with_bundle(&stmts, &d, compat).expect_err(extra);
+        let (k, m) = kind(&e);
+        (k, m.to_string())
+    };
+    let cases: &[(&str, bool, (&str, &str))] = &[
+        (
+            "CREATE TABLE U (K INT64 NOT NULL, O m.Other) PRIMARY KEY (K)",
+            false,
+            ("Nf", "Type not found: m.Other."),
+        ),
+        (
+            "ALTER PROTO BUNDLE DELETE (m.Genre)",
+            false,
+            (
+                "Nf",
+                "Type m.Info references type m.Genre which is to be removed from the proto bundle",
+            ),
+        ),
+        (
+            "ALTER PROTO BUNDLE DELETE (m.Info)",
+            false,
+            (
+                "Inv",
+                "Cannot set new proto bundle: removed type m.Info is still used by 1 columns",
+            ),
+        ),
+        (
+            "DROP PROTO BUNDLE",
+            false,
+            (
+                "Inv",
+                "Cannot set new proto bundle: removed type m.Genre is still used by 2 columns",
+            ),
+        ),
+        (
+            "DROP PROTO BUNDLE",
+            true,
+            (
+                "Pre",
+                "Removed type `m.Info` is still being used by column T.I",
+            ),
+        ),
+        (
+            "ALTER PROTO BUNDLE INSERT (m.Genre)",
+            false,
+            ("Dup", "Type already exists: m.Genre"),
+        ),
+        (
+            "ALTER PROTO BUNDLE UPDATE (m.Other)",
+            false,
+            ("Nf", "Message type not found in proto bundle: m.Other"),
+        ),
+        (
+            "CREATE PROTO BUNDLE (m.Other)",
+            false,
+            ("Inv", "Proto bundle already exists; cannot create it"),
+        ),
+    ];
+    for (sql, compat, want) in cases {
+        assert_eq!(err(sql, *compat), (want.0, want.1.to_string()), "{sql}");
+    }
+    // Inserting a type no column uses, then deleting it again, is fine.
+    let mut stmts = setup.to_vec();
+    stmts.extend([
+        "ALTER PROTO BUNDLE INSERT (m.Other)",
+        "ALTER PROTO BUNDLE DELETE (m.Other)",
+    ]);
+    let s = with_bundle(&stmts, &d, false).unwrap_or_else(|e| panic!("{e}"));
+    let b = s.proto_bundle.as_ref().expect("bundle");
+    assert_eq!(b.types.keys().collect::<Vec<_>>(), ["m.Genre", "m.Info"]);
+    assert_eq!(&b.enum_numbers["m.Genre"][..], [0]);
+    // Garbage descriptors.
+    let e = with_bundle(&setup[..1], &[0xff, 0xff], false).expect_err("garbage");
+    assert_eq!(
+        kind(&e),
+        (
+            "Inv",
+            "Failed to deserialize proto descriptors into google.protobuf.FileDescriptorSet. Error:"
+        )
     );
 }

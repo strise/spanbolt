@@ -1,10 +1,12 @@
 //! Spanner GoogleSQL DDL: parser, schema model and canonical printer.
 
 mod apply;
+mod bundle;
 mod lexer;
 pub mod names;
 mod parser;
 mod printer;
+pub mod protos;
 mod retention;
 mod schema;
 
@@ -32,6 +34,12 @@ pub enum DdlError {
     /// Maps to gRPC ALREADY_EXISTS (Spanner reports duplicates as FAILED_PRECONDITION; keep the message).
     #[error("{0}")]
     AlreadyExists(String),
+    /// Maps to gRPC ALREADY_EXISTS as is (proto bundle types).
+    #[error("{0}")]
+    Exists(String),
+    /// Maps to gRPC INTERNAL: what the emulator fails with (`--emulator-compat`).
+    #[error("{0}")]
+    Internal(String),
     /// Maps to gRPC UNIMPLEMENTED (a statement Spanner parses but doesn't support).
     #[error("{0}")]
     Unimplemented(String),

@@ -67,9 +67,11 @@ impl DdlFailure {
 /// row-dependent checks and data migration against the rows moved to each intermediate schema.
 /// Nothing is applied on failure.
 /// `now` is `CURRENT_TIMESTAMP()` for the DEFAULT values backfilled into existing rows.
+/// `descriptors` is the request's `proto_descriptors`, for its proto bundle statements.
 pub fn apply_ddl(
     state: &DbState,
     statements: &[String],
+    descriptors: &Arc<Vec<u8>>,
     now: Timestamp,
 ) -> Result<DbState, DdlFailure> {
     let has_rows = state.row_count() > 0;
@@ -77,7 +79,7 @@ pub fn apply_ddl(
     // With rows, each statement's schema and checks, for the data phase.
     let mut steps: Vec<(Schema, Vec<DataCheck>)> = Vec::new();
     for (i, sql) in statements.iter().enumerate() {
-        let checks = apply_schema(&mut schema, sql, !state.prod_messages)
+        let checks = apply_schema(&mut schema, sql, descriptors, !state.prod_messages)
             .map_err(|e| DdlFailure::Schema(i, e))?;
         if has_rows {
             steps.push((schema.clone(), checks));
@@ -195,15 +197,21 @@ fn validate_exprs(schema: &mut Schema, stmt: &Statement) -> Result<(), Status> {
 fn apply_schema(
     schema: &mut Schema,
     sql: &str,
+    descriptors: &Arc<Vec<u8>>,
     emulator_compat: bool,
 ) -> Result<Vec<DataCheck>, Status> {
     let ddl = |e: spanbolt_ddl::DdlError| to_status(e.into());
-    let stmt = if emulator_compat {
+    let mut stmt = if emulator_compat {
         spanbolt_ddl::parse_statement_emulator_compat(sql)
     } else {
         spanbolt_ddl::parse_statement(sql)
     }
     .map_err(ddl)?;
+    if let Statement::CreateProtoBundle { descriptors: d, .. }
+    | Statement::AlterProtoBundle { descriptors: d, .. } = &mut stmt
+    {
+        *d = Some(descriptors.clone());
+    }
     let checks = schema.data_checks(&stmt);
     for check in &checks {
         if let DataCheck::TableEmpty { message, .. } = check
@@ -234,18 +242,32 @@ fn apply_schema(
     } else {
         schema.apply(&stmt).map_err(ddl)?;
     }
-    validate_exprs(schema, &stmt)?;
+    validate_exprs(schema, &stmt).map_err(|e| proto_sql_unimplemented(schema, e))?;
     if let Statement::CreateView { view, .. } = &stmt
         && let Some(ev) = expr_evaluator()
     {
         ev.validate_view(&Arc::new(schema.clone()), &view.name, replacing)
-            .map_err(to_status)?;
+            .map_err(to_status)
+            .map_err(|e| proto_sql_unimplemented(schema, e))?;
     }
     if let Some((ev, change, before)) = graph_change {
         ev.check_graph_dependents(&before, &Arc::new(schema.clone()), &change)
             .map_err(to_status)?;
     }
     Ok(checks)
+}
+
+/// The SQL engine doesn't know the proto bundle's types yet: an expression it rejects in a
+/// database whose bundle has types may be valid on Spanner, so it is UNIMPLEMENTED.
+fn proto_sql_unimplemented(schema: &Schema, e: Status) -> Status {
+    let has_types = schema
+        .proto_bundle
+        .as_ref()
+        .is_some_and(|b| !b.types.is_empty());
+    if has_types && e.code() == tonic::Code::InvalidArgument {
+        return unimplemented("SQL over PROTO and ENUM types");
+    }
+    e
 }
 
 /// What `stmt` drops or changes that a property graph of `schema` may use: only when a graph's
@@ -347,6 +369,7 @@ impl DatabaseAdmin for DatabaseAdminService {
             let state = apply_ddl(
                 &DbState::default(),
                 &req.extra_statements,
+                &Arc::new(req.proto_descriptors.clone()),
                 self.emu.clock.now(),
             )
             .map_err(DdlFailure::into_status)?;
@@ -450,8 +473,9 @@ impl DatabaseAdmin for DatabaseAdminService {
         let mut schema_error: Option<Status> = None;
         let mut op_error: Option<(usize, Status)> = None;
         let now = self.emu.clock.now();
+        let descriptors = Arc::new(req.proto_descriptors.clone());
         let result = entry.db.update_state(|s| {
-            let (mut keep, mut status) = match apply_ddl(s, &req.statements, now) {
+            let (mut keep, mut status) = match apply_ddl(s, &req.statements, &descriptors, now) {
                 Ok(next) => return Ok((next, req.statements.join("; "))),
                 Err(DdlFailure::Schema(_, e))
                     if compat || e.code() == tonic::Code::Unimplemented =>
@@ -469,7 +493,7 @@ impl DatabaseAdmin for DatabaseAdminService {
                 if keep == 0 {
                     break None;
                 }
-                match apply_ddl(s, &req.statements[..keep], now) {
+                match apply_ddl(s, &req.statements[..keep], &descriptors, now) {
                     Ok(next) => break Some(next),
                     Err(DdlFailure::Schema(i, e) | DdlFailure::Data(i, e)) => {
                         keep = i;
@@ -550,7 +574,11 @@ impl DatabaseAdmin for DatabaseAdminService {
         };
         Ok(Response::new(da::GetDatabaseDdlResponse {
             statements,
-            proto_descriptors: Vec::new(),
+            proto_descriptors: schema
+                .proto_bundle
+                .as_ref()
+                .map(|b| b.descriptors.to_vec())
+                .unwrap_or_default(),
         }))
     }
 

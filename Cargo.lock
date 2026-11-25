@@ -1427,6 +1427,8 @@ dependencies = [
 name = "spanbolt-ddl"
 version = "0.2.1"
 dependencies = [
+ "prost",
+ "prost-types",
  "serde_json",
  "thiserror",
 ]
@@ -1502,6 +1504,7 @@ version = "0.2.1"
 dependencies = [
  "base64 0.23.1",
  "imbl",
+ "prost",
  "prost-types",
  "serde",
  "serde_json",

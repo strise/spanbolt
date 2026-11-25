@@ -330,7 +330,7 @@ expect@spanner:
   error: INVALID_ARGUMENT
   message: Pipe STATIC_DESCRIBE not supported [at 1:12]
 
-# spanbolt has no TABLESAMPLE (SampleScan), with or without pipes.
+# TABLESAMPLE through a pipe; the emulator rejects the pipe syntax (see tablesample.case for the rest).
 case pipe_tablesample
 query:
   FROM Items |> TABLESAMPLE BERNOULLI (100 PERCENT) |> AGGREGATE COUNT(*) AS N

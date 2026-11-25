@@ -820,6 +820,7 @@ fn scan_base(s: &AnyResolvedScanProto) -> Option<&ResolvedScanProto> {
         S::ResolvedSetOperationScanNode(x) => x.parent.as_ref(),
         S::ResolvedWithScanNode(x) => x.parent.as_ref(),
         S::ResolvedWithRefScanNode(x) => x.parent.as_ref(),
+        S::ResolvedSampleScanNode(x) => x.parent.as_ref(),
         S::ResolvedAggregateScanBaseNode(a) => match a.node.as_ref()? {
             AggNode::ResolvedAggregateScanNode(x) => x.parent.as_ref()?.parent.as_ref(),
             _ => None,
@@ -1143,6 +1144,7 @@ impl<'c> Planner<'c> {
                 }),
                 layout: scan_columns(s),
             }),
+            S::ResolvedSampleScanNode(x) => self.sample_scan(x, outer),
             S::ResolvedAnalyticScanNode(a) => Err(analytic_scan_error(a)),
             S::ResolvedGraphTableScanNode(g) => self.graph_table(g, outer),
             S::ResolvedGraphScanBaseNode(b) => self.graph_base(b, outer),
@@ -1177,6 +1179,59 @@ impl<'c> Planner<'c> {
             });
         }
         Ok(keys)
+    }
+
+    /// TABLESAMPLE. Rejects what the emulator's query validator rejects; the analyser already
+    /// checks the size's type and a literal's range, and rejects PARTITION BY. Filters above the
+    /// sample are not pushed into its input: they apply to the sampled rows.
+    fn sample_scan(&mut self, x: &ResolvedSampleScanProto, outer: &Scope) -> Result<Planned> {
+        if x.repeatable_argument.is_some() {
+            return Err(Error::invalid_argument("REPEATABLE is not supported"));
+        }
+        let method = x.method.as_deref().unwrap_or("").to_ascii_lowercase();
+        let unit = x.unit.unwrap_or(0);
+        let rows = unit == resolved_sample_scan_enums::SampleUnit::Rows as i32;
+        let method = match method.as_str() {
+            "bernoulli" if rows => {
+                return Err(Error::invalid_argument("BERNOULLI/ROWS is not supported"));
+            }
+            "bernoulli" => SampleMethod::Bernoulli,
+            "reservoir" if !rows => {
+                return Err(Error::invalid_argument(
+                    "RESERVOIR/PERCENT is not supported",
+                ));
+            }
+            "reservoir" => SampleMethod::Reservoir,
+            "system" => {
+                return Err(Error::invalid_argument("SYSTEM sampling is not supported"));
+            }
+            m => return Err(Error::invalid_argument(format!("Unknown scan method {m}"))),
+        };
+        if !x.partition_by_list.is_empty() {
+            return Err(unimplemented("TABLESAMPLE with PARTITION BY"));
+        }
+        let input = x
+            .input_scan
+            .as_deref()
+            .ok_or_else(|| Error::internal("sample without input"))?;
+        let size = x
+            .size
+            .as_deref()
+            .ok_or_else(|| Error::internal("sample without size"))?;
+        let size = self.expr(size, outer)?;
+        let p = self.scan(input, outer)?;
+        let mut layout = p.layout;
+        let weight = x.weight_column.as_ref().map(|w| nid(&w.column));
+        layout.extend(weight);
+        Ok(Planned {
+            op: Box::new(Sample {
+                input: p.op,
+                method,
+                size,
+                weight: weight.is_some(),
+            }),
+            layout,
+        })
     }
 
     fn table_scan(

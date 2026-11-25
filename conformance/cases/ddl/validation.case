@@ -316,6 +316,9 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing expression 'Nope > 0' from check constraint 'C' in table 'X': Unrecognized name: Nope [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing expression \'Nope > 0\' from check constraint \'C\' in table \'X\': Unrecognized name: Nope [at 1:1]
 
 case generated_missing_ref
 ddl:

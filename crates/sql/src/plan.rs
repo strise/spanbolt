@@ -32,6 +32,8 @@ use crate::value_ops::{Key, truthy};
 
 #[path = "graph_plan.rs"]
 mod graph_plan;
+#[path = "proto_plan.rs"]
+mod proto_plan;
 
 /// Columns visible at one level, innermost first.
 pub struct Scope<'p> {
@@ -384,7 +386,7 @@ fn nid(c: &Option<ResolvedColumnProto>) -> i64 {
 }
 
 pub fn col_type(c: &ResolvedColumnProto) -> Result<Type> {
-    types::column_from_proto(
+    types::from_proto(
         c.r#type
             .as_ref()
             .ok_or_else(|| Error::internal("column without type"))?,
@@ -418,6 +420,9 @@ pub fn expr_type(e: &AnyResolvedExprProto) -> Option<&TypeProto> {
         E::ResolvedMakeStructNode(x) => x.parent.as_ref(),
         E::ResolvedGetStructFieldNode(x) => x.parent.as_ref(),
         E::ResolvedGetJsonFieldNode(x) => x.parent.as_ref(),
+        E::ResolvedGetProtoFieldNode(x) => x.parent.as_ref(),
+        E::ResolvedMakeProtoNode(x) => x.parent.as_ref(),
+        E::ResolvedReplaceFieldNode(x) => x.parent.as_ref(),
         E::ResolvedSubqueryExprNode(x) => x.parent.as_ref(),
         E::ResolvedWithExprNode(x) => x.parent.as_ref(),
         E::ResolvedDmldefaultNode(x) => x.parent.as_ref(),
@@ -1330,13 +1335,6 @@ impl<'c> Planner<'c> {
         }
         match rel {
             Relation::Table(tid) => {
-                let cols = &self.cat.storage.table(tid).columns;
-                if idx.iter().any(|&i| {
-                    cols.get(i)
-                        .is_some_and(|c| crate::types::is_bundle_type(&c.ty))
-                }) {
-                    return Err(unimplemented("Reading a PROTO or ENUM column in SQL"));
-                }
                 let op = self.base_table(tid, t, &base.hint_list, &layout, &idx, outer, conj)?;
                 Ok(Planned { op, layout })
             }
@@ -1759,16 +1757,6 @@ impl<'c> Planner<'c> {
         let Some(Relation::Table(tid)) = self.cat.relation(full).cloned() else {
             return Err(unimplemented(format!("DML on {full}")));
         };
-        if self
-            .cat
-            .storage
-            .table(tid)
-            .columns
-            .iter()
-            .any(|c| crate::types::is_bundle_type(&c.ty))
-        {
-            return Err(unimplemented("DML on a table with PROTO or ENUM columns"));
-        }
         let n = self.cat.storage.table(tid).columns.len();
         let mut layout: Vec<i64> = (0..n).map(|c| -1_000_000 - c as i64).collect();
         for (c, &i) in base.column_list.iter().zip(&ts.column_index_list) {
@@ -2367,6 +2355,12 @@ impl<'c> Planner<'c> {
                 let to = type_of(e)?;
                 let x = self.expr(inner, scope)?;
                 let safe = c.return_null_on_error == Some(true);
+                if let Some(f) = self.proto_cast(&from, &to)? {
+                    return Ok(Arc::new(move |cx: &Cx, env: &Env| match f(&x(cx, env)?) {
+                        Err(e) if safe && e.code != Code::Unimplemented => Ok(Value::Null),
+                        r => r,
+                    }));
+                }
                 // Validate the cast pair at plan time where possible.
                 Arc::new(move |cx: &Cx, env: &Env| {
                     let v = x(cx, env)?;
@@ -2415,6 +2409,9 @@ impl<'c> Planner<'c> {
                     _ => Ok(Value::Null),
                 })
             }
+            E::ResolvedGetProtoFieldNode(g) => self.get_proto_field(e, g, scope)?,
+            E::ResolvedMakeProtoNode(m) => self.make_proto(e, m, scope)?,
+            E::ResolvedReplaceFieldNode(r) => self.replace_fields(e, r, scope)?,
             E::ResolvedSubqueryExprNode(s) => self.subquery(s, scope)?,
             E::ResolvedGraphGetElementPropertyNode(g) => self.graph_property(g, scope)?,
             E::ResolvedWithExprNode(w) => {
@@ -2657,6 +2654,9 @@ impl<'c> Planner<'c> {
         for a in operands {
             args.push(self.expr(a, scope)?);
             arg_types.push(type_of(a)?);
+        }
+        if let Some(ev) = self.proto_to_json(&name, &args, &arg_types)? {
+            return Ok(if safe { safe_call(ev) } else { ev });
         }
         if let Some(e) = misplaced {
             return Ok(Arc::new(move |cx: &Cx, env: &Env| {

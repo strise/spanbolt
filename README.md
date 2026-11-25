@@ -64,9 +64,11 @@ suite and the conformance cases exercise.
   (`GET_NEXT_SEQUENCE_VALUE`; sequences themselves are stored), `ListDatabaseRoles`, and these
   DDL statements: queues, placements, user-defined functions, vector indexes and expression
   index keys.
-- Proto bundles (`CREATE/ALTER/DROP PROTO BUNDLE`) and PROTO and ENUM columns work through DDL,
-  mutations, the Read API and `INFORMATION_SCHEMA`. SQL that reads a PROTO or ENUM column, or DML
-  on its table, returns `UNIMPLEMENTED` for now (#127).
+- Proto bundles (`CREATE/ALTER/DROP PROTO BUNDLE`) and PROTO and ENUM columns: DDL, mutations,
+  the Read API, `INFORMATION_SCHEMA`, and SQL (field access, `NEW`, `REPLACE_FIELDS`, casts to and
+  from STRING, BYTES and INT64, `TO_JSON`, DML and `UPDATE ... SET col.field`). Not supported:
+  `UPDATE` of a field deeper than one level or of a NULL proto, and STRUCT fields in
+  `REPLACE_FIELDS`.
 - Locality groups are validated and stored (DDL, `INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS`) but
   don't change where or how data is stored.
 - Unnamed CHECK and FOREIGN KEY constraints get the emulator's generated names in both modes.

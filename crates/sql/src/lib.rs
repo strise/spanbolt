@@ -27,6 +27,7 @@ mod literal;
 mod ops;
 pub mod plan;
 mod prepared;
+pub mod protos;
 mod schema_expr;
 mod search;
 mod struct_result;

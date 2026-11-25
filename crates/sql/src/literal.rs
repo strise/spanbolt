@@ -67,6 +67,7 @@ pub fn value(v: Option<&ValueProto>, ty: &Type) -> Result<Value> {
         (V::FloatValue(f), _) => Value::Float32(*f),
         (V::StringValue(s), _) => Value::String(Arc::from(s.as_str())),
         (V::BytesValue(b), _) => Value::Bytes(Arc::from(b.as_slice())),
+        (V::ProtoValue(b), _) => Value::Bytes(Arc::from(b.as_slice())),
         (V::DateValue(d), _) => Value::Date(Date(*d)),
         (V::TimestampValue(t), _) => Value::Timestamp(Timestamp {
             secs: t.seconds,

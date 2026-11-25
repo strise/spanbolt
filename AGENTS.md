@@ -35,7 +35,7 @@ docs/building.md cover setup.
 - SQL engine layout (`crates/sql`): `catalog` (GoogleSQL catalog per schema + plan cache; GoogleSQL tables and analysed views are shared across schema versions, builtin functions live in one shim-wide parent catalog),
   `analyze`/`validate` (analyser call, hint names, supported-function allowlist), `plan` (resolved
   AST to operators, key/index range pushdown), `access`/`ops`/`agg` (operators), `func*` (scalar
-  functions), `dml`, `info_schema`, `schema_expr` (DEFAULT/generated/CHECK for storage). Strict mode
+  functions), `dml`, `info_schema`, `schema_expr` (DEFAULT/generated/CHECK for storage), `protos` (PROTO and ENUM values: wire-format field reads, text format, casts) and `proto_plan` (their expressions). Strict mode
   follows production Spanner: FORCE_INDEX on a NULL_FILTERED index needs `IS NOT NULL` filters on the
   indexed columns; `--emulator-compat` honours `spanner_emulator.disable_query_null_filtered_index_check`.
 - Benchmarks: `cargo run --release -p spanbolt-server --features googlesql --example sql_bench`

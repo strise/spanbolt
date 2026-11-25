@@ -121,16 +121,6 @@ fn unsupported(cat: &SqlCatalog, e: Error) -> Error {
     if e.code != Code::InvalidArgument {
         return e;
     }
-    // The analyser doesn't know the proto bundle's types yet (its columns are placeholders).
-    if cat
-        .schema
-        .proto_bundle
-        .as_ref()
-        .is_some_and(|b| !b.types.is_empty())
-        && !e.message.starts_with("Syntax error: ")
-    {
-        return crate::types::unimplemented("SQL over PROTO and ENUM types");
-    }
     // Sequences are stored, but their counters aren't modelled.
     if let Some(rest) = e.message.strip_prefix("Function not found: ") {
         let name: String = rest

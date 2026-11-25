@@ -75,6 +75,9 @@ pub struct TableMeta {
     /// column, and for a generated one every input column reached through its expression,
     /// transitively.
     pub inputs: Vec<Vec<usize>>,
+    /// The database's proto bundle, for the schema expressions of a table that has any
+    /// (`computed`), so they can use its types.
+    pub proto_bundle: Option<Arc<spanbolt_ddl::ProtoBundle>>,
 }
 
 impl TableMeta {
@@ -280,6 +283,11 @@ impl Catalog {
 
     pub fn build(schema: &Schema) -> Result<Catalog> {
         let mut cat = Catalog::default();
+        let bundle = schema
+            .proto_bundle
+            .as_ref()
+            .filter(|b| !b.types.is_empty())
+            .map(|b| Arc::new(b.clone()));
         for t in schema.tables.values() {
             let mut by_name = HashMap::with_capacity(t.columns.len() * 2);
             let columns: Vec<ColumnMeta> = t
@@ -364,6 +372,7 @@ impl Catalog {
                 computed,
                 generated_order,
                 inputs,
+                proto_bundle: bundle.clone().filter(|_| computed),
             });
         }
         for t in schema.tables.values() {

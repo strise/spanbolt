@@ -242,6 +242,7 @@ absl::StatusOr<SharedBase*> BaseFor(const json& features) {
   absl::Status status = base->builtins.AddBuiltinFunctionsAndTypes(
       SpannerBuiltinFunctionOptions(language));
   if (!status.ok()) return status;
+  if (production) spanbolt::UseSpannerFormatCheck(&base->builtins);
   spanbolt::AddSpannerFunctions(&base->builtins, GlobalTypes(), production);
   SharedBase* out = base.release();
   bases->emplace(key, out);

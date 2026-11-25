@@ -37,6 +37,7 @@ cc_library(
         "@com_google_googlesql//googlesql/public:options_cc_proto",
         "@com_google_googlesql//googlesql/public:simple_catalog",
         "@com_google_googlesql//googlesql/public:type",
+        "@com_google_googlesql//googlesql/public:value",
         "@com_google_googlesql//googlesql/resolved_ast",
         "@com_google_googlesql//googlesql/resolved_ast:resolved_node_kind_cc_proto",
         "@com_google_protobuf//:protobuf",

@@ -4,11 +4,20 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/strings/cord.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_replace.h"
 #include "googlesql/public/function.h"
 #include "googlesql/public/function_signature.h"
+#include "googlesql/public/input_argument_type.h"
+#include "googlesql/public/language_options.h"
 #include "googlesql/public/types/type_factory.h"
+#include "googlesql/public/value.h"
+#include "re2/re2.h"
 
 namespace spanbolt {
 namespace {
@@ -52,7 +61,61 @@ std::unique_ptr<Function> Scalar(const std::string& name,
                                     options);
 }
 
+// Runs GoogleSQL's FORMAT check on the literal pattern with every `%` escape
+// written as `%%` (conformance/cases/sql/format_percent_escapes.case), and
+// names the pattern as written in its errors.
+absl::Status CheckSpannerFormat(
+    const googlesql::PostResolutionArgumentConstraintsCallback& check,
+    const FunctionSignature& signature,
+    const std::vector<googlesql::InputArgumentType>& args,
+    const googlesql::LanguageOptions& language) {
+  if (args.empty() || !args[0].is_literal() || args[0].is_literal_null() ||
+      !args[0].type()->IsString()) {
+    return check(signature, args, language);
+  }
+  const std::string& pattern = args[0].literal_value()->string_value();
+  // GoogleSQL's "%[flags][width][.precision]specifier" with specifier `%`.
+  static const LazyRE2 kEscape = {
+      R"(%[-+ #'0]*(?:\*|[0-9]*)(?:\.(?:\*|[0-9]*))?%)"};
+  std::string escapes = pattern;
+  RE2::GlobalReplace(&escapes, *kEscape, "%%");
+  if (escapes == pattern) return check(signature, args, language);
+  const googlesql::Value value = googlesql::Value::String(escapes);
+  std::vector<googlesql::InputArgumentType> rewritten = args;
+  rewritten[0] = googlesql::InputArgumentType(value, /*annotation_map=*/nullptr);
+  absl::Status status = check(signature, rewritten, language);
+  if (status.ok()) return status;
+  std::string message = absl::StrReplaceAll(
+      status.message(), {{absl::StrCat("\"", escapes, "\""),
+                          absl::StrCat("\"", pattern, "\"")}});
+  absl::Status out(status.code(), message);
+  status.ForEachPayload([&out](absl::string_view url, const absl::Cord& payload) {
+    out.SetPayload(url, payload);
+  });
+  return out;
+}
+
 }  // namespace
+
+void UseSpannerFormatCheck(googlesql::SimpleCatalog* catalog) {
+  const Function* format = nullptr;
+  if (!catalog->GetFunction("format", &format).ok() || format == nullptr) return;
+  googlesql::PostResolutionArgumentConstraintsCallback check =
+      format->PostResolutionConstraints();
+  if (!check) return;
+  googlesql::FunctionOptions options = format->function_options();
+  options.set_post_resolution_argument_constraint(
+      [check](const FunctionSignature& signature,
+              const std::vector<googlesql::InputArgumentType>& args,
+              const googlesql::LanguageOptions& language) {
+        return CheckSpannerFormat(check, signature, args, language);
+      });
+  auto replacement = std::make_unique<Function>(
+      format->Name(), format->GetGroup(), format->mode(), format->signatures(),
+      std::move(options));
+  catalog->RemoveFunctions([format](const Function* f) { return f == format; });
+  catalog->AddOwnedFunction(std::move(replacement));
+}
 
 void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
                          googlesql::TypeFactory* types, bool production) {

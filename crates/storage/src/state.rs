@@ -1183,6 +1183,11 @@ impl Writer {
         key_pos: &[Option<usize>],
         values: &[Value],
     ) -> Result<()> {
+        // The emulator checks an InsertOrUpdate as an insert, even when the row exists: it must
+        // name every NOT NULL column, and that is checked before its values.
+        if kind == WriteKind::InsertOrUpdate && !self.state.prod_messages {
+            check_not_null_named(tm, columns)?;
+        }
         for (v, &c) in values.iter().zip(columns) {
             self.check_value(tm, c, v)?;
         }
@@ -1319,18 +1324,7 @@ impl Writer {
                     }
                     row
                 });
-                for (c, cm) in tm.columns.iter().enumerate() {
-                    if cm.not_null && !cm.generated && cm.default.is_none() && !columns.contains(&c)
-                    {
-                        return Err(Error::constraint(
-                            Code::FailedPrecondition,
-                            format!(
-                                "A new row in table {} does not specify a non-null value for NOT NULL column: {}",
-                                tm.name, cm.name
-                            ),
-                        ));
-                    }
-                }
+                check_not_null_named(tm, columns)?;
                 if tm.computed {
                     let missing = |c: usize| !columns.contains(&c);
                     if !precomputed {
@@ -1625,4 +1619,20 @@ fn row_key_debug(tm: &TableMeta, key_pos: &[Option<usize>], values: &[Value]) ->
         .collect();
     let types: Vec<&ColumnType> = tm.pk.iter().map(|&c| &tm.columns[c].ty).collect();
     key_debug(&vals, &types)
+}
+
+/// A new row must name every NOT NULL column that has no DEFAULT and isn't generated.
+fn check_not_null_named(tm: &TableMeta, columns: &[usize]) -> Result<()> {
+    for (c, cm) in tm.columns.iter().enumerate() {
+        if cm.not_null && !cm.generated && cm.default.is_none() && !columns.contains(&c) {
+            return Err(Error::constraint(
+                Code::FailedPrecondition,
+                format!(
+                    "A new row in table {} does not specify a non-null value for NOT NULL column: {}",
+                    tm.name, cm.name
+                ),
+            ));
+        }
+    }
+    Ok(())
 }

@@ -67,6 +67,25 @@ expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: N
 
+case insert_or_update_existing_partial
+insert_or_update T cols=K,N:
+  [1, 7]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table T does not specify a non-null value for NOT NULL column: S
+read T cols=K,S,N:
+  all
+expect:
+  columns: K INT64, S STRING, N INT64
+  ["1","a","1"]
+
+case insert_or_update_existing_null_all_columns
+insert_or_update T cols=K,S,N:
+  [1, "a", null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: T.N in table: T
+
 case replace_missing
 replace T cols=K,S:
   [1, "x"]

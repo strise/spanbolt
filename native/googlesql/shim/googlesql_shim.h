@@ -75,6 +75,14 @@ int32_t gsql_catalog_add_property_graph(gsql_catalog* catalog,
 gsql_result gsql_analyze_ddl(const gsql_catalog* catalog, const char* sql,
                              size_t sql_len);
 
+// Analyses the query of a view as Spanner does: in strict name resolution
+// mode (column names need a qualifier, no `SELECT *`), without parameters.
+// exact_json is a JSON array of table full names ("T", "schema.T") that are
+// found only by that spelling; empty or NULL for none.
+gsql_result gsql_analyze_view(const gsql_catalog* catalog, const char* sql,
+                              size_t sql_len, const char* exact_json,
+                              size_t exact_len);
+
 void gsql_buf_free(gsql_buf buf);
 
 #ifdef __cplusplus

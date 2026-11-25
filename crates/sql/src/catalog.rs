@@ -53,9 +53,6 @@ pub struct SqlCatalog {
     info_rows: Mutex<HashMap<String, Arc<InfoRows>>>,
     pub hits: std::sync::atomic::AtomicU64,
     pub misses: std::sync::atomic::AtomicU64,
-    /// The GoogleSQL tables of `gsql` with their lowercase names, to build a catalog without some.
-    gsql_tables: Vec<(String, Arc<googlesql_sys::Table>)>,
-    features: &'static [&'static str],
 }
 
 fn view_of(r: Option<&Relation>) -> Option<Arc<ViewDef>> {
@@ -66,18 +63,6 @@ fn view_of(r: Option<&Relation>) -> Option<Arc<ViewDef>> {
 }
 
 impl SqlCatalog {
-    /// A GoogleSQL catalog of the same relations but those in `without` (lowercase full names).
-    pub fn gsql_without(&self, without: &[String]) -> Result<googlesql_sys::Catalog> {
-        let tables = self
-            .gsql_tables
-            .iter()
-            .filter(|(n, _)| !without.contains(n))
-            .map(|(_, t)| t.clone())
-            .collect();
-        googlesql_sys::Catalog::from_tables(tables, self.features)
-            .map_err(|e| Error::internal(format!("cannot build the GoogleSQL catalog: {e}")))
-    }
-
     /// The declared names of the tables and INFORMATION_SCHEMA tables (not views or synonyms).
     pub fn table_names(&self) -> Vec<String> {
         self.relations
@@ -485,8 +470,6 @@ pub fn build(
         storage,
         graphs,
         graph_index: Default::default(),
-        gsql_tables: b.names.into_iter().zip(b.tables).collect(),
-        features,
         relations: b.relations,
         plans: Mutex::new(HashMap::new()),
         emulator_compat,

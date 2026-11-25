@@ -16,6 +16,7 @@
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_join.h"
 #include "absl/time/time.h"
 #include "google/protobuf/descriptor.pb.h"
 #include "googlesql/public/analyzer.h"
@@ -57,6 +58,8 @@ struct gsql_catalog {
   std::unique_ptr<googlesql::SimpleCatalog> tables;
   // `tables` first, then the shared builtins.
   std::unique_ptr<googlesql::MultiCatalog> catalog;
+  // The shared builtins (not owned).
+  googlesql::Catalog* builtins = nullptr;
   // Tables of the JSON constructor; shared tables belong to the caller.
   std::vector<std::unique_ptr<gsql_table>> owned;
   googlesql::AnalyzerOptions options;
@@ -336,6 +339,7 @@ absl::StatusOr<std::unique_ptr<gsql_catalog>> AssembleCatalog(
       "spanner", {out->tables.get(), &(*base)->builtins}, &multi);
   if (!status.ok()) return status;
   out->catalog = std::move(multi);
+  out->builtins = &(*base)->builtins;
   return out;
 }
 
@@ -367,7 +371,8 @@ absl::StatusOr<std::unique_ptr<gsql_catalog>> BuildCatalog(
 absl::StatusOr<std::string> Analyze(const gsql_catalog& cat,
                                     const std::string& sql,
                                     const std::string& params_text,
-                                    bool ddl = false) {
+                                    bool ddl = false,
+                                    googlesql::Catalog* view_catalog = nullptr) {
   // Per-call factory: the catalog's factory stays read-only so analyses can
   // run concurrently.
   googlesql::TypeFactory call_factory;
@@ -375,6 +380,11 @@ absl::StatusOr<std::string> Analyze(const gsql_catalog& cat,
   if (ddl) {
     options.mutable_language()->SetSupportedStatementKinds(
         {googlesql::RESOLVED_CREATE_PROPERTY_GRAPH_STMT});
+  }
+  if (view_catalog != nullptr) {
+    // How Spanner and the emulator analyse a view's query.
+    options.mutable_language()->set_name_resolution_mode(
+        googlesql::NAME_RESOLUTION_STRICT);
   }
   if (!params_text.empty()) {
     json params = json::parse(params_text, nullptr, false);
@@ -396,7 +406,9 @@ absl::StatusOr<std::string> Analyze(const gsql_catalog& cat,
   }
   std::unique_ptr<const googlesql::AnalyzerOutput> output;
   absl::Status status = googlesql::AnalyzeStatement(
-      sql, options, cat.catalog.get(), &call_factory, &output);
+      sql, options,
+      view_catalog != nullptr ? view_catalog : cat.catalog.get(),
+      &call_factory, &output);
   if (!status.ok()) return status;
 
   googlesql::AnyResolvedStatementProto proto;
@@ -405,6 +417,64 @@ absl::StatusOr<std::string> Analyze(const gsql_catalog& cat,
   if (!status.ok()) return status;
   return proto.SerializeAsString();
 }
+
+// The tables of a catalog, where the ones named in `exact` (by full name) are
+// found only by that spelling. Cloud Spanner resolves table names in a view's
+// query case-sensitively; other lookups find nothing here and fall through to
+// the builtins behind it.
+class ExactTables : public googlesql::Catalog {
+ public:
+  ExactTables(googlesql::Catalog* tables,
+              absl::flat_hash_set<std::string> exact)
+      : tables_(tables), exact_(std::move(exact)) {}
+
+  std::string FullName() const override { return tables_->FullName(); }
+
+  absl::Status FindTable(const absl::Span<const std::string>& path,
+                         const googlesql::Table** table,
+                         const FindOptions& options) override {
+    absl::Status s = tables_->FindTable(path, table, options);
+    if (s.ok() && !Spelled(path, path.size(), *table)) {
+      *table = nullptr;
+      return TableNotFoundError(path);
+    }
+    return s;
+  }
+
+  absl::Status FindTableWithPathPrefix(absl::Span<const std::string> path,
+                                       const FindOptions& options,
+                                       int* num_names_consumed,
+                                       const googlesql::Table** table) override {
+    absl::Status s = tables_->FindTableWithPathPrefix(
+        path, options, num_names_consumed, table);
+    if (s.ok() && *table != nullptr &&
+        !Spelled(path, *num_names_consumed, *table)) {
+      *table = nullptr;
+      *num_names_consumed = 0;
+      return TableNotFoundError(path);
+    }
+    return s;
+  }
+
+  absl::Status FindPropertyGraph(absl::Span<const std::string> path,
+                                 const googlesql::PropertyGraph*& graph,
+                                 const FindOptions& options) override {
+    return tables_->FindPropertyGraph(path, graph, options);
+  }
+
+ private:
+  // Whether the first `n` names of `path` spell `table` as declared, when it
+  // has to be.
+  bool Spelled(absl::Span<const std::string> path, size_t n,
+               const googlesql::Table* table) const {
+    std::string name = table->FullName();
+    if (!exact_.contains(name)) return true;
+    return absl::StrJoin(path.subspan(0, n), ".") == name;
+  }
+
+  googlesql::Catalog* tables_;
+  absl::flat_hash_set<std::string> exact_;
+};
 
 absl::StatusOr<const googlesql::Table*> FindTable(const gsql_catalog& cat,
                                                   const std::string& name) {
@@ -699,6 +769,33 @@ gsql_result gsql_analyze_ddl(const gsql_catalog* catalog, const char* sql,
                      /*ddl=*/true);
   } catch (const std::exception& e) {
     result = absl::InternalError(e.what());
+  }
+  if (!result.ok()) return Error(result.status());
+  return gsql_result{0, CopyBytes(*result), gsql_buf{nullptr, 0}};
+}
+
+gsql_result gsql_analyze_view(const gsql_catalog* catalog, const char* sql,
+                              size_t sql_len, const char* exact_json,
+                              size_t exact_len) {
+  absl::StatusOr<std::string> result;
+  try {
+    absl::flat_hash_set<std::string> exact;
+    if (exact_json != nullptr && exact_len > 0) {
+      json names = json::parse(std::string(exact_json, exact_len));
+      for (const auto& n : names) exact.insert(n.get<std::string>());
+    }
+    ExactTables tables(catalog->tables.get(), std::move(exact));
+    std::unique_ptr<googlesql::MultiCatalog> multi;
+    absl::Status made = googlesql::MultiCatalog::Create(
+        "spanner", {&tables, catalog->builtins}, &multi);
+    if (!made.ok()) {
+      result = made;
+    } else {
+      result = Analyze(*catalog, std::string(sql, sql_len), std::string(),
+                       /*ddl=*/false, multi.get());
+    }
+  } catch (const std::exception& e) {
+    result = absl::InvalidArgumentError(absl::StrCat("exact JSON: ", e.what()));
   }
   if (!result.ok()) return Error(result.status());
   return gsql_result{0, CopyBytes(*result), gsql_buf{nullptr, 0}};

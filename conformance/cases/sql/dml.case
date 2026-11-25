@@ -170,6 +170,9 @@ dml:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table Users does not specify a non-null value for NOT NULL column: Email
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table Users does not specify a non-null value for these NOT NULL columns: Email.
 
 case insert_commit_timestamp_function
 dml:

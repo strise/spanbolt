@@ -401,8 +401,8 @@ fn views_analyse_in_strict_mode_with_exact_table_names() {
 #[test]
 fn deep_expressions_decode() {
     // prost stops at 100 nested messages and a call is four of them: 34 nested calls didn't
-    // decode. Expressions and scans now decode up to `deep::MAX_LEVELS`, deep ones on a thread of
-    // their own.
+    // decode. Expressions and scans now decode up to `deep::MAX`, deep ones on a thread of their
+    // own.
     std::thread::Builder::new()
         .stack_size(2 << 20)
         .spawn(|| {
@@ -417,6 +417,43 @@ fn deep_expressions_decode() {
             let nested = format!("SELECT {}1{}", "ABS(".repeat(5000), ")".repeat(5000));
             let e = cat.analyze(&nested, "{}").expect_err("too deep");
             assert!(e.message.contains("nested too deep"), "{}", e.message);
+        })
+        .expect("spawn")
+        .join()
+        .expect("decoding");
+}
+
+#[test]
+fn deep_struct_types_decode() {
+    // A STRUCT level of a `TypeProto` is three messages: prost stopped at 32 levels. The emulator
+    // answers thousands; past `deep::MAX` it runs out of stack like the emulator, without
+    // overflowing ours.
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(|| {
+            let cat = Catalog::new(r#"{"tables":[],"extra_features":[]}"#).expect("catalog");
+            let cast = |n: usize| {
+                let ty = format!("{}INT64{}", "STRUCT<f ".repeat(n), ">".repeat(n));
+                cat.analyze(&format!("SELECT CAST(NULL AS {ty}) IS NULL"), "{}")
+            };
+            for n in [10, 33, 100, 1000, 2000] {
+                let r = cast(n);
+                assert!(r.is_ok(), "{n} nested STRUCTs: {:?}", r.err());
+            }
+            let e = cast(2001).expect_err("too deep");
+            assert_eq!(e.code, 8, "{}", e.message);
+            assert!(e.message.starts_with("Out of stack space"), "{}", e.message);
+            // An ARRAY level counts too.
+            let ty = format!(
+                "{}INT64{}",
+                "ARRAY<STRUCT<f ".repeat(1001),
+                ">>".repeat(1001)
+            );
+            let sql = format!("SELECT CAST(NULL AS {ty}) IS NULL");
+            assert_eq!(cat.analyze(&sql, "{}").expect_err("too deep").code, 8);
+            // STRUCT literals nest a value with their type.
+            let ctor = format!("SELECT {}1{}", "STRUCT(".repeat(200), " AS f)".repeat(200));
+            assert!(cat.analyze(&ctor, "{}").is_ok());
         })
         .expect("spawn")
         .join()

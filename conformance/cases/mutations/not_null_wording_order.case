@@ -1,0 +1,149 @@
+tags: mutations constraints
+# Which column a NOT NULL violation names when several columns break it (#156). Declaration order
+# (Z, A, M) differs from name order and from some mutations' column order. `expect:` from the
+# emulator 1.5.59, `expect@spanner:` from Cloud Spanner. V checks whether the order ignores case.
+schema:
+  CREATE TABLE U (
+    K INT64 NOT NULL,
+    Z STRING(MAX) NOT NULL,
+    A STRING(MAX) NOT NULL,
+    M INT64 NOT NULL,
+    O INT64,
+  ) PRIMARY KEY (K);
+  CREATE TABLE V (
+    K INT64 NOT NULL,
+    b STRING(MAX) NOT NULL,
+    C STRING(MAX) NOT NULL,
+  ) PRIMARY KEY (K)
+
+case insert_missing_all
+insert U cols=K:
+  [1]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: Z
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for these NOT NULL columns: A.
+
+case insert_missing_first_two
+insert U cols=K,M:
+  [1, 1]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: Z
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for these NOT NULL columns: A.
+
+case insert_missing_last_two
+insert U cols=K,Z:
+  [1, "z"]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: A
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for these NOT NULL columns: A.
+
+case insert_nulls_declaration_order
+insert U cols=K,Z,A,M:
+  [1, null, null, null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: U.Z in table: U
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A must not be NULL in table U.
+
+case insert_nulls_reverse_order
+insert U cols=K,M,A,Z:
+  [1, null, null, null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: U.M in table: U
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A must not be NULL in table U.
+
+case insert_null_and_missing
+insert U cols=K,Z,A:
+  [1, null, "a"]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: M
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for these NOT NULL columns: M.
+
+case insert_or_update_missing_all
+insert_or_update U cols=K,O:
+  [1, 1]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: Z
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A potentially-new row in table U does not specify a non-null value for these NOT NULL columns: A.
+
+case replace_missing_all
+replace U cols=K:
+  [1]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: Z
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for these NOT NULL columns: A.
+
+case dml_insert_missing_all
+dml:
+  INSERT INTO U (K) VALUES (1)
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for NOT NULL column: Z
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table U does not specify a non-null value for these NOT NULL columns: A.
+
+case dml_insert_nulls_reverse_order
+dml:
+  INSERT INTO U (K, M, A, Z) VALUES (1, NULL, NULL, NULL)
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: U.Z in table: U
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A must not be NULL in table U.
+
+case dml_update_nulls
+insert U cols=K,Z,A,M:
+  [1, "z", "a", 1]
+dml:
+  UPDATE U SET M = NULL, Z = NULL WHERE K = 1
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: U.Z in table: U
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: M must not be NULL in table U.
+
+case mixed_case_missing
+insert V cols=K:
+  [1]
+expect:
+  error: FAILED_PRECONDITION
+  message: A new row in table V does not specify a non-null value for NOT NULL column: b
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table V does not specify a non-null value for these NOT NULL columns: b.
+
+case mixed_case_nulls
+insert V cols=K,b,C:
+  [1, null, null]
+expect:
+  error: FAILED_PRECONDITION
+  message: Cannot specify a null value for column: V.b in table: V
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: b must not be NULL in table V.

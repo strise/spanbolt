@@ -12616,9 +12616,9 @@
       ]
     },
     {
-      "detail": null,
+      "detail": "line 3696:\n  status: expected OUT_OF_RANGE, got INVALID_ARGUMENT",
       "name": "sql/functions/regex_149",
-      "status": "pass",
+      "status": "fail",
       "tags": [
         "sql",
         "function"

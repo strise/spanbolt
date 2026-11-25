@@ -1,0 +1,131 @@
+tags: ddl graph oracle
+# Dropping or changing a table, column or view a property graph uses (spanbolt #84). Emulator 1.5.59
+# has no check for these and aborts on a GOOGLESQL_RET_CHECK ("Column mismatch between
+# GraphElementTable and its underlying Table"), so those cases run against Cloud Spanner only.
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE TABLE Knows (Id STRING(MAX) NOT NULL, Src STRING(MAX), Dst STRING(MAX), W INT64) PRIMARY KEY (Id);
+  CREATE PROPERTY GRAPH G NODE TABLES (Person KEY (Id) LABEL P PROPERTIES (Id, Name)) EDGE TABLES (Knows KEY (Id) SOURCE KEY (Src) REFERENCES Person (Id) DESTINATION KEY (Dst) REFERENCES Person (Id) LABEL K PROPERTIES (Id));
+  CREATE PROPERTY GRAPH GA NODE TABLES (Person KEY (Id) LABEL P PROPERTIES ALL COLUMNS)
+
+case drop_edge_table
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+ddl:
+  DROP TABLE Knows
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop TABLE `Knows` on which there are dependent property graphs: G.
+
+case drop_node_table
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+ddl:
+  DROP TABLE Person
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop TABLE `Person` on which there are dependent property graphs: G, GA.
+
+case drop_property_column
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+ddl:
+  ALTER TABLE Person DROP COLUMN Name
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column `Name` from the table `Person` because it is used by the property graph(s) `G`, `GA`.
+
+case drop_all_columns_column
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+ddl:
+  ALTER TABLE Person DROP COLUMN Extra
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column `Extra` from the table `Person` because it is used by the property graph(s) `GA`.
+
+case drop_edge_key_column
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+ddl:
+  ALTER TABLE Knows DROP COLUMN Src
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop column `Src` from the table `Knows` because it is used by the property graph(s) `G`.
+
+case alter_property_column_type
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+ddl:
+  ALTER TABLE Person ALTER COLUMN Name BYTES(MAX)
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: 
+
+case alter_edge_key_column_type
+ddl:
+  ALTER TABLE Knows ALTER COLUMN Src BYTES(MAX)
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of graph `G`: Data types and/or annotations of the referencing columns in the edge table do not match those of the referenced columns in the node table [at 12:7]
+
+case drop_unused_column
+ddl:
+  ALTER TABLE Knows DROP COLUMN W
+expect:
+  ok
+expect@spanner:
+  same
+
+case drop_graphs_then_table
+ddl:
+  DROP PROPERTY GRAPH G;
+  DROP PROPERTY GRAPH GA;
+  DROP TABLE Knows;
+  ALTER TABLE Person DROP COLUMN Name
+expect:
+  ok
+expect@spanner:
+  same
+
+case drop_view
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p;
+  CREATE PROPERTY GRAPH GV NODE TABLES (PV KEY (Id) LABEL P PROPERTIES (Id, Name))
+ddl:
+  DROP VIEW PV
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot drop VIEW `PV` on which there are dependent property_graphs: GV.
+
+case replace_view_without_a_property
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p;
+  CREATE PROPERTY GRAPH GV NODE TABLES (PV KEY (Id) LABEL P PROPERTIES (Id, Name))
+ddl:
+  CREATE OR REPLACE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id FROM Person p
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot replace VIEW `PV`. The new definition causes the definition of PROPERTY GRAPH `GV` to become invalid with the following diagnostic message:\n\nError analyzing the definition of graph `GV`: Unrecognized name: Name [at 7:9]
+
+case replace_view_changing_a_property_type
+skip@emulator: emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p;
+  CREATE PROPERTY GRAPH GV NODE TABLES (PV KEY (Id) LABEL P PROPERTIES (Id, Name))
+ddl:
+  CREATE OR REPLACE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Extra AS Name FROM Person p
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Cannot replace VIEW `PV`. The new definition causes the definition of PROPERTY GRAPH `GV` to become invalid with the following diagnostic message:\n\nThe schema change implicitly changes the type of the property `Name` for property graph `GV` from `STRING` to `INT64`.\nTip: Give explicit type to the property definition before making this change by adding casts/conversions to the intended final output type.
+
+case replace_view_keeping_the_properties
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p;
+  CREATE PROPERTY GRAPH GV NODE TABLES (PV KEY (Id) LABEL P PROPERTIES (Id, Name))
+ddl:
+  CREATE OR REPLACE VIEW PV SQL SECURITY INVOKER AS SELECT p.Name, p.Id, p.Extra FROM Person p
+expect:
+  ok
+expect@spanner:
+  same

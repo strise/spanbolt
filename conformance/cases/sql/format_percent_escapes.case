@@ -1,0 +1,96 @@
+# FORMAT patterns with `%` escapes that carry flags, a width or a precision (spanbolt #132). Cloud
+# Spanner counts them as escapes that take no argument at analysis and rejects them when FORMAT
+# runs; GoogleSQL and the emulator reject the pattern at analysis. `expect:` is recorded from the
+# emulator; `expect@spanner:` from Cloud Spanner.
+tags: sql functions oracle
+schema:
+  CREATE TABLE T (K INT64 NOT NULL) PRIMARY KEY (K)
+
+case star_width
+query:
+  SELECT FORMAT('%*%', 1)
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%*%" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too many arguments to FORMAT for pattern \"%*%\"; Expected 1; Got 2 [at 1:8]
+
+case star_width_no_arg
+query:
+  SELECT FORMAT('%*%')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%*%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%*%'.
+
+case star_precision
+query:
+  SELECT FORMAT('%.*%', 1)
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%.*%" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too many arguments to FORMAT for pattern \"%.*%\"; Expected 1; Got 2 [at 1:8]
+
+case escape_between_specs
+query:
+  SELECT FORMAT('%d%5%%d', 1, 2)
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%d%5%%d" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%d%5%%d'.
+
+case escape_too_few
+query:
+  SELECT FORMAT('%5%%d')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%5%%d" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too few arguments to FORMAT for pattern \"%5%%d\"; Expected 2; Got 1 [at 1:8]
+
+case escape_then_plain_escape
+query:
+  SELECT FORMAT('%-%%%')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%-%%%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%-%%%'.
+
+case escape_column_pattern
+query:
+  SELECT FORMAT(p) FROM (SELECT '%5%' AS p)
+expect:
+  error: OUT_OF_RANGE
+  message: Invalid FORMAT string: "%5%"
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%5%'.
+
+case escape_empty_table_with_arg
+query:
+  SELECT FORMAT('%5%%d', K) FROM T
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%5%%d" [at 1:8]
+expect@spanner:
+  columns: STRING
+
+case escape_flags_all
+query:
+  SELECT FORMAT('%+ #0%')
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: "%+ #0%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%+ #0%'.

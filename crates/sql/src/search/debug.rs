@@ -531,10 +531,10 @@ mod tests {
         assert_eq!(ft(Value::Null), None);
 
         let sub = |v: Value, max: i64, min: i64| {
-            debug(tokens::tokenize_substring(&named(
-                &[(0, v), (1, Value::Int64(max)), (2, Value::Int64(min))],
-                6,
-            )))
+            debug(tokens::tokenize_substring(
+                &named(&[(0, v), (1, Value::Int64(max)), (2, Value::Int64(min))], 6),
+                false,
+            ))
             .unwrap()
         };
         assert_eq!(

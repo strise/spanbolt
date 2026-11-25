@@ -75,7 +75,7 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
 /// `GetNormalizedTerms`. Prod joins runs of single letters first, like its tokenizer.
 fn normalized_terms(q: &str, emulator: bool) -> Vec<Vec<u8>> {
     if !emulator {
-        return fulltext_tokens(&lower(&join_letters(q)))
+        return fulltext_tokens(q)
             .into_iter()
             .filter(|(_, alt)| !alt)
             .map(|(t, _)| t.into_bytes())
@@ -818,7 +818,7 @@ pub fn search_substring(args: &[Value], emulator: bool) -> Result<Value> {
     if source_null {
         return Ok(Value::Null);
     }
-    let lq = lower(q);
+    let lq = tokens::fold(q, emulator);
     let subs: Vec<&[u8]> = split(lq.as_bytes()).collect();
     if subs.is_empty() {
         return Ok(Value::Bool(false));
@@ -908,7 +908,11 @@ pub fn search_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
                 // Prod cuts character n-grams, and over TOKENIZE_NGRAMS keeps the query's case
                 // as it keeps the value's.
                 let w = String::from_utf8_lossy(w);
-                let w = if substring { lower(&w) } else { w.into_owned() };
+                let w = if substring {
+                    tokens::fold(&w, false)
+                } else {
+                    w.into_owned()
+                };
                 let mut out = Vec::new();
                 let n = (w.chars().count() as i64).min(max);
                 tokens::char_ngrams_of(&w, n, max, &mut out);
@@ -1060,7 +1064,7 @@ fn score_ngrams_prod(args: &[Value]) -> Result<Value> {
         }
     }
     if substring {
-        let lq = lower(q);
+        let lq = tokens::fold(q, false);
         let words: Vec<&[u8]> = split(lq.as_bytes()).collect();
         trigrams(
             "  ",
@@ -1125,7 +1129,7 @@ fn snippet_terms(query: &str) -> Vec<String> {
     // highlights nothing.
     let query = without_negated(&join_letters(query));
     let mut terms: Vec<String> = Vec::new();
-    for (t, alt) in fulltext_tokens(&lower(&query)) {
+    for (t, alt) in tokens::fulltext_tokens_unjoined(&query) {
         if !alt && t.chars().any(char::is_alphanumeric) && !terms.contains(&t) {
             terms.push(t);
         }
@@ -1179,7 +1183,7 @@ fn snippet_matches(chars: &[char], terms: &[String]) -> Vec<(usize, usize, usize
         if !term_chars.iter().any(|t| find(chunk, 0, t).is_some()) {
             continue;
         }
-        let toks = fulltext_tokens(&chunk.iter().collect::<String>());
+        let toks = tokens::fulltext_tokens_unjoined(&chunk.iter().collect::<String>());
         let mut cursor = 0;
         for (k, (tok, alt)) in toks.iter().enumerate() {
             if *alt {
@@ -2099,13 +2103,15 @@ mod tests {
         assert_eq!(score(&ngrams("alpha alpha", 3, 3), "al"), 0.2);
         assert_eq!(score(&ngrams("ABC-123/x", 1, 4), "ABC"), 0.2727272727272727);
         assert_eq!(score(&ngrams("Abc", 1, 4), "ABC"), 0.14285714285714285);
-        let sub = tokens::tokenize_substring(&[s("Alpha Beta Gamma")]).unwrap();
+        let sub = tokens::tokenize_substring(&[s("Alpha Beta Gamma")], false).unwrap();
         assert_eq!(score(&sub, "alpha beta"), 0.6470588235294118);
-        let sub = tokens::tokenize_substring(&[s("The quick brown fox jumps over the lazy dog")])
-            .unwrap();
+        let sub =
+            tokens::tokenize_substring(&[s("The quick brown fox jumps over the lazy dog")], false)
+                .unwrap();
         assert_eq!(score(&sub, "lazy dogs"), 0.1590909090909091);
-        let sub = tokens::tokenize_substring(&[s("Spanner: the emulator is not Spanner itself.")])
-            .unwrap();
+        let sub =
+            tokens::tokenize_substring(&[s("Spanner: the emulator is not Spanner itself.")], false)
+                .unwrap();
         assert_eq!(score(&sub, "emulatr"), 5.0 / 38.0);
     }
 }

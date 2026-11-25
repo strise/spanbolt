@@ -1,0 +1,599 @@
+# Cloud Spanner's fulltext tokenizer on email addresses with single-letter parts, single letters
+# inside words (`xy's z`), `+` before punctuation, Unicode normalisation and CJK text (#140), read
+# through DEBUG_TOKENLIST (Spanner only) and SEARCH.
+tags: sql search
+
+case email_tokens
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['a@b.c', 'a@b.cd', 'ab@c.d', 'x@y.z.w', 'a.b@c.d', 'a@bc.de', 'q a@b.c r', 'a b@c.d', 'a@b', 'a@b c', 'a.b.c@d.e']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["a b@c.d","a(boundary), [b, b@c.d], cd(end_boundary)"]
+  ["a.b.c@d.e","[a.b.c@d.e, abc](boundary), de(end_boundary)"]
+  ["a.b@c.d","[a.b@c.d, ab](boundary), cd(end_boundary)"]
+  ["a@b","[a, a@b](boundary), b(end_boundary)"]
+  ["a@b c","[a, a@b](boundary), b, c(end_boundary)"]
+  ["a@b.c","[a, a@b.c](boundary), bc(end_boundary)"]
+  ["a@b.cd","[a, a@b.cd](boundary), b, cd(end_boundary)"]
+  ["a@bc.de","[a, a@bc.de](boundary), bc, de(end_boundary)"]
+  ["ab@c.d","[ab, ab@c.d](boundary), cd(end_boundary)"]
+  ["q a@b.c r","q(boundary), [a, a@b.c], bc, r(end_boundary)"]
+  ["x@y.z.w","[x, x@y.z.w](boundary), yzw(end_boundary)"]
+case normalisation_tokens
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['ﬁle', 'İstanbul', 'ǅemal', 'Åström', 'café', 'café', 'Ⅻ', '①', 'ｆｕｌｌ', 'ΣΑΣ', 'ﬀ', '½', 'Straße', 'ŉ', 'ﬆ', 'K', 'µ', 'ǰ', 'ᾈ', 'ﬃx']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["K","k(boundary, end_boundary)"]
+  ["Straße","straße(boundary, end_boundary)"]
+  ["café","café(boundary, end_boundary)"]
+  ["café","café(boundary, end_boundary)"]
+  ["µ","μ(boundary, end_boundary)"]
+  ["½","½(boundary, end_boundary)"]
+  ["Åström","åström(boundary, end_boundary)"]
+  ["İstanbul","istanbul(boundary, end_boundary)"]
+  ["ŉ","ʼn(boundary, end_boundary)"]
+  ["ǅemal","džemal(boundary, end_boundary)"]
+  ["ǰ","ǰ(boundary, end_boundary)"]
+  ["ΣΑΣ","σασ(boundary, end_boundary)"]
+  ["ᾈ","ἀι(boundary, end_boundary)"]
+  ["Ⅻ","ⅻ(boundary, end_boundary)"]
+  ["①","①(boundary, end_boundary)"]
+  ["ﬀ","ff(boundary, end_boundary)"]
+  ["ﬁle","file(boundary, end_boundary)"]
+  ["ﬃx","ffix(boundary, end_boundary)"]
+  ["ﬆ","st(boundary, end_boundary)"]
+  ["ｆｕｌｌ","full(boundary, end_boundary)"]
+case normalisation_more
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t, TO_CODE_POINTS(v) AS cp
+  FROM UNNEST(['ẞ', 'ſ', 'ĳ', 'ŀ', 'ﬓ', 'ᾳ', 'ΐ', 'ϐ', 'ϑ', 'ǈ', '²', 'ℌ', 'ｶ', 'ｱｲ', '㌀', '０１', 'Ａ', 'i\u0307', 'I', 'ı', 'a\u0307', 'e\u0301\u0301', 'Ω', 'Å', 'ﬅ', 'proﬁle', 'ΣΑΣ ς', 'ꭰ', 'Ꭰ', 'ﬗ', 'ǅ', '\u1e9b', 'ﬄ', 'Ⅻ', 'ⓐ', 'Ⓐ', '𝐀', 'ℹ', 'ﬁ\u0301']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING, cp ARRAY<INT64>
+  ["I","i(boundary, end_boundary)",["73"]]
+  ["ȧ","ȧ(boundary, end_boundary)",["97","775"]]
+  ["é́","é́(boundary, end_boundary)",["101","769","769"]]
+  ["i̇","i̇(boundary, end_boundary)",["105","775"]]
+  ["proﬁle","profile(boundary, end_boundary)",["112","114","111","64257","108","101"]]
+  ["²","²(boundary, end_boundary)",["178"]]
+  ["Å","å(boundary, end_boundary)",["197"]]
+  ["ı","ı(boundary, end_boundary)",["305"]]
+  ["ĳ","ij(boundary, end_boundary)",["307"]]
+  ["ŀ","l·(boundary, end_boundary)",["320"]]
+  ["ſ","s(boundary, end_boundary)",["383"]]
+  ["ǅ","dž(boundary, end_boundary)",["453"]]
+  ["ǈ","lj(boundary, end_boundary)",["456"]]
+  ["ΐ","ΐ(boundary, end_boundary)",["912"]]
+  ["ΣΑΣ ς","σασ(boundary), σ(end_boundary)",["931","913","931","32","962"]]
+  ["Ω","ω(boundary, end_boundary)",["937"]]
+  ["ϐ","β(boundary, end_boundary)",["976"]]
+  ["ϑ","θ(boundary, end_boundary)",["977"]]
+  ["Ꭰ","Ꭰ(boundary, end_boundary)",["5024"]]
+  ["ẛ","ṡ(boundary, end_boundary)",["7835"]]
+  ["ẞ","ß(boundary, end_boundary)",["7838"]]
+  ["ᾳ","αι(boundary, end_boundary)",["8115"]]
+  ["ℌ","h(boundary, end_boundary)",["8460"]]
+  ["ℹ","i(boundary, end_boundary)",["8505"]]
+  ["Ⅻ","ⅻ(boundary, end_boundary)",["8555"]]
+  ["Ⓐ","ⓐ(boundary, end_boundary)",["9398"]]
+  ["ⓐ","ⓐ(boundary, end_boundary)",["9424"]]
+  ["㌀","㌀(boundary, end_boundary)",["13056"]]
+  ["ꭰ","Ꭰ(boundary, end_boundary)",["43888"]]
+  ["ﬁ́","fí(boundary, end_boundary)",["64257","769"]]
+  ["ﬄ","ffl(boundary, end_boundary)",["64260"]]
+  ["ﬅ","st(boundary, end_boundary)",["64261"]]
+  ["ﬓ","մն(boundary, end_boundary)",["64275"]]
+  ["ﬗ","մխ(boundary, end_boundary)",["64279"]]
+  ["０１","01(boundary, end_boundary)",["65296","65297"]]
+  ["Ａ","a(boundary, end_boundary)",["65313"]]
+  ["ｱｲ","アイ(boundary, end_boundary)",["65393","65394"]]
+  ["ｶ","カ(boundary, end_boundary)",["65398"]]
+  ["𝐀","a(boundary, end_boundary)",["119808"]]
+
+case normalisation_modifiers
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t, TO_CODE_POINTS(v) AS cp
+  FROM UNNEST(['ʰ', 'ª', 'ⁿ', 'ᵃ', 'ℓ', '№', '™', 'ℵ', 'x\u0345', 'ᾼ', 'İİ', 'ﾞ', 'ｶﾞ', 'ｰ', 'ⅰ', 'ℂ', '𝟘', '٣', '۳', 'x²y', 'aⅫb', 'x①y', 'ŉx', 'ǲ', 'ﬂ', 'ẖ', 'ʼ']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING, cp ARRAY<INT64>
+  ["aⅫb","aⅻb(boundary, end_boundary)",["97","8555","98"]]
+  ["x²y","x²y(boundary, end_boundary)",["120","178","121"]]
+  ["xͅ","xι(boundary, end_boundary)",["120","837"]]
+  ["x①y","x①y(boundary, end_boundary)",["120","9312","121"]]
+  ["ª","ª(boundary, end_boundary)",["170"]]
+  ["İİ","ii(boundary, end_boundary)",["304","304"]]
+  ["ŉx","ʼnx(boundary, end_boundary)",["329","120"]]
+  ["ǲ","dz(boundary, end_boundary)",["498"]]
+  ["ʰ","ʰ(boundary, end_boundary)",["688"]]
+  ["ʼ","ʼ(boundary, end_boundary)",["700"]]
+  ["٣","٣(boundary, end_boundary)",["1635"]]
+  ["۳","۳(boundary, end_boundary)",["1779"]]
+  ["ᵃ","ᵃ(boundary, end_boundary)",["7491"]]
+  ["ẖ","ẖ(boundary, end_boundary)",["7830"]]
+  ["ᾼ","αι(boundary, end_boundary)",["8124"]]
+  ["ⁿ","ⁿ(boundary, end_boundary)",["8319"]]
+  ["ℂ","c(boundary, end_boundary)",["8450"]]
+  ["ℓ","l(boundary, end_boundary)",["8467"]]
+  ["№","№(boundary, end_boundary)",["8470"]]
+  ["™","™(boundary, end_boundary)",["8482"]]
+  ["ℵ","א(boundary, end_boundary)",["8501"]]
+  ["ⅰ","ⅰ(boundary, end_boundary)",["8560"]]
+  ["ﬂ","fl(boundary, end_boundary)",["64258"]]
+  ["ｰ","ー(boundary, end_boundary)",["65392"]]
+  ["ｶﾞ","ガ(boundary, end_boundary)",["65398","65438"]]
+  ["ﾞ","゙(boundary, end_boundary)",["65438"]]
+  ["𝟘","0(boundary, end_boundary)",["120792"]]
+
+case normalisation_other_tokenizers
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('ﬁle İx ＡＢ')) AS s,
+    DEBUG_TOKENLIST(TOKENIZE_NGRAMS('ﬁİＡ', ngram_size_min=>1, ngram_size_max=>2)) AS n,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('Straße ꭰ ᾳ')) AS s2
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: s STRING, n STRING, s2 STRING
+  ["[a, b, e, f, fi, fil, i, il, ile, l, le, x], file, <gap(1)>, ix, <gap(1)>, ab","[İ, ﬁ, ﬁİ, Ａ], İＡ","[a, aß, aße, e, r, ra, raß, s, st, str, t, tr, tra, ß, ße, α, ι], stra, traß, raße, <gap(1)>, Ꭰ, <gap(1)>, αι"]
+
+case joined_letters_inside_words
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['xy\'s z', 'xy_z q', 'xy&z q', 'x\'s y', 'a_b c', 'x_y z', 'q x_y', 'at&t x', 'a&b c', 'xy\'s z w', 'xy+.', 'xy+,', 'xy+;', 'xy+!', 'xy+:', 'xy+?', 'xy+)', 'xy+.z', 'xy+. z', 'c++.', 'c++,', 'c#.', 'c#,', 'a+.', 'x y+.', 'xy+..', 'xy+-']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["a&b c","a&b(boundary), c(end_boundary)"]
+  ["a+.","a+(boundary, end_boundary)"]
+  ["a_b c","a_b(boundary), c(end_boundary)"]
+  ["at&t x","at&t(boundary), x(end_boundary)"]
+  ["c#,","c#(boundary, end_boundary)"]
+  ["c#.","c#(boundary, end_boundary)"]
+  ["c++,","c(boundary), ++(end_boundary)"]
+  ["c++.","c(boundary), ++(end_boundary)"]
+  ["q x_y","q(boundary), x_y(end_boundary)"]
+  ["x y+.","x(boundary), y+(end_boundary)"]
+  ["x's y","[x, x\\'s](boundary), y(end_boundary)"]
+  ["x_y z","x_y(boundary), z(end_boundary)"]
+  ["xy&z q","xy&z(boundary), q(end_boundary)"]
+  ["xy's z","[xy, xy\\'s](boundary), z(end_boundary)"]
+  ["xy's z w","[xy, xy\\'s](boundary), zw(end_boundary)"]
+  ["xy+!","xy(boundary), +!(end_boundary)"]
+  ["xy+)","xy(boundary), \"+)\"(end_boundary)"]
+  ["xy+,","xy+(boundary, end_boundary)"]
+  ["xy+-","xy(boundary), +-(end_boundary)"]
+  ["xy+.","xy+(boundary, end_boundary)"]
+  ["xy+. z","xy+(boundary), z(end_boundary)"]
+  ["xy+..","xy+(boundary, end_boundary)"]
+  ["xy+.z","xy+(boundary), z(end_boundary)"]
+  ["xy+:","xy(boundary), +:(end_boundary)"]
+  ["xy+;","xy(boundary), +;(end_boundary)"]
+  ["xy+?","xy(boundary), +?(end_boundary)"]
+  ["xy_z q","xy_z(boundary), q(end_boundary)"]
+
+case cjk_tokens
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['日本語', '日本語を勉強します', '中文分词测试', '한국어 텍스트', '東京都', 'カタカナ', 'ひらがな', 'abc日本def', '日本 語', '日', '私は学生です', '北京大学', '台灣', '漢字']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["abc日本def","abc(boundary), 日本, def(end_boundary)"]
+  ["ひらがな","ひらがな(boundary, end_boundary)"]
+  ["カタカナ","カタカナ(boundary, end_boundary)"]
+  ["中文分词测试","中文(boundary), 分词, 测试(end_boundary)"]
+  ["北京大学","北京(boundary), 大学(end_boundary)"]
+  ["台灣","台灣(boundary, end_boundary)"]
+  ["日","日(boundary, end_boundary)"]
+  ["日本 語","日本(boundary), 語(end_boundary)"]
+  ["日本語","日本(boundary), 語(end_boundary)"]
+  ["日本語を勉強します","日本(boundary), 語, を, 勉強, し, ます(end_boundary)"]
+  ["東京都","東京(boundary), 都(end_boundary)"]
+  ["漢字","漢字(boundary, end_boundary)"]
+  ["私は学生です","私(boundary), は, 学生, です(end_boundary)"]
+  ["한국어 텍스트","한국어(boundary), 텍스트(end_boundary)"]
+case search_normalised
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "café"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'file') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+case search_istanbul
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'istanbul') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case search_istanbul_dotted
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'İstanbul') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+
+case search_cjk_prefix
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '日本') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `日本`, has error(s): -Encountered error on column 6 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+
+case search_cjk_suffix
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '語') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `語`, has error(s): -Encountered error on column 3 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+
+case search_cjk_word
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '日本語') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `日本語`, has error(s): -Encountered error on column 9 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+
+case search_email
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'a@b.c') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  same
+
+case search_email_domain
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'b.c') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  same
+
+case search_email_local
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'a') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  same
+
+case search_email_joined
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'bc') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+
+case search_composed
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'café') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["5"]
+
+case search_ligature
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'ﬁle') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+
+case search_upper
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "ﬁle"]
+  [2, "İstanbul"]
+  [3, "日本語"]
+  [4, "a@b.c"]
+  [5, "cafe\u0301"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'FILE') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+
+case search_plus_period
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "xy+."]
+  [2, "other"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xy+') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_plus_query_period
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "xy+"]
+  [2, "other"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xy+.') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `xy+.`, has error(s): -Encountered error on column 4 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+
+case search_plus_query_comma
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "xy+"]
+  [2, "other"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xy+,') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case search_apostrophe_letter
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "xy's z"]
+  [2, "other"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'sz') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+
+case search_underscore_letter
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "xy_z q"]
+  [2, "other"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'zq') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same

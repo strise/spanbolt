@@ -18,6 +18,8 @@ expect@spanner:
 case wrong_case_table
 ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Error analyzing the definition of view `V`: Table not found: account [at 1:63]
@@ -25,10 +27,14 @@ expect@spanner:
 case wrong_case_column
 ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.accountid FROM Account AS a
+expect:
+  ok
 
 case wrong_case_alias
 ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS SELECT ACCOUNT.AccountId FROM Account
+expect:
+  ok
 
 case missing_column
 ddl:
@@ -45,12 +51,16 @@ ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
 ddl:
   CREATE VIEW W SQL SECURITY INVOKER AS SELECT v.AccountId FROM v
+expect:
+  ok
 
 case wrong_case_second_line
 ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS
   SELECT a.AccountId
   FROM account AS a
+expect:
+  ok
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Error analyzing the definition of view `V`: Table not found: account [at 2:6]
@@ -98,6 +108,8 @@ ddl:
   CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
 ddl:
   CREATE OR REPLACE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a
+expect:
+  ok
 expect@spanner:
   error: FAILED_PRECONDITION
   message: Cannot replace VIEW `V` because new definition is invalid with the following diagnostic message:\n\nError analyzing the definition of view `V`: Table not found: account [at 1:63]

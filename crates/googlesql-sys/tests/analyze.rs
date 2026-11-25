@@ -369,3 +369,28 @@ fn deep_expressions_analyse_on_a_small_stack() {
         .join()
         .expect("analysis");
 }
+
+#[test]
+fn deep_expressions_decode() {
+    // prost stops at 100 nested messages and a call is four of them: 34 nested calls didn't
+    // decode. Expressions and scans now decode up to `deep::MAX_LEVELS`, deep ones on a thread of
+    // their own.
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(|| {
+            let cat = Catalog::new(r#"{"tables":[],"extra_features":[]}"#).expect("catalog");
+            for n in [10, 75, 250] {
+                let nested = format!("SELECT {}1{}", "ABS(".repeat(n), ")".repeat(n));
+                assert!(cat.analyze(&nested, "{}").is_ok(), "{n} nested calls");
+            }
+            let chain = format!("SELECT {}", vec!["1"; 250].join(" + "));
+            assert!(cat.analyze(&chain, "{}").is_ok());
+            // Deeper than that is an error, not a stack overflow.
+            let nested = format!("SELECT {}1{}", "ABS(".repeat(5000), ")".repeat(5000));
+            let e = cat.analyze(&nested, "{}").expect_err("too deep");
+            assert!(e.message.contains("nested too deep"), "{}", e.message);
+        })
+        .expect("spawn")
+        .join()
+        .expect("decoding");
+}

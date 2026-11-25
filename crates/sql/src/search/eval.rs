@@ -10,7 +10,7 @@ use super::rquery::{self, Node};
 use super::score::{self, ScoreQuery};
 use super::tokens::{
     self, FULLTEXT, GAP, NGRAMS, PHRASE, SUBSTRING, VALUE_PREFIX, VALUE_SUFFIX, WORD_PREFIX,
-    WORD_SUFFIX, arg, decode, int_arg, is_signature, join_letters, joined_letters, lower, split,
+    WORD_SUFFIX, arg, decode, fulltext_tokens, int_arg, is_signature, join_letters, joined_letters, lower, split,
     str_arg,
 };
 
@@ -70,7 +70,11 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
 
 /// `GetNormalizedTerms`. Prod joins runs of single letters first, like its tokenizer.
 fn normalized_terms(q: &str, emulator: bool) -> Vec<Vec<u8>> {
-    let q = if emulator { q.into() } else { join_letters(q) };
+    if !emulator {
+        return fulltext_tokens(&lower(&join_letters(q)))
+            .map(String::into_bytes)
+            .collect();
+    }
     split(q.as_bytes())
         .map(|t| match std::str::from_utf8(t) {
             Ok(t) => lower(t).into_bytes(),

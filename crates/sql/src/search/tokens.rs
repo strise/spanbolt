@@ -301,7 +301,7 @@ fn each_text(
 
 /// Runs of ASCII symbols Cloud Spanner's fulltext tokenizer keeps as tokens (recorded in
 /// `conformance/cases/sql/search_tokenizer_symbols.case`); it drops every other run.
-const SYMBOL_TOKENS: &[&str] = &[
+pub const SYMBOL_TOKENS: &[&str] = &[
     "--", "---", "</", "/>", "<>", "</>", "-->", "&&", "@@", "&-", "-&", "<</",
 ];
 

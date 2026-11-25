@@ -1303,61 +1303,232 @@ fn format_int(sp: &Spec, conv: char, x: i64) -> String {
     finish_number(&sp2, x < 0, body, prefix, true)
 }
 
-/// The number of arguments a FORMAT pattern consumes.
-fn format_arg_count(pat: &str) -> usize {
+/// GoogleSQL's short type name in FORMAT's type errors (`ShortTypeName`).
+fn format_type_name(t: &Type) -> String {
+    match t {
+        Type::Array(_) => "ARRAY".into(),
+        Type::Struct(_) => "STRUCT".into(),
+        Type::Proto(name) => name.clone(),
+        t => crate::types::gsql_name(t),
+    }
+}
+
+/// Checks a FORMAT pattern against its arguments' types as GoogleSQL's
+/// `StringFormatEvaluator::SetPattern` does, which the emulator runs for a pattern that isn't a
+/// literal (the analyser runs it for a literal): the first error in pattern order, then the
+/// argument count. `types` are the declared types of the arguments after the pattern.
+fn format_check(pat: &str, types: &[Type]) -> Result<()> {
     let b = pat.as_bytes();
-    let (mut k, mut n) = (0, 0);
-    while k < b.len() {
-        if b[k] != b'%' {
-            k += 1;
-            continue;
+    let invalid = || out_of_range(format!("Invalid FORMAT string: \"{pat}\""));
+    let type_error = |i: usize, want: &str| {
+        out_of_range(format!(
+            "Invalid type for argument {} to FORMAT; Expected {want}; Got {}",
+            i + 2,
+            format_type_name(&types[i])
+        ))
+    };
+    let int = |i: usize| -> Result<()> {
+        match types.get(i) {
+            Some(Type::Int64) | None => Ok(()),
+            Some(_) => Err(type_error(i, "integer")),
         }
-        k += 1;
-        if b.get(k) == Some(&b'%') {
-            k += 1;
-            continue;
-        }
-        while k < b.len() && b"-+ #0'".contains(&b[k]) {
-            k += 1;
-        }
-        if b.get(k) == Some(&b'*') {
-            n += 1;
+    };
+    let (mut k, mut next) = (0usize, 0usize);
+    while let Some(off) = b[k..].iter().position(|&c| c == b'%') {
+        k += off + 1;
+        let flags = k;
+        while k < b.len() && b"-+ #'0".contains(&b[k]) {
             k += 1;
         }
-        while k < b.len() && b[k].is_ascii_digit() {
+        // The grouping flag `'` is dropped before `%%` is checked.
+        let flagged = b[flags..k].iter().any(|&c| c != b'\'');
+        let star_width = b.get(k) == Some(&b'*');
+        let width = k;
+        if star_width {
             k += 1;
-        }
-        if b.get(k) == Some(&b'.') {
-            k += 1;
-            if b.get(k) == Some(&b'*') {
-                n += 1;
-                k += 1;
-            }
+        } else {
             while k < b.len() && b[k].is_ascii_digit() {
                 k += 1;
             }
         }
-        if k < b.len() {
-            n += 1;
+        let has_width = k > width;
+        let mut star_prec = false;
+        let has_prec = b.get(k) == Some(&b'.');
+        if has_prec {
             k += 1;
+            if b.get(k) == Some(&b'*') {
+                star_prec = true;
+                k += 1;
+            } else {
+                while k < b.len() && b[k].is_ascii_digit() {
+                    k += 1;
+                }
+            }
         }
+        // The specifier is one character (UTF-8 aware, for the error message).
+        let Some(spec) = pat[k..].chars().next() else {
+            return Err(invalid());
+        };
+        k += spec.len_utf8();
+        if spec == '%' {
+            if flagged || has_width || has_prec {
+                return Err(invalid());
+            }
+            continue;
+        }
+        if star_width {
+            if next < types.len() {
+                int(next)?;
+            }
+            next += 1;
+        }
+        if star_prec {
+            if next < types.len() {
+                int(next)?;
+            }
+            next += 1;
+        }
+        if next < types.len() {
+            let t = &types[next];
+            match spec {
+                'd' | 'i' | 'o' | 'x' | 'X' => int(next)?,
+                'u' => return Err(type_error(next, "UINT")),
+                'f' | 'F' | 'e' | 'E' | 'g' | 'G' => {
+                    if !matches!(t, Type::Float32 | Type::Float64 | Type::Numeric) {
+                        return Err(type_error(next, "FLOAT64"));
+                    }
+                }
+                's' => {
+                    if !matches!(t, Type::String(_)) {
+                        return Err(type_error(next, "STRING"));
+                    }
+                }
+                'p' | 'P' => {
+                    if !matches!(t, Type::Json | Type::Proto(_)) {
+                        return Err(type_error(next, "PROTO or JSON"));
+                    }
+                    return Err(crate::types::unimplemented("FORMAT %p and %P"));
+                }
+                't' | 'T' => {}
+                _ => {
+                    return Err(out_of_range(format!(
+                        "Invalid format specifier character \"{spec}\" in FORMAT string: \"{pat}\""
+                    )));
+                }
+            }
+        }
+        next += 1;
     }
-    n
+    if next != types.len() {
+        let which = if next > types.len() { "few" } else { "many" };
+        return Err(out_of_range(format!(
+            "Too {which} arguments to FORMAT for pattern \"{pat}\"; Expected {}; Got {}",
+            next + 1,
+            types.len() + 1
+        )));
+    }
+    Ok(())
 }
 
-fn format_fn(a: &[Value]) -> Result<Value> {
+/// Cloud Spanner's runtime check of a FORMAT pattern that wasn't a literal: the pattern is parsed
+/// first, then the argument count, then each argument's specifier and type, in Spanner's words
+/// (arguments counted from 1 after the pattern, messages ending in a period).
+fn format_check_spanner(pat: &str, types: &[Type]) -> Result<()> {
+    let b = pat.as_bytes();
+    let invalid = || {
+        out_of_range(format!(
+            "Invalid format string provided to FORMAT; '{pat}'."
+        ))
+    };
+    // What each argument must be: `None` for `*`, else the specifier it fills.
+    let mut want: Vec<Option<char>> = Vec::new();
+    let mut k = 0usize;
+    while let Some(off) = b[k..].iter().position(|&c| c == b'%') {
+        k += off + 1;
+        let flags = k;
+        while k < b.len() && b"-+ #'0".contains(&b[k]) {
+            k += 1;
+        }
+        let flagged = b[flags..k].iter().any(|&c| c != b'\'');
+        let width = k;
+        if b.get(k) == Some(&b'*') {
+            want.push(None);
+            k += 1;
+        } else {
+            while k < b.len() && b[k].is_ascii_digit() {
+                k += 1;
+            }
+        }
+        let has_width = k > width;
+        let has_prec = b.get(k) == Some(&b'.');
+        if has_prec {
+            k += 1;
+            if b.get(k) == Some(&b'*') {
+                want.push(None);
+                k += 1;
+            } else {
+                while k < b.len() && b[k].is_ascii_digit() {
+                    k += 1;
+                }
+            }
+        }
+        let Some(spec) = pat[k..].chars().next() else {
+            return Err(invalid());
+        };
+        k += spec.len_utf8();
+        if spec == '%' {
+            if flagged || has_width || has_prec {
+                return Err(invalid());
+            }
+            continue;
+        }
+        want.push(Some(spec));
+    }
+    if want.len() != types.len() {
+        return Err(out_of_range(format!(
+            "Wrong number of arguments provided to FORMAT; {} arguments provided, but pattern requires {}.",
+            types.len(),
+            want.len()
+        )));
+    }
+    for (i, (w, t)) in want.iter().zip(types).enumerate() {
+        let expected = match w {
+            None => (!matches!(t, Type::Int64)).then_some("int64"),
+            Some('d' | 'i' | 'o' | 'x' | 'X') => (!matches!(t, Type::Int64)).then_some("integer"),
+            Some('u') => Some("unsigned integer"),
+            Some('f' | 'F' | 'e' | 'E' | 'g' | 'G') => {
+                (!matches!(t, Type::Float32 | Type::Float64 | Type::Numeric))
+                    .then_some("floating point or numeric")
+            }
+            Some('s') => (!matches!(t, Type::String(_))).then_some("string"),
+            Some('p' | 'P') => return Err(crate::types::unimplemented("FORMAT %p and %P")),
+            Some('t' | 'T') => None,
+            Some(c) => {
+                return Err(out_of_range(format!(
+                    "Invalid format string provided to FORMAT; unsupported format specifier %{c}."
+                )));
+            }
+        };
+        if let Some(want) = expected {
+            return Err(out_of_range(format!(
+                "Invalid type for argument {} to FORMAT; Expected {want}; Got {}.",
+                i + 1,
+                format_type_name(t)
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn format_fn(a: &[Value], types: &[Type], emulator_compat: bool) -> Result<Value> {
     let Value::String(pat) = &a[0] else {
         return Ok(Value::Null);
     };
     let args = &a[1..];
-    let want = format_arg_count(pat);
-    if want != args.len() {
-        let which = if want > args.len() { "few" } else { "many" };
-        return Err(out_of_range(format!(
-            "Too {which} arguments to FORMAT for pattern \"{pat}\"; Expected {}; Got {}",
-            want + 1,
-            a.len()
-        )));
+    if emulator_compat {
+        format_check(pat, types)?;
+    } else {
+        format_check_spanner(pat, types)?;
     }
     let mut next = 0usize;
     let mut take = || -> Result<&Value> {
@@ -1442,7 +1613,9 @@ fn format_fn(a: &[Value]) -> Result<Value> {
             'd' | 'i' | 'x' | 'X' | 'o' | 'f' | 'F' | 'e' | 'E' | 'g' | 'G' | 's' | 't' | 'T'
         ) {
             if conv == '%' {
-                return Err(invalid());
+                // `%'%`: the grouping flag on an escaped `%` (format_check rejects other flags).
+                r.push('%');
+                continue;
             }
             return Err(out_of_range(format!(
                 "Invalid format specifier character \"{conv}\" in FORMAT string: \"{pat}\""
@@ -1572,12 +1745,16 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
         }),
         "generate_uuid" => f(|_, _| Ok(st(uuid_string(random_uuid()?)))),
         "new_uuid" => f(|_, _| Ok(Value::Uuid(random_uuid()?))),
-        "format" => f(|_, a| {
-            if a.first().is_none_or(Value::is_null) {
-                return Ok(Value::Null);
-            }
-            format_fn(a)
-        }),
+        "format" => {
+            let types = sig.args.get(1..).unwrap_or_default().to_vec();
+            let compat = sig.emulator_compat;
+            f(move |_, a| {
+                if a.first().is_none_or(Value::is_null) {
+                    return Ok(Value::Null);
+                }
+                format_fn(a, &types, compat)
+            })
+        }
         "regexp_contains" if n == 2 => regexp_fn("regexp_contains"),
         "regexp_extract" if n == 2 => regexp_fn("regexp_extract"),
         "regexp_extract_all" if n == 2 => regexp_fn("regexp_extract_all"),
@@ -1595,12 +1772,87 @@ mod tests {
     }
 
     fn fmt(p: &str, args: Vec<Value>) -> String {
+        fmt_mode(p, args, true)
+    }
+
+    fn fmt_mode(p: &str, args: Vec<Value>, emulator_compat: bool) -> String {
         let mut a = vec![sv(p)];
         a.extend(args);
-        match format_fn(&a) {
+        let types: Vec<Type> = a[1..]
+            .iter()
+            .map(|v| match v {
+                Value::Int64(_) => Type::Int64,
+                Value::Float64(_) => Type::Float64,
+                _ => Type::String(None),
+            })
+            .collect();
+        match format_fn(&a, &types, emulator_compat) {
             Ok(Value::String(x)) => x.to_string(),
-            other => format!("{other:?}"),
+            Ok(other) => format!("{other:?}"),
+            Err(e) => e.message.to_string(),
         }
+    }
+
+    #[test]
+    fn format_checks_like_cloud_spanner() {
+        let spanner = |p: &str, args| fmt_mode(p, args, false);
+        assert_eq!(spanner("%'%", vec![]), "%");
+        assert_eq!(
+            spanner("%5%%d", vec![Value::Int64(1)]),
+            "Invalid format string provided to FORMAT; '%5%%d'."
+        );
+        assert_eq!(
+            spanner("%a", vec![]),
+            "Wrong number of arguments provided to FORMAT; 0 arguments provided, but pattern requires 1."
+        );
+        assert_eq!(
+            spanner("%a", vec![Value::Int64(1)]),
+            "Invalid format string provided to FORMAT; unsupported format specifier %a."
+        );
+        assert_eq!(
+            spanner("%*d", vec![sv("a"), Value::Int64(1)]),
+            "Invalid type for argument 1 to FORMAT; Expected int64; Got STRING."
+        );
+        assert_eq!(
+            spanner("%d %d", vec![Value::Int64(1), sv("x")]),
+            "Invalid type for argument 2 to FORMAT; Expected integer; Got STRING."
+        );
+        assert_eq!(spanner("%d-%s", vec![Value::Int64(1), sv("x")]), "1-x");
+    }
+
+    #[test]
+    fn format_checks_like_googlesql() {
+        assert_eq!(fmt("%'%", vec![]), "%");
+        assert_eq!(fmt("%5%", vec![]), "Invalid FORMAT string: \"%5%\"");
+        assert_eq!(
+            fmt("%", vec![Value::Int64(1)]),
+            "Invalid FORMAT string: \"%\""
+        );
+        assert_eq!(
+            fmt("%a", vec![Value::Int64(1)]),
+            "Invalid format specifier character \"a\" in FORMAT string: \"%a\""
+        );
+        // Without an argument left, the specifier isn't checked: the count is wrong first.
+        assert_eq!(
+            fmt("%a", vec![]),
+            "Too few arguments to FORMAT for pattern \"%a\"; Expected 2; Got 1"
+        );
+        assert_eq!(
+            fmt("%d", vec![sv("a")]),
+            "Invalid type for argument 2 to FORMAT; Expected integer; Got STRING"
+        );
+        assert_eq!(
+            fmt("%*d", vec![sv("a"), Value::Int64(1)]),
+            "Invalid type for argument 2 to FORMAT; Expected integer; Got STRING"
+        );
+        assert_eq!(
+            fmt("%f", vec![sv("a")]),
+            "Invalid type for argument 2 to FORMAT; Expected FLOAT64; Got STRING"
+        );
+        assert_eq!(
+            fmt("%s %s", vec![sv("a")]),
+            "Too few arguments to FORMAT for pattern \"%s %s\"; Expected 3; Got 2"
+        );
     }
 
     #[test]

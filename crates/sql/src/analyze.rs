@@ -75,6 +75,12 @@ fn prod_analyzer_error(mut e: Error) -> Error {
     if e.code == Code::Unimplemented {
         return e;
     }
+    // Spanner names FORMAT's integer type: `Expected INT64` where GoogleSQL says `integer`.
+    if e.message.starts_with("Invalid type for argument ") && e.message.contains(" to FORMAT; ") {
+        e.message = e
+            .message
+            .replacen("; Expected integer;", "; Expected INT64;", 1);
+    }
     if let Some(rest) = e.message.strip_prefix("Syntax error: ") {
         let rest = rest.replacen("Expected end of input", "Expected \";\" or end of input", 1);
         e.message = format!("Syntax error: {rest}");

@@ -917,12 +917,14 @@ pub enum SampleMethod {
 /// rows chosen uniformly (Algorithm R), or every row when there are no more than that. `size` is a
 /// literal or a parameter, checked when the scan opens as the emulator does. With `WITH WEIGHT`,
 /// each row gets its scaling weight appended: `100 / percent` for BERNOULLI, `rows / size` for
-/// RESERVOIR (1 when every row was kept).
+/// RESERVOIR (1 when every row was kept). A bad size is reported in the emulator's words with
+/// `emulator`, else in production Spanner's.
 pub struct Sample {
     pub input: BoxOp,
     pub method: SampleMethod,
     pub size: Eval,
     pub weight: bool,
+    pub emulator: bool,
 }
 
 /// SplitMix64, seeded from the OS once per scan. Sampling needs no cryptographic quality.
@@ -956,21 +958,27 @@ impl SampleRng {
 
 impl Op for Sample {
     fn open<'a>(&'a self, cx: &'a Cx<'a>, env: &'a Env<'a>) -> Result<RowIter<'a>> {
-        let size = match (self.size)(cx, env)? {
-            Value::Null => return Err(out_of_range("SampleScan requires non-null size")),
-            v => v,
-        };
+        let size = (self.size)(cx, env)?;
+        let percent_error = || out_of_range("Sample size as percent must be in range [0,100].");
+        if matches!(size, Value::Null) && self.emulator {
+            return Err(out_of_range("SampleScan requires non-null size"));
+        }
         let mut rng = SampleRng::new()?;
         match self.method {
             SampleMethod::Bernoulli => {
                 let percent = match size {
+                    Value::Null => return Err(percent_error()),
                     Value::Int64(n) => n as f64,
                     Value::Float64(f) => f,
                     v => return Err(Error::internal(format!("TABLESAMPLE PERCENT {v:?}"))),
                 };
-                // NaN passes the range check and keeps no rows, as in the emulator.
-                if !percent.is_nan() && !(0.0..=100.0).contains(&percent) {
+                // NaN passes the emulator's range check and keeps no rows; Spanner rejects it.
+                let in_range = (0.0..=100.0).contains(&percent);
+                if self.emulator && !percent.is_nan() && !in_range {
                     return Err(out_of_range("PERCENT value must be in the range [0, 100]"));
+                }
+                if !self.emulator && !in_range {
+                    return Err(percent_error());
                 }
                 let weight = self.weight.then(|| Value::Float64(100.0 / percent));
                 let it = self.input.open(cx, env)?;
@@ -984,9 +992,15 @@ impl Op for Sample {
             }
             SampleMethod::Reservoir => {
                 let k = match size {
+                    Value::Null => {
+                        return Err(Error::invalid_argument("LIMIT value may not be null."));
+                    }
                     Value::Int64(n) if n >= 0 => n as u64,
-                    Value::Int64(_) => {
+                    Value::Int64(_) if self.emulator => {
                         return Err(out_of_range("SampleScan requires non-negative size"));
+                    }
+                    Value::Int64(_) => {
+                        return Err(Error::invalid_argument("LIMIT value may not be negative."));
                     }
                     v => return Err(Error::internal(format!("TABLESAMPLE ROWS {v:?}"))),
                 };

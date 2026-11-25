@@ -494,6 +494,17 @@ impl Engine {
                     ));
                 }
                 if q.is_value_table == Some(true) {
+                    // The emulator runs a top-level SELECT AS VALUE (and rejects AS STRUCT for
+                    // its STRUCT column); Spanner rejects both
+                    // (`conformance/cases/sql/value_tables_top_level.case`).
+                    if !self.opts.emulator_compat {
+                        return Err(Error::new(
+                            Code::Unimplemented,
+                            "Unsupported query shape: Top level queries may not specify value \
+                             tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported \
+                             in subqueries, not at the top level.",
+                        ));
+                    }
                     for f in &mut fields {
                         f.0.clear();
                     }

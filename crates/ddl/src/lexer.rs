@@ -451,7 +451,7 @@ pub fn identifiers(sql: &str) -> Option<Vec<String>> {
 
 /// The identifiers `sql` may use as column names: [`identifiers`] without function names (an
 /// unquoted identifier before `(`), so a call to `UPPER` doesn't read a column `Upper`.
-pub(crate) fn column_references(sql: &str) -> Option<Vec<String>> {
+pub fn column_references(sql: &str) -> Option<Vec<String>> {
     let toks = tokenize(sql).ok()?;
     let mut out = Vec::new();
     let mut it = toks.into_iter().peekable();

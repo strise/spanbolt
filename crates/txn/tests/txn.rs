@@ -221,9 +221,7 @@ fn read_your_writes_through_dml() {
         .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(read_v(&view), vec![Value::string("mine")]);
     // Not visible to others before commit.
-    let ro = ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let ro = ReadOnlyTxn::new(db.latest());
     assert!(
         read_v(
             &ro.read(|c| Ok((table_target(c)?, (key(3)).clone())))
@@ -232,9 +230,7 @@ fn read_your_writes_through_dml() {
         .is_empty()
     );
     commit(&a, &[]).unwrap_or_else(|e| panic!("{e}"));
-    let ro = ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let ro = ReadOnlyTxn::new(db.latest());
     assert_eq!(
         read_v(
             &ro.read(|c| Ok((table_target(c)?, (key(3)).clone())))
@@ -249,11 +245,10 @@ fn mvcc_snapshots_and_stale_reads() {
     let db = db();
     let t1 = commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v1")])
         .unwrap_or_else(|e| panic!("{e}"));
-    let pinned = ReadOnlyTxn {
-        version: db
-            .snapshot(TimestampBound::Strong)
+    let pinned = ReadOnlyTxn::new(
+        db.snapshot(TimestampBound::Strong)
             .unwrap_or_else(|e| panic!("{e}")),
-    };
+    );
     let t2 = commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v2")])
         .unwrap_or_else(|e| panic!("{e}"));
     assert!(t2 > t1);
@@ -265,10 +260,11 @@ fn mvcc_snapshots_and_stale_reads() {
         ),
         vec![Value::string("v1")]
     );
-    let at = |ts| ReadOnlyTxn {
-        version: db
-            .snapshot(TimestampBound::ReadTimestamp(ts))
-            .unwrap_or_else(|e| panic!("{e}")),
+    let at = |ts| {
+        ReadOnlyTxn::new(
+            db.snapshot(TimestampBound::ReadTimestamp(ts))
+                .unwrap_or_else(|e| panic!("{e}")),
+        )
     };
     assert_eq!(
         read_v(
@@ -385,18 +381,14 @@ fn clone_is_isolated_from_source() {
         .unwrap_or_else(|e| panic!("{e}"));
     let all = KeySet::all();
     let src = read_v(
-        &ReadOnlyTxn {
-            version: db.latest(),
-        }
-        .read(|c| Ok((table_target(c)?, (all).clone())))
-        .unwrap_or_else(|e| panic!("{e}")),
+        &ReadOnlyTxn::new(db.latest())
+            .read(|c| Ok((table_target(c)?, (all).clone())))
+            .unwrap_or_else(|e| panic!("{e}")),
     );
     let cl = read_v(
-        &ReadOnlyTxn {
-            version: clone.latest(),
-        }
-        .read(|c| Ok((table_target(c)?, (all).clone())))
-        .unwrap_or_else(|e| panic!("{e}")),
+        &ReadOnlyTxn::new(clone.latest())
+            .read(|c| Ok((table_target(c)?, (all).clone())))
+            .unwrap_or_else(|e| panic!("{e}")),
     );
     assert_eq!(src, vec![Value::string("seed"), Value::string("source")]);
     assert_eq!(cl, vec![Value::string("clone"), Value::string("new")]);
@@ -457,9 +449,7 @@ fn constraint_error_invalidates_transaction() {
     assert!(err.is_some_and(|e| !e.constraint));
     assert!(a.current_state().is_err());
     // Nothing was written.
-    let ro = ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let ro = ReadOnlyTxn::new(db.latest());
     assert!(
         read_v(
             &ro.read(|c| Ok((table_target(c)?, (key(2)).clone())))
@@ -706,7 +696,7 @@ fn open_read_only_txn_stays_readable_while_used() {
 
 #[test]
 fn open_read_only_txn_fails_past_retention_even_when_pinned() {
-    let db = db();
+    let db = prod_db();
     let now = db.clock().now();
     db.clock().set(Some(now));
     let open = OpenReadOnlyTxn::begin(db.clone(), TimestampBound::Strong)
@@ -747,4 +737,60 @@ fn open_read_only_txn_on_a_long_unwritten_database_is_not_stale() {
     assert_eq!(ro.version.ts, written);
     assert!(open.release_if_idle() || open.release_if_idle());
     open.reader().unwrap_or_else(|e| panic!("{e}"));
+}
+
+#[test]
+fn strong_read_timestamp_is_now_not_the_last_commit() {
+    let db = db();
+    let written = commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 1, "v")])
+        .unwrap_or_else(|e| panic!("{e}"));
+    let later = Timestamp::from_micros(written.as_micros() + 2_000_000);
+    db.clock().set(Some(later));
+    let ro = db
+        .read_only(TimestampBound::Strong)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(ro.version.ts, written);
+    assert_eq!(ro.read_ts, later);
+    let open = OpenReadOnlyTxn::begin(db.clone(), TimestampBound::Strong)
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(open.read_ts(), later);
+    // Every later commit is after the read.
+    let next = commit(&ReadWriteTxn::new(db.clone()), &[put(&db, 2, "w")])
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(next > later);
+    let stale = db
+        .read_only(TimestampBound::ExactStaleness(Duration::from_secs(1)))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(stale.read_ts.as_micros(), later.as_micros() - 1_000_000);
+}
+
+#[test]
+fn compat_stale_read_fails_after_resolving_what_it_reads() {
+    // Emulator-compat mode: a read past the retention period begins, resolves its table (and
+    // fails on a missing one first), then fails as stale.
+    let db = db();
+    let two_hours = TimestampBound::ExactStaleness(Duration::from_secs(7200));
+    let ro = db.read_only(two_hours).unwrap_or_else(|e| panic!("{e}"));
+    let missing = ro
+        .read(|_| Err(spanbolt_storage::Error::not_found("Table not found: Nope")))
+        .err()
+        .unwrap_or_else(|| panic!("expected an error"));
+    assert_eq!(missing.code, Code::NotFound);
+    let stale = ro
+        .read(|c| Ok((table_target(c)?, KeySet::all())))
+        .err()
+        .unwrap_or_else(|| panic!("expected an error"));
+    assert_eq!(stale.code, Code::FailedPrecondition);
+    let open = OpenReadOnlyTxn::begin(db.clone(), two_hours).unwrap_or_else(|e| panic!("{e}"));
+    let reader = open.reader().unwrap_or_else(|e| panic!("{e}"));
+    assert!(reader.check_expired().is_err());
+    // Default mode rejects it up front (here from a database older than the retention period).
+    let prod = prod_db();
+    let created = prod.latest().ts;
+    prod.clock().set(Some(Timestamp::from_micros(
+        created.as_micros() + 7_200_000_000,
+    )));
+    let stale = TimestampBound::ExactStaleness(Duration::from_secs(5400));
+    assert!(prod.read_only(stale).is_err());
+    assert!(OpenReadOnlyTxn::begin(prod.clone(), stale).is_err());
 }

@@ -106,7 +106,7 @@ fn generated_order(
         .iter()
         .map(|cm| match &cm.expr {
             Some(e) => {
-                let mut r: Vec<usize> = crate::expr::identifiers(e)
+                let mut r: Vec<usize> = crate::expr::column_references(e)
                     .iter()
                     .filter_map(|w| by_name.get(w).copied())
                     .collect();
@@ -560,5 +560,25 @@ mod tests {
         }
         assert_eq!(names(&tm.inputs[tm.column("Y").unwrap_or_default()]), ["Y"]);
         assert!(tm.computed);
+    }
+
+    #[test]
+    fn a_function_call_does_not_read_a_column_of_that_name() {
+        // `UPPER(Name)` calls a function; it doesn't read the column `Upper`, which reads `A`.
+        let cat = Catalog::build(&ddl(&[
+            "CREATE TABLE T (K INT64 NOT NULL, Name STRING(MAX), \
+             A STRING(MAX) AS (UPPER(Name)) STORED, \
+             Upper STRING(MAX) AS (CONCAT(A, '!')) STORED) PRIMARY KEY (K)",
+        ]))
+        .unwrap_or_else(|e| panic!("{e}"));
+        let tm = cat.table(cat.table_id("T").unwrap_or_default());
+        let names = |cs: &[usize]| -> Vec<&str> {
+            cs.iter().map(|&c| tm.columns[c].name.as_str()).collect()
+        };
+        assert_eq!(names(&tm.generated_order), ["A", "Upper"]);
+        for g in ["A", "Upper"] {
+            let c = tm.column(g).unwrap_or_default();
+            assert_eq!(names(&tm.inputs[c]), ["Name"], "{g}");
+        }
     }
 }

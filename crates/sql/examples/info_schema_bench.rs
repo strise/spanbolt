@@ -109,9 +109,7 @@ fn main() {
             param_types,
             ..Default::default()
         };
-        let ro = ReadOnlyTxn {
-            version: db.latest(),
-        };
+        let ro = ReadOnlyTxn::new(db.latest());
         let t = Instant::now();
         let rs = engine
             .execute_sql(&db, Txn::ReadOnly(&ro), &req)

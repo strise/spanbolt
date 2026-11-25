@@ -553,11 +553,12 @@ fn rw_options() -> pb::TransactionOptions {
     }
 }
 
-fn ro_options(bound: topts::read_only::TimestampBound) -> pb::TransactionOptions {
+/// Read-only options; `return_read_timestamp` when the step saves the read timestamp (`save=`).
+fn ro_options(bound: topts::read_only::TimestampBound, step: &Step) -> pb::TransactionOptions {
     pb::TransactionOptions {
         mode: Some(topts::Mode::ReadOnly(topts::ReadOnly {
             timestamp_bound: Some(bound),
-            return_read_timestamp: false,
+            return_read_timestamp: step.opts.contains_key("save"),
         })),
         ..Default::default()
     }
@@ -693,7 +694,7 @@ impl<'a> Ctx<'a> {
                     Some(label) => self.named_session(label)?,
                     None => self.session.clone(),
                 },
-                Selector::SingleUse(ro_options(self.bound(step)?)),
+                Selector::SingleUse(ro_options(self.bound(step)?, step)),
                 0,
             )),
         }
@@ -736,6 +737,14 @@ impl<'a> Ctx<'a> {
         session: &str,
         options: pb::TransactionOptions,
     ) -> Result<Vec<u8>, Status> {
+        Ok(self.begin_txn(session, options).await?.id)
+    }
+
+    async fn begin_txn(
+        &self,
+        session: &str,
+        options: pb::TransactionOptions,
+    ) -> Result<pb::Transaction, Status> {
         Ok(self
             .t
             .spanner()
@@ -745,8 +754,7 @@ impl<'a> Ctx<'a> {
                 ..Default::default()
             })
             .await?
-            .into_inner()
-            .id)
+            .into_inner())
     }
 
     async fn commit_id(
@@ -785,6 +793,41 @@ impl<'a> Ctx<'a> {
         }
     }
 
+    /// `save=TS` on a single-use read or query: the read timestamp from the result metadata.
+    fn save_read_ts(&mut self, step: &Step, rs: &pb::ResultSet) {
+        let ts = rs
+            .metadata
+            .as_ref()
+            .and_then(|m| m.transaction.as_ref())
+            .and_then(|t| t.read_timestamp);
+        if let (Some(name), Some(ts)) = (step.opts.get("save"), ts) {
+            self.timestamps.insert(name.clone(), ts);
+        }
+    }
+
+    /// `compare_ts A B`: `counts: [1]` when saved timestamp A is at least 0.5 s after B,
+    /// `[-1]` when at least 0.5 s before, `[0]` when within 0.5 s of it.
+    fn compare_ts(&self, step: &Step) -> Result<Observation, String> {
+        let get = |name: &String| {
+            self.timestamps
+                .get(name)
+                .map(|t| i128::from(t.seconds) * 1_000_000_000 + i128::from(t.nanos))
+                .ok_or_else(|| format!("unknown saved timestamp `{name}`"))
+        };
+        let gap = get(&step.flags[0])? - get(&step.flags[1])?;
+        let sign = if gap >= 500_000_000 {
+            1
+        } else if gap <= -500_000_000 {
+            -1
+        } else {
+            0
+        };
+        Ok(Observation {
+            counts: Some(vec![sign]),
+            ..Default::default()
+        })
+    }
+
     async fn run(&mut self, step: &Step) -> Result<Observation, String> {
         Ok(match self.run_inner(step).await? {
             Ok(o) => o,
@@ -797,12 +840,12 @@ impl<'a> Ctx<'a> {
             Verb::Query => {
                 let (session, sel, seqno) = self.read_selector(step)?;
                 let req = self.sql_request(step, session, sel, seqno)?;
-                Ok(self
-                    .t
-                    .spanner()
-                    .execute_sql(req)
-                    .await
-                    .map(|r| obs_of(&r.into_inner(), true)))
+                Self::wait(step).await?;
+                Ok(self.t.spanner().execute_sql(req).await.map(|r| {
+                    let rs = r.into_inner();
+                    self.save_read_ts(step, &rs);
+                    obs_of(&rs, true)
+                }))
             }
             Verb::Dml => self.dml(step).await,
             Verb::Pdml => {
@@ -871,12 +914,12 @@ impl<'a> Ctx<'a> {
                     },
                     ..Default::default()
                 };
-                Ok(self
-                    .t
-                    .spanner()
-                    .read(req)
-                    .await
-                    .map(|r| obs_of(&r.into_inner(), true)))
+                Self::wait(step).await?;
+                Ok(self.t.spanner().read(req).await.map(|r| {
+                    let rs = r.into_inner();
+                    self.save_read_ts(step, &rs);
+                    obs_of(&rs, true)
+                }))
             }
             Verb::Begin => {
                 let name = step.txn().unwrap_or("default").to_string();
@@ -884,7 +927,7 @@ impl<'a> Ctx<'a> {
                     return Err(format!("transaction `{name}` is already open"));
                 }
                 let options = if step.has_flag("ro") {
-                    ro_options(self.bound(step)?)
+                    ro_options(self.bound(step)?, step)
                 } else {
                     rw_options()
                 };
@@ -894,8 +937,13 @@ impl<'a> Ctx<'a> {
                     Err(s) => return Ok(Err(s)),
                 };
                 self.sessions.push(session.clone());
-                match self.begin(&session, options).await {
-                    Ok(id) => {
+                Self::wait(step).await?;
+                match self.begin_txn(&session, options).await {
+                    Ok(t) => {
+                        if let (Some(save), Some(ts)) = (step.opts.get("save"), t.read_timestamp) {
+                            self.timestamps.insert(save.clone(), ts);
+                        }
+                        let id = t.id;
                         self.txns.insert(
                             name,
                             Txn {
@@ -1006,6 +1054,7 @@ impl<'a> Ctx<'a> {
             Verb::ListDatabaseOperations => self.list_saved_operations(false).await,
             Verb::ListOperations => self.list_saved_operations(true).await,
             Verb::ListDatabaseRoles => Ok(self.list_database_roles().await),
+            Verb::CompareTs => Ok(Ok(self.compare_ts(step)?)),
             Verb::DropDatabase => Ok(self
                 .t
                 .db_admin()

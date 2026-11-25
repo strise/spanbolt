@@ -258,15 +258,39 @@ impl ReadWriteTxn {
 #[derive(Clone)]
 pub struct ReadOnlyTxn {
     pub version: Arc<Version>,
+    /// The read timestamp clients are told: when a strong read was served, or the stale bound's
+    /// timestamp. At least `version.ts`, except for a read from before the database existed.
+    pub read_ts: Timestamp,
+    /// Emulator-compat mode: the staleness error every read returns once it has resolved its
+    /// table, key set or query (see [`Database::read_only`]).
+    pub expired: Option<Error>,
 }
 
 impl ReadOnlyTxn {
+    /// Reads `version` as of its own timestamp.
+    pub fn new(version: Arc<Version>) -> ReadOnlyTxn {
+        ReadOnlyTxn {
+            read_ts: version.ts,
+            version,
+            expired: None,
+        }
+    }
+
+    /// Fails with the deferred staleness error, if any.
+    pub fn check_expired(&self) -> Result<()> {
+        match &self.expired {
+            Some(e) => Err(e.clone()),
+            None => Ok(()),
+        }
+    }
+
     pub fn read(
         &self,
         resolve: impl FnOnce(&Catalog) -> Result<(Target, KeySet)>,
     ) -> Result<ReadView> {
         let state = self.version.state.clone();
         let (target, keys) = resolve(&state.catalog)?;
+        self.check_expired()?;
         let spans = state.spans(target, &keys)?;
         Ok(ReadView {
             state,
@@ -295,9 +319,9 @@ pub struct OpenReadOnlyTxn {
     db: Arc<Database>,
     /// The version's timestamp: finds it again in the history.
     ts: Timestamp,
-    /// When the transaction reads (now at begin, or the bound's timestamp), at least `ts`; the
-    /// retention period counts from here. A strong read of a database nobody wrote to for hours
-    /// gets an old version, and must not count as stale for it.
+    /// The read timestamp (now at begin, or the bound's timestamp); the retention period counts
+    /// from here. A strong read of a database nobody wrote to for hours gets an old version, and
+    /// must not count as stale for it.
     read_at: Timestamp,
     pin: Mutex<Option<Arc<Version>>>,
     used: AtomicBool,
@@ -306,28 +330,30 @@ pub struct OpenReadOnlyTxn {
 impl OpenReadOnlyTxn {
     /// Begins a transaction reading `db` at `bound`, its version pinned until it goes idle.
     pub fn begin(db: Arc<Database>, bound: TimestampBound) -> Result<OpenReadOnlyTxn> {
-        let now = db.clock().now();
-        let version = db.snapshot(bound)?;
-        let read_at = match bound {
-            TimestampBound::ReadTimestamp(ts) => ts,
-            TimestampBound::ExactStaleness(d) => {
-                Timestamp::from_nanos(now.as_nanos() - d.as_nanos() as i128)
-            }
-            _ => now,
-        };
+        let ro = db.read_only(bound)?;
         Ok(OpenReadOnlyTxn {
             db,
-            ts: version.ts,
-            read_at: read_at.max(version.ts),
-            pin: Mutex::new(Some(version)),
+            ts: ro.version.ts,
+            read_at: ro.read_ts,
+            pin: Mutex::new(Some(ro.version)),
             used: AtomicBool::new(true),
         })
     }
 
+    /// The transaction's read timestamp.
+    pub fn read_ts(&self) -> Timestamp {
+        self.read_at
+    }
+
     /// The version one request reads. Every read checks the retention period, as Spanner and the
-    /// emulator do: a transaction older than `version_retention_period` can no longer read.
+    /// emulator do: a transaction older than `version_retention_period` can no longer read. In
+    /// emulator-compat mode the read fails only after resolving what it reads, as in the emulator.
     pub fn reader(&self) -> Result<ReadOnlyTxn> {
-        self.db.check_retention(self.read_at)?;
+        let expired = match self.db.check_retention(self.read_at) {
+            Ok(()) => None,
+            Err(e) if !self.db.prod_messages() => Some(e),
+            Err(e) => return Err(e),
+        };
         self.used.store(true, Ordering::Relaxed);
         let mut pin = self.pin.lock();
         let version = match &*pin {
@@ -338,7 +364,11 @@ impl OpenReadOnlyTxn {
                 v
             }
         };
-        Ok(ReadOnlyTxn { version })
+        Ok(ReadOnlyTxn {
+            version,
+            read_ts: self.read_at,
+            expired,
+        })
     }
 
     /// Unpins the version if the transaction hasn't been read since the previous call. Returns

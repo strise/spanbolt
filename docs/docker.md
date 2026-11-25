@@ -200,6 +200,32 @@ to the ready line 540–600 ms (3 runs). The generated TOKENLIST columns survive
 `SEARCH(name_tokens, 'name')` on `granite_no_search_entities` matches all 10,000 seeded rows and
 `'name 0000042'` matches 1.
 
+### Snapshots from spanbolt 0.2.1 and earlier
+
+Up to 0.2.1, generated columns without `STORED` (`L INT64 AS (CHAR_LENGTH(S))`) were never
+computed and held NULL. Newer versions compute them on write
+([#45](https://github.com/strise/spanbolt/pull/45)), but a snapshot keeps the values it was
+saved with: loading an old one gives NULL in those columns, and in any index on
+them, until the row is written again. The same goes for a STORED generated column or a TOKENLIST
+column whose expression reads a non-stored generated column, or a generated column declared after
+it. Other STORED and TOKENLIST columns are fine.
+
+To fix an old snapshot, do one of these:
+
+- Re-create it: run the migrations and the seeding against the new version and save a new
+  snapshot.
+- Rewrite it: load it into the new version, update every row of each table with a non-stored
+  generated column, and save it again. Any update recomputes all of a row's generated columns
+  and their index entries, so setting a column to itself is enough (as Partitioned DML, or in a
+  read-write transaction):
+
+  ```sql
+  UPDATE T SET S = S WHERE TRUE
+  ```
+
+  Then `spanbolt snapshot <path>`. `S` is any column that is neither in the primary key nor
+  generated. A table whose other columns are all generated has to be re-created.
+
 ## Making the image smaller
 
 **ICU data.** A third of the shim was ICU's prebuilt common data (`icudt76l.dat`,

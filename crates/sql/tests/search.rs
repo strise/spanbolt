@@ -54,9 +54,7 @@ fn rows(e: &Engine, db: &Arc<Database>, sql: &str, q: &str) -> Vec<String> {
             ..Default::default()
         },
     );
-    let txn = ReadOnlyTxn {
-        version: db.latest(),
-    };
+    let txn = ReadOnlyTxn::new(db.latest());
     let rs = e.execute_sql(db, Txn::ReadOnly(&txn), &req).expect("query");
     rs.rows
         .iter()

@@ -48,6 +48,14 @@ impl Clock {
         Timestamp::from_micros(now)
     }
 
+    /// A strong read's timestamp: now, and no earlier than any commit timestamp handed out; every
+    /// later commit timestamp is greater.
+    pub fn read_ts(&self) -> Timestamp {
+        let now = self.now_micros();
+        let prev = self.last_micros.fetch_max(now, Ordering::AcqRel);
+        Timestamp::from_micros(now.max(prev))
+    }
+
     /// The latest timestamp a write may hold before its commit timestamp is chosen: no earlier
     /// than any `statement_ts` or commit timestamp handed out, and no later than the next commit.
     pub fn write_horizon(&self) -> Timestamp {

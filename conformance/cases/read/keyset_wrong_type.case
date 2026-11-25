@@ -1,0 +1,252 @@
+# Read key sets whose values don't parse as the key column's type, one table per key type. The
+# emulator reports the value parse error mutations get; Cloud Spanner names the column instead.
+tags: read
+schema:
+  CREATE TABLE KI (K INT64 NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KS (K STRING(MAX) NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KB (K BYTES(MAX) NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KT (K TIMESTAMP NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KD (K DATE NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KF (K FLOAT64 NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KBo (K BOOL NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KN (K NUMERIC NOT NULL) PRIMARY KEY (K);
+  CREATE TABLE KIS (A INT64 NOT NULL, B STRING(MAX) NOT NULL) PRIMARY KEY (A, B);
+  CREATE INDEX KISByB ON KIS(B)
+
+case int64_from_float
+read KI cols=K:
+  [1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as INT64
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KI: Expected INT64.
+
+case int64_overflow
+read KI cols=K:
+  ["9223372036854775808"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 9223372036854775808 as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KI: Expected INT64.
+
+case int64_from_bool
+read KI cols=K:
+  [true]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse bool_value: true as INT64
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KI: Expected INT64.
+
+case string_from_number
+read KS cols=K:
+  [1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as STRING
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KS: Expected STRING.
+
+case bytes_bad_base64
+read KB cols=K:
+  ["!!!"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse !!! as BYTES. Byte strings must be base64-encoded. For more details, see https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1#typecode
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KB: Expected Base64 encoded BYTES.
+
+case timestamp_bad
+read KT cols=K:
+  ["nope"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse nope as a TIMESTAMP. The timestamp value must end with an uppercase literal 'Z' to specify Zulu time (UTC-0). For details on the TIMESTAMP type encoding, see https://cloud.google.com/spanner/docs/data-types#timestamp-type
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KT: Expected TIMESTAMP.
+
+case date_bad
+read KD cols=K:
+  ["2024-13-01"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 2024-13-01 as a DATE. Dates must be in the format YYYY-[M]M-[D]D and the year must be in the range [1, 9999]. For more details on the DATE type encoding, see https://cloud.google.com/spanner/docs/data-types#date-type
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KD: Expected DATE.
+
+case float64_from_string
+read KF cols=K:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as a FLOAT64. Only the following string values are supported for FLOAT64: 'Infinity', 'NaN', and '-Infinity'. See https://cloud.google.com/spanner/docs/data-types#floating-point-type for more details
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KF: Expected FLOAT64.
+
+case bool_from_string
+read KBo cols=K:
+  ["true"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse string_value: "true" as BOOL
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KBo: Expected BOOL.
+
+case numeric_bad
+read KN cols=K:
+  ["1.2.3"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 1.2.3 as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid NUMERIC value: 1.2.3 has more than one decimal point
+
+case second_key_part
+read KIS cols=A:
+  [1, 2.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 2.5 as STRING
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column B in table KIS: Expected STRING.
+
+case range_start
+read KI cols=K:
+  range ["x"] .. [5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KI: Expected INT64.
+
+case range_end
+read KI cols=K:
+  range [1] ..< ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KI: Expected INT64.
+
+case range_prefix
+read KIS cols=A:
+  range [1, 2.5] .. [2]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 2.5 as STRING
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column B in table KIS: Expected STRING.
+
+case index_key
+read KIS cols=A index=KISByB:
+  [1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as STRING
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column B in table _Index_KISByB: Expected STRING.
+
+case delete_mutation
+delete KI:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KI: Expected INT64.
+
+case numeric_letters
+read KN cols=K:
+  ["abc"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse abc as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid NUMERIC value: invalidCharacter a found in abc
+
+case numeric_scale
+read KN cols=K:
+  ["1.0000000001"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 1.0000000001 as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid NUMERIC value: fractional component of NUMERIC 1.0000000001 too large
+
+case numeric_from_float
+read KN cols=K:
+  [1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as NUMERIC
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KN: Expected NUMERIC.
+
+case numeric_too_large
+read KN cols=K:
+  ["100000000000000000000000000000"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse 100000000000000000000000000000 as a NUMERIC. The NUMERIC type supports 38 digits of precision and 9 digits of scale. See https://cloud.google.com/spanner/docs/data-types for more details
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid NUMERIC value: whole component of NUMERIC 100000000000000000000000000000 too large
+
+case numeric_exponent
+read KN cols=K:
+  ["1e5"]
+expect:
+  columns: K NUMERIC
+expect@spanner:
+  same
+
+case float64_from_bool
+read KF cols=K:
+  [true]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse bool_value: true as DOUBLE
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KF: Expected FLOAT64.
+
+case timestamp_from_float
+read KT cols=K:
+  [1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as TIMESTAMP
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KT: Expected TIMESTAMP.
+
+case bytes_from_float
+read KB cols=K:
+  [1.5]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse number_value: 1.5 as BYTES
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column K in table KB: Expected Base64 encoded BYTES.

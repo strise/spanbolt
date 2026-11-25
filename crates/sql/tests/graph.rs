@@ -125,9 +125,7 @@ impl Db {
             sql: sql.into(),
             ..Default::default()
         };
-        let txn = ReadOnlyTxn {
-            version: self.db.latest(),
-        };
+        let txn = ReadOnlyTxn::new(self.db.latest());
         let rs = self
             .engine
             .execute_sql(&self.db, Txn::ReadOnly(&txn), &req)?;

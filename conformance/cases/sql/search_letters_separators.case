@@ -1,0 +1,322 @@
+# Runs of single letters (#86): which separators join them. Only one `.` or one `-` (`x.y`,
+# `x-y-z`, `U.S.A.`) and runs of spaces (not tabs, newlines or non-breaking spaces) join, and
+# queries join the same way (`'y x'` is yx, `'-x y'` is NOT xy, but `'x -y'` and `'x* y'` don't
+# join). See search_letters.case.
+tags: sql search
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok);
+  CREATE TABLE Q (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX QIdx ON Q(Tok)
+insert T cols=Id,Body:
+  [1, "x.y"]
+  [2, "x_y"]
+  [3, "x/y"]
+  [4, "x'y"]
+  [5, "x&y"]
+  [6, "x-y"]
+  [7, "x--y"]
+  [8, "x - y"]
+  [9, "x\ty"]
+  [10, "x -y"]
+  [11, "x- y"]
+  [12, "x+y"]
+  [13, "x:y"]
+  [14, "x;y"]
+  [15, "x~y"]
+  [16, "x|y"]
+  [17, "x=y"]
+  [18, "x\\y"]
+  [19, "x`y"]
+  [20, "x^y"]
+  [21, "x%y"]
+  [22, "x$y"]
+  [23, "x@y"]
+  [24, "x#y"]
+  [25, "x*y"]
+  [26, "x!y"]
+  [27, "x?y"]
+  [28, "x,y"]
+  [29, "x(y"]
+  [30, "x\ry"]
+  [31, "x\ny"]
+  [32, "x\n\ny"]
+  [33, "x \n y"]
+  [34, "x   y"]
+  [35, "x y"]
+  [36, "x　y"]
+  [37, "x.y.z"]
+  [38, "x-y-z"]
+  [39, "x-y-z w"]
+  [40, "x y-z"]
+  [41, "f é g"]
+  [42, "α β γ"]
+  [43, "ß x y"]
+  [44, "x y1 z"]
+  [45, "x(y)z"]
+  [46, "U.S.A. today"]
+  [47, "a b"]
+  [48, "I x"]
+  [49, "xy z w"]
+  [50, "<b>x</b> y"]
+  [51, "x \"y\""]
+  [52, "x y z"]
+  [53, "x 'y' z"]
+  [54, "é f"]
+  [55, "中 文 x y"]
+  [56, "x y 中"]
+  [57, "Ab C"]
+  [58, "x́ y z"]
+  [59, "1x y z"]
+insert Q cols=Id,Body:
+  [1, "xy"]
+  [2, "x"]
+  [3, "y"]
+  [4, "xyz"]
+  [5, "z"]
+  [6, "yx"]
+  [7, "x hello y"]
+  [8, "hello"]
+  [9, "xyhello"]
+
+# Prod's tokenizer also keeps `x_y` and `x&y` whole, adds `x@y` next to `x`, keeps `--` as a
+# token and splits on non-ASCII spaces; spanbolt doesn't (DEBUG_TOKENLIST is UNIMPLEMENTED).
+case tokens
+query:
+  SELECT Id, Body, DEBUG_TOKENLIST(Tok) AS t FROM T ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:18]
+expect@spanner:
+  columns: Id INT64, Body STRING, t STRING
+  ["1","x.y","xy(boundary, end_boundary)"]
+  ["2","x_y","x_y(boundary, end_boundary)"]
+  ["3","x/y","x(boundary), y(end_boundary)"]
+  ["4","x'y","x(boundary), y(end_boundary)"]
+  ["5","x&y","x&y(boundary, end_boundary)"]
+  ["6","x-y","xy(boundary, end_boundary)"]
+  ["7","x--y","x(boundary), --, y(end_boundary)"]
+  ["8","x - y","x(boundary), y(end_boundary)"]
+  ["9","x\ty","x(boundary), y(end_boundary)"]
+  ["10","x -y","x(boundary), y(end_boundary)"]
+  ["11","x- y","x(boundary), y(end_boundary)"]
+  ["12","x+y","x(boundary), y(end_boundary)"]
+  ["13","x:y","x(boundary), y(end_boundary)"]
+  ["14","x;y","x(boundary), y(end_boundary)"]
+  ["15","x~y","x(boundary), y(end_boundary)"]
+  ["16","x|y","x(boundary), y(end_boundary)"]
+  ["17","x=y","x(boundary), y(end_boundary)"]
+  ["18","x\\y","x(boundary), y(end_boundary)"]
+  ["19","x`y","x(boundary), y(end_boundary)"]
+  ["20","x^y","x(boundary), y(end_boundary)"]
+  ["21","x%y","x(boundary), y(end_boundary)"]
+  ["22","x$y","x(boundary), y(end_boundary)"]
+  ["23","x@y","[x, x@y](boundary), y(end_boundary)"]
+  ["24","x#y","x(boundary), y(end_boundary)"]
+  ["25","x*y","x(boundary), y(end_boundary)"]
+  ["26","x!y","x(boundary), y(end_boundary)"]
+  ["27","x?y","x(boundary), y(end_boundary)"]
+  ["28","x,y","x(boundary), y(end_boundary)"]
+  ["29","x(y","x(boundary), y(end_boundary)"]
+  ["30","x\ry","x(boundary), y(end_boundary)"]
+  ["31","x\ny","x(boundary), y(end_boundary)"]
+  ["32","x\n\ny","x(boundary), y(end_boundary)"]
+  ["33","x \n y","x(boundary), y(end_boundary)"]
+  ["34","x   y","xy(boundary, end_boundary)"]
+  ["35","x y","x(boundary), y(end_boundary)"]
+  ["36","x　y","x(boundary), y(end_boundary)"]
+  ["37","x.y.z","xyz(boundary, end_boundary)"]
+  ["38","x-y-z","xyz(boundary, end_boundary)"]
+  ["39","x-y-z w","xyz(boundary), w(end_boundary)"]
+  ["40","x y-z","x(boundary), yz(end_boundary)"]
+  ["41","f é g","f(boundary), é, g(end_boundary)"]
+  ["42","α β γ","α(boundary), β, γ(end_boundary)"]
+  ["43","ß x y","ß(boundary), xy(end_boundary)"]
+  ["44","x y1 z","x(boundary), y1, z(end_boundary)"]
+  ["45","x(y)z","x(boundary), y, z(end_boundary)"]
+  ["46","U.S.A. today","usa(boundary), today(end_boundary)"]
+  ["47","a b","ab(boundary, end_boundary)"]
+  ["48","I x","i(boundary), x(end_boundary)"]
+  ["49","xy z w","xy(boundary), zw(end_boundary)"]
+  ["50","<b>x</b> y","b(boundary), x, </, b, y(end_boundary)"]
+  ["51","x \"y\"","x(boundary), y(end_boundary)"]
+  ["52","x y z","xyz(boundary, end_boundary)"]
+  ["53","x 'y' z","x(boundary), y, z(end_boundary)"]
+  ["54","é f","é(boundary), f(end_boundary)"]
+  ["55","中 文 x y","中(boundary), 文, xy(end_boundary)"]
+  ["56","x y 中","xy(boundary), 中(end_boundary)"]
+  ["57","Ab C","ab(boundary), c(end_boundary)"]
+  ["58","x́ y z","x́(boundary), yz(end_boundary)"]
+  ["59","1x y z","1x(boundary), yz(end_boundary)"]
+
+
+case search
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y z") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "y x") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["6"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x OR y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x-y") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x.y") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "\"x-y\"") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x,y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x -y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x | y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y hello") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "\"x y\"") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x  y") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x y`, has error(s): -Syntax error on column 4: Expecting 'AROUND(
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "X Y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x 1") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x hello y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "hello x y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y -z") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "\"x y\" z") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y AROUND hello") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "xy*") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x/y") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+case score
+query:
+  SELECT Id, SCORE(Tok, 'x y') AS s1, SCORE(Tok, 'xy') AS s2 FROM Q WHERE SEARCH(Tok, 'xy') ORDER BY Id
+expect:
+  columns: Id INT64, s1 FLOAT64, s2 FLOAT64
+  ["1",0.0,1.0]
+expect@spanner:
+  columns: Id INT64, s1 FLOAT64, s2 FLOAT64
+  ["1",1.2588917016983032,1.2588917016983032]
+

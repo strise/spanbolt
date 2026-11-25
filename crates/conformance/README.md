@@ -137,11 +137,14 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 | `create_session session=S [multiplexed]` | – | `CreateSession`, saving the name under `S`. |
 | `get_session session=S [wait=D]` | – | Sleeps `D`, then `GetSession`; expects `counts: [1]` when `approximate_last_use_time` is at least 0.5 s after `create_time`, else `[0]`. |
 | `session_last_use session=S [wait=D]` | – | Same, read from `ListSessions` (not a use); `[-1]` when `S` is not listed. |
+| `compare_ts A B` | – | Compares two saved timestamps; expects `counts: [1]` when `A` is at least 0.5 s after `B`, `[-1]` when at least 0.5 s before, else `[0]`. |
 | `delete_session session=S` / `name=TEXT` | – | `DeleteSession` on a saved session or a literal name (`<db>` is the case database). |
 | `params:` | `@name TYPE = <json>` per line | Attaches to the preceding `query`/`dml`/`pdml`. |
 | `expect:` | see below | Attaches to the preceding step. Written by `record`. |
 
-`save=TS` stores the commit timestamp under `TS`; `bound=` accepts `strong`,
+`save=TS` stores the commit timestamp under `TS`; on a read-only `begin` or a single-use `read`/`query` it
+asks for `return_read_timestamp` and stores the read timestamp. `wait=D` on `begin`, `read` and `query`
+sleeps before the request; `bound=` accepts `strong`,
 `read_timestamp:TS`, `min_read_timestamp:TS`, `exact_staleness:10s`, `max_staleness:10s`
 (durations: `ms`, `s`, `m`, `h`).
 

@@ -125,7 +125,7 @@ impl SpannerService {
                 }
                 let open = OpenReadOnlyTxn::begin(session.db.clone(), bound).map_err(to_status)?;
                 let txn = open.reader().map_err(to_status)?;
-                let read_timestamp = ro.return_read_timestamp.then(|| txn.version.ts.to_proto());
+                let read_timestamp = ro.return_read_timestamp.then(|| open.read_ts().to_proto());
                 let id = self
                     .emu
                     .add_txn(session, TxnKind::ReadOnly(open))
@@ -178,29 +178,29 @@ impl SpannerService {
         use pb::transaction_selector::Selector;
         let pinned = resume.and_then(|t| t.read_ts);
         let single_use = |bound: TimestampBound| match pinned {
-            Some(ts) => session.db.snapshot(TimestampBound::ReadTimestamp(ts)),
-            None => session.db.snapshot(bound),
+            Some(ts) => session.db.read_only(TimestampBound::ReadTimestamp(ts)),
+            None => session.db.read_only(bound),
         };
         match sel.and_then(|s| s.selector.as_ref()) {
             None => {
-                let version = single_use(TimestampBound::Strong).map_err(to_status)?;
+                let txn = single_use(TimestampBound::Strong).map_err(to_status)?;
                 Ok(Resolved {
-                    read_ts: Some(version.ts),
-                    reader: Reader::ReadOnly(ReadOnlyTxn { version }),
+                    read_ts: Some(txn.version.ts),
+                    reader: Reader::ReadOnly(txn),
                     begun: None,
                 })
             }
             Some(Selector::SingleUse(opts)) => match &opts.mode {
                 Some(pb::transaction_options::Mode::ReadOnly(ro)) => {
-                    let version = single_use(bound(ro)?).map_err(to_status)?;
+                    let txn = single_use(bound(ro)?).map_err(to_status)?;
                     // Clients read the timestamp of a single-use read from the result metadata.
                     let begun = ro.return_read_timestamp.then(|| pb::Transaction {
-                        read_timestamp: Some(version.ts.to_proto()),
+                        read_timestamp: Some(txn.read_ts.to_proto()),
                         ..Default::default()
                     });
                     Ok(Resolved {
-                        read_ts: Some(version.ts),
-                        reader: Reader::ReadOnly(ReadOnlyTxn { version }),
+                        read_ts: Some(txn.version.ts),
+                        reader: Reader::ReadOnly(txn),
                         begun,
                     })
                 }
@@ -302,11 +302,9 @@ fn read_target(
 ) -> spanbolt_storage::Result<(Target, KeySet)> {
     let t = cat.lookup_table(table)?;
     if index.is_empty() {
-        let tm = cat.table(t);
-        let types = tm.key_types();
         return Ok((
             Target::Table(t),
-            convert::keyset(ks, &types, &tm.name, !emulator_compat)?,
+            convert::keyset(ks, &table_key(cat.table(t)), !emulator_compat)?,
         ));
     }
     let ix = cat.index_id(index).ok_or_else(|| {
@@ -326,11 +324,30 @@ fn read_target(
         )));
     }
     let tm = cat.table(t);
-    let types: Vec<_> = im.key.iter().map(|&c| tm.columns[c].ty.clone()).collect();
+    let cols = convert::KeyColumns {
+        name: &im.name,
+        table: format!("_Index_{}", im.name),
+        names: im
+            .key
+            .iter()
+            .map(|&c| tm.columns[c].name.as_str())
+            .collect(),
+        types: im.key.iter().map(|&c| tm.columns[c].ty.clone()).collect(),
+    };
     Ok((
         Target::Index(ix),
-        convert::keyset(ks, &types, &im.name, !emulator_compat)?,
+        convert::keyset(ks, &cols, !emulator_compat)?,
     ))
+}
+
+/// A table's primary key columns, for decoding a key set.
+fn table_key(tm: &spanbolt_storage::catalog::TableMeta) -> convert::KeyColumns<'_> {
+    convert::KeyColumns {
+        name: &tm.name,
+        table: tm.name.clone(),
+        names: tm.pk.iter().map(|&c| tm.columns[c].name.as_str()).collect(),
+        types: tm.key_types(),
+    }
 }
 
 /// Collects a whole result (unary Read).
@@ -511,8 +528,7 @@ fn mutation(cat: &Catalog, m: &pb::Mutation, prod_messages: bool) -> Result<Muta
         Some(Op::InsertOrUpdate(w)) => write(WriteKind::InsertOrUpdate, w),
         Some(Op::Replace(w)) => write(WriteKind::Replace, w),
         Some(Op::Delete(d)) => cat.lookup_table(&d.table).and_then(|t| {
-            let tm = cat.table(t);
-            let ks = convert::keyset(d.key_set.as_ref(), &tm.key_types(), &tm.name, prod_messages)?;
+            let ks = convert::keyset(d.key_set.as_ref(), &table_key(cat.table(t)), prod_messages)?;
             Mutation::delete(cat, &d.table, ks)
         }),
         Some(_) => return Err(unimplemented("Queue mutations (send/ack)")),

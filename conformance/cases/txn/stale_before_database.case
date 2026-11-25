@@ -129,3 +129,66 @@ expect:
   ["2"]
 expect@spanner:
   same
+
+case ro_txn_2h_missing_table
+begin txn=ro ro bound=exact_staleness:2h
+read Nope cols=K txn=ro:
+  all
+expect:
+  error: NOT_FOUND
+  message: Table not found: Nope
+expect@spanner:
+  same
+query txn=ro:
+  SELECT K FROM Nope
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: Nope [at 1:15]
+expect@spanner:
+  same
+
+case ro_txn_2h_query_missing_table_then_read
+begin txn=ro ro bound=exact_staleness:2h
+query txn=ro:
+  SELECT K FROM Nope
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: Nope [at 1:15]
+expect@spanner:
+  same
+read Acct cols=Id txn=ro:
+  all
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  columns: Id INT64
+
+case query_2h_missing_column
+query bound=exact_staleness:2h:
+  SELECT Nope FROM Acct
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Nope [at 1:8]
+expect@spanner:
+  same
+
+case read_2h_bad_key
+read Acct cols=Id bound=exact_staleness:2h:
+  ["x"]
+expect:
+  error: FAILED_PRECONDITION
+  message: Could not parse x as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column Id in table Acct: Expected INT64.
+
+case read_2h_unknown_column
+read Acct cols=Nope bound=exact_staleness:2h:
+  all
+expect:
+  error: FAILED_PRECONDITION
+  message~: ^Read-only transaction timestamp \S+ has exceeded the maximum timestamp staleness$
+expect@spanner:
+  error: NOT_FOUND
+  message: Column not found in table Acct: Nope

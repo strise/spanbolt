@@ -9,7 +9,7 @@ mod retention;
 mod schema;
 
 pub use apply::DataCheck;
-pub use lexer::{column_references, identifiers, is_reserved};
+pub use lexer::{SqlToken, column_references, identifiers, is_reserved, sql_tokens};
 pub use parser::{
     ChangeStream, CsTarget, is_ddl, null_filter_columns, parse_statement,
     parse_statement_emulator_compat, quote_ident, quote_path, quote_string,

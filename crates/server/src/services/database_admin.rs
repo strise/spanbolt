@@ -209,6 +209,14 @@ fn apply_schema(
             return Err(Status::unimplemented(message.clone()));
         }
     }
+    // `CREATE OR REPLACE VIEW` of an existing view words a bad query differently.
+    let replacing = match &stmt {
+        Statement::CreateView {
+            view,
+            or_replace: true,
+        } => schema.views.contains_key(&view.name.to_ascii_lowercase()),
+        _ => false,
+    };
     let graph_change = expr_evaluator()
         .and_then(|ev| Some((ev, graph_change(schema, &stmt)?, Arc::new(schema.clone()))));
     if emulator_compat {
@@ -217,6 +225,12 @@ fn apply_schema(
         schema.apply(&stmt).map_err(ddl)?;
     }
     validate_exprs(schema, &stmt)?;
+    if let Statement::CreateView { view, .. } = &stmt
+        && let Some(ev) = expr_evaluator()
+    {
+        ev.validate_view(&Arc::new(schema.clone()), &view.name, replacing)
+            .map_err(to_status)?;
+    }
     if let Some((ev, change, before)) = graph_change {
         ev.check_graph_dependents(&before, &Arc::new(schema.clone()), &change)
             .map_err(to_status)?;

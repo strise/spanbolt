@@ -24,7 +24,7 @@ use googlesql_sys::proto::*;
 use spanbolt_storage::{Code, Error, Result};
 
 use crate::plan::{computed, expr_type, fn_name, scan_columns};
-use crate::struct_shape::is_struct_array;
+use crate::struct_shape::{is_struct_array, lambda, transform_body, value_args};
 
 /// Bounds the walk through column definitions and nested tables.
 const MAX_DEPTH: usize = 64;
@@ -174,11 +174,18 @@ fn struct_array(e: &AnyResolvedExprProto) -> bool {
     expr_type(e).is_some_and(is_struct_array)
 }
 
-/// The struct-array arguments of a function call.
+/// The struct-array arguments of a function call, lambda calls included.
 fn struct_array_args(
     b: &ResolvedFunctionCallBaseProto,
 ) -> impl Iterator<Item = &AnyResolvedExprProto> {
-    b.argument_list.iter().filter(|a| struct_array(a))
+    value_args(b).filter(|a| struct_array(a))
+}
+
+/// A struct built through scalar functions without being one `STRUCT(...)`: as an aggregate's
+/// argument (`ARRAY_AGG(IF(c, STRUCT(...), NULL))`) or what a lambda returns
+/// (`ARRAY_TRANSFORM(a, e -> IF(c, STRUCT(...), NULL))`), Spanner takes it for constructor syntax.
+fn wrapped_struct(e: &AnyResolvedExprProto) -> bool {
+    !is_make_struct(e) && built_struct(e, 0)
 }
 
 /// An array known to hold exactly one element: `[x]`.
@@ -320,8 +327,14 @@ impl<'a> Results<'a> {
     fn expr(&mut self, e: &'a AnyResolvedExprProto) {
         match e.node.as_ref() {
             Some(E::ResolvedFunctionCallBaseNode(_)) => {
-                for a in function(e).iter().flat_map(|b| &b.argument_list) {
+                let Some(b) = function(e) else {
+                    return;
+                };
+                for a in value_args(b) {
                     self.expr(a);
+                }
+                if let Some(body) = lambda(b).and_then(|l| l.body.as_ref()) {
+                    self.expr(body);
                 }
             }
             Some(E::ResolvedCastNode(c)) => self.opt_expr(&c.expr),
@@ -424,13 +437,18 @@ impl<'a> Results<'a> {
             Some(E::ResolvedColumnRefNode(c)) => {
                 self.constructed_column(column_id(&c.column), depth)
             }
-            Some(E::ResolvedFunctionCallBaseNode(_)) => function(e).is_some_and(|b| {
-                (fn_name(b) == "$make_array" && !b.argument_list.is_empty())
-                    || struct_array_args(b).any(|a| self.constructed(a, depth + 1))
-                    // `ARRAY_AGG(IF(c, STRUCT(...), NULL))`; `ARRAY_AGG(STRUCT(...))` is fine.
-                    || (aggregate(e).is_some()
-                        && b.argument_list.iter().any(|a| !is_make_struct(a) && built_struct(a, 0)))
-            }),
+            // ARRAY_TRANSFORM's elements come from its lambda: `e -> STRUCT(...)` is fine.
+            Some(E::ResolvedFunctionCallBaseNode(_)) => {
+                function(e).is_some_and(|b| match transform_body(b) {
+                    Some(body) => wrapped_struct(body),
+                    None => {
+                        (fn_name(b) == "$make_array" && !b.argument_list.is_empty())
+                        || struct_array_args(b).any(|a| self.constructed(a, depth + 1))
+                        // `ARRAY_AGG(IF(c, STRUCT(...), NULL))`; `ARRAY_AGG(STRUCT(...))` is fine.
+                        || (aggregate(e).is_some() && b.argument_list.iter().any(wrapped_struct))
+                    }
+                })
+            }
             Some(E::ResolvedCastNode(c)) => c
                 .expr
                 .as_deref()
@@ -617,7 +635,11 @@ impl<'a> Results<'a> {
                 self.tables_column(column_id(&c.column), depth, out)
             }
             Some(E::ResolvedFunctionCallBaseNode(_)) => {
-                for a in function(e).into_iter().flat_map(struct_array_args) {
+                for a in function(e)
+                    .filter(|b| transform_body(b).is_none())
+                    .into_iter()
+                    .flat_map(struct_array_args)
+                {
                     self.tables(a, depth + 1, out);
                 }
             }

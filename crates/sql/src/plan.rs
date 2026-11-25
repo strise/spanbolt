@@ -397,6 +397,10 @@ pub fn type_of(e: &AnyResolvedExprProto) -> Result<Type> {
 }
 
 /// A function call's base fields.
+/// The emulator's error for a NULL ARRAY<STRUCT> literal and for a lambda call returning one.
+const EMULATOR_NULL_STRUCT_ARRAY: &str = "Unsupported query shape: Spanner does not support array \
+    constructor syntax for a null-valued array of struct.";
+
 pub fn call_base(e: &AnyResolvedExprProto) -> Option<&ResolvedFunctionCallBaseProto> {
     match e.node.as_ref()? {
         E::ResolvedFunctionCallBaseNode(b) => match b.node.as_ref()? {
@@ -2227,11 +2231,7 @@ impl<'c> Planner<'c> {
                     && v.value.as_ref().is_none_or(|x| x.value.is_none())
                     && crate::struct_shape::is_struct_array(tp)
                 {
-                    return Err(Error::new(
-                        Code::Unimplemented,
-                        "Unsupported query shape: Spanner does not support array constructor \
-                         syntax for a null-valued array of struct.",
-                    ));
+                    return Err(Error::new(Code::Unimplemented, EMULATOR_NULL_STRUCT_ARRAY));
                 }
                 let ty = types::from_proto(tp)?;
                 let val = crate::literal::value(v.value.as_ref(), &ty)?;
@@ -2751,6 +2751,15 @@ impl<'c> Planner<'c> {
                 name.to_uppercase()
             ))
         };
+        // The emulator rejects every lambda call that makes an ARRAY<STRUCT>, wherever it is.
+        if self.opts.emulator_compat
+            && b.parent
+                .as_ref()
+                .and_then(|p| p.r#type.as_ref())
+                .is_some_and(crate::struct_shape::is_struct_array)
+        {
+            return Err(Error::new(Code::Unimplemented, EMULATOR_NULL_STRUCT_ARRAY));
+        }
         let [arr, lam] = b.generic_argument_list.as_slice() else {
             return Err(unsupported());
         };

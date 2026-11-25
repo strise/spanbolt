@@ -139,6 +139,15 @@ fn is_string_literal(e: &str) -> bool {
 }
 
 impl ExprEvaluator for SchemaExprs {
+    fn validate_view(
+        &self,
+        schema: &Arc<spanbolt_ddl::Schema>,
+        name: &str,
+        replacing: bool,
+    ) -> Result<()> {
+        self.engine.validate_view(schema, name, replacing)
+    }
+
     fn validate_property_graph(
         &self,
         schema: &Arc<spanbolt_ddl::Schema>,

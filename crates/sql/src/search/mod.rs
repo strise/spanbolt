@@ -29,8 +29,8 @@
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
-//! DEBUG_TOKENLIST, which only prod has, prints token lists in prod's format (`debug`). It is
-//! UNIMPLEMENTED until the analyser's catalog declares it (`engine.rs`).
+//! DEBUG_TOKENLIST, which only prod has, prints token lists in prod's format (`debug`); the
+//! analyser declares it in default mode only.
 //!
 //! Not followed: CJK word segmentation (`日本語` is `日本, 語` in prod, recorded in
 //! `search_tokenizer_cjk.case`). Prod's segmenter is Google's own; on that corpus the ICU4X

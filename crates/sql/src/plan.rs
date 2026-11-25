@@ -91,7 +91,8 @@ impl Options {
     /// them (`conformance/cases/sql/graph.case`).
     /// `SPANBOLT_PRODUCTION` is not a language feature: it gives the shim's builtins Cloud
     /// Spanner's analysis where it differs from the emulator's (SEARCH and SCORE take
-    /// `enhance_query_options`, SCORE no BYTES query, FORMAT escapes like `%5%` take no argument).
+    /// `enhance_query_options`, SCORE no BYTES query, FORMAT escapes like `%5%` take no argument)
+    /// and declares DEBUG_TOKENLIST.
     pub fn extra_features(&self) -> &'static [&'static str] {
         if self.emulator_compat {
             &["FEATURE_INSERT_ON_CONFLICT_CLAUSE"]

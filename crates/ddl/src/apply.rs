@@ -1,7 +1,7 @@
 //! Schema validation and mutation for parsed DDL statements.
 
 use crate::DdlError;
-use crate::lexer::{Tok, tokenize};
+use crate::lexer::{Tok, Token, tokenize};
 use crate::names;
 use crate::parser::{ChangeStream, CsTarget, GrantStmt, parse_grant};
 use crate::schema::*;
@@ -2886,6 +2886,25 @@ fn sql_mentions(sql: &str, name: &str) -> bool {
     let Ok(toks) = tokenize(sql) else {
         return false;
     };
+    toks_mention(&toks, name)
+}
+
+/// The keys of the `(key, name)` pairs whose names `sql` mentions (see [`sql_mentions`]),
+/// tokenizing `sql` once.
+pub(crate) fn sql_mentions_any<'a>(
+    sql: &str,
+    names: impl Iterator<Item = (&'a str, &'a str)>,
+) -> Vec<&'a str> {
+    let Ok(toks) = tokenize(sql) else {
+        return Vec::new();
+    };
+    names
+        .filter(|(_, n)| toks_mention(&toks, n))
+        .map(|(k, _)| k)
+        .collect()
+}
+
+fn toks_mention(toks: &[Token], name: &str) -> bool {
     let parts: Vec<&str> = name.split('.').collect();
     let ident = |t: &Tok| match t {
         Tok::Ident(w) | Tok::QuotedIdent(w) => Some(w.clone()),

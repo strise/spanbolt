@@ -7,8 +7,10 @@
 namespace spanbolt {
 
 // Registers Spanner-only scalar functions (signatures only; Rust evaluates).
+// `production` picks Cloud Spanner's signatures where they differ from the
+// emulator's.
 void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
-                         googlesql::TypeFactory* types);
+                         googlesql::TypeFactory* types, bool production);
 
 }  // namespace spanbolt
 

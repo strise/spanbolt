@@ -1,0 +1,716 @@
+# DEBUG_TOKENLIST's output format beyond debug_tokenlist.case (#128): which tokens it quotes and
+# escapes, how gaps and positions print for arrays, empty values and TOKENLIST_CONCAT, and what
+# TOKEN, TOKENIZE_BOOL, TOKENIZE_NUMBER and TOKENIZE_JSON print for other values and options.
+# Only Cloud Spanner has DEBUG_TOKENLIST.
+tags: sql search
+
+case quoting_ascii
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS('a ,()[]<>"\'\\{}:;=#|`~*%$^?/.+@&_', ngram_size_max => 1)) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: t STRING
+  ["a, \" \", \",\", \"(\", \")\", \"[\", \"]\", <, >, \\\", \\', \\\\, {, }, :, ;, =, #, |, `, ~, *, %, $, ^, ?, /, ., +, @, &, _"]
+
+case quoting_space_chars
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS('a\tb\nc\rd\x01e\u00a0f\u3000g\u200bh', ngram_size_max => 1)) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: t STRING
+  ["a, \\t, b, \\n, c, \\r, d, \\x01, e,  , f, 　, g, ​, h"]
+
+case quoting_pairs
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS('a(b)c[d]e"f', ngram_size_min => 2, ngram_size_max => 2)) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: t STRING
+  ["\"a(\", \"(b\", \"b)\", \")c\", \"c[\", \"[d\", \"d]\", \"]e\", e\\\", \\\"f"]
+
+case token_specials
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN('a"b')) AS a, DEBUG_TOKENLIST(TOKEN('(x)')) AS b,
+    DEBUG_TOKENLIST(TOKEN('[x]')) AS c, DEBUG_TOKENLIST(TOKEN('a,b')) AS d,
+    DEBUG_TOKENLIST(TOKEN('<gap(1)>')) AS e, DEBUG_TOKENLIST(TOKEN('a\\b')) AS f,
+    DEBUG_TOKENLIST(TOKEN("it's")) AS g, DEBUG_TOKENLIST(TOKEN('Ab\tc')) AS h,
+    DEBUG_TOKENLIST(TOKEN('x(boundary)')) AS i, DEBUG_TOKENLIST(TOKEN('==1')) AS j
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING, f STRING, g STRING, h STRING, i STRING, j STRING
+  ["a\\\"b","\"(x)\"","\"[x]\"","\"a,b\"","\"<gap(1)>\"","a\\\\b","it\\'s","Ab\\tc","\"x(boundary)\"","==1"]
+
+case token_bytes
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN(b'\x00\x01ab\xff')) AS a, DEBUG_TOKENLIST(TOKEN(b'')) AS b,
+    DEBUG_TOKENLIST(TOKEN(b'abc')) AS c, DEBUG_TOKENLIST(TOKEN(CAST(NULL AS BYTES))) AS d
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING
+  ["\\x00\\x01\\x61\\x62?","","abc",null]
+
+case token_string_empty
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN('')) AS a, DEBUG_TOKENLIST(TOKEN(CAST(NULL AS STRING))) AS b,
+    DEBUG_TOKENLIST(TOKEN(' ')) AS c, DEBUG_TOKENLIST(TOKEN('\xc3\xa9\u00e9')) AS d
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING
+  ["",null,"\" \"","Ã©é"]
+
+case token_array
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN(['a', 'b c'])) AS a, DEBUG_TOKENLIST(TOKEN(ARRAY<STRING>[])) AS b,
+    DEBUG_TOKENLIST(TOKEN(['b', 'a', 'b'])) AS c, DEBUG_TOKENLIST(TOKEN(['x', NULL])) AS d,
+    DEBUG_TOKENLIST(TOKEN([''])) AS e
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING
+  ["a, \"b c\"","","a, b","x",""]
+
+case token_bytes_array
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN([b'a', b'\x00'])) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["\\x00, a"]
+
+case token_int
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN(42)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKEN\n Argument types: INT64\n Signature: TOKEN(BYTES)\n Argument 1: Unable to coerce type INT64 to expected type BYTES\n Signature: TOKEN(ARRAY<BYTES>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES>\n Signature: TOKEN(STRING)\n Argument 1: Unable to coerce type INT64 to expected type STRING\n Signature: TOKEN(ARRAY<STRING>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> [at 1:24]
+
+case bool_array
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_BOOL([true, false, NULL])) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_BOOL(ARRAY<BOOL>[])) AS b, DEBUG_TOKENLIST(TOKENIZE_BOOL([true, true])) AS c,
+    DEBUG_TOKENLIST(TOKENIZE_BOOL(CAST(NULL AS BOOL))) AS d
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKENIZE_BOOL\n Argument types: ARRAY<BOOL>\n Signature: TOKENIZE_BOOL(BOOL)\n Argument 1: Unable to coerce type ARRAY<BOOL> to expected type BOOL [at 1:24]
+
+case number_tree_base
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, tree_base => 10)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42, [-9223372036854775808, 776627963145224191], [-223372036854775808, 776627963145224191], [-23372036854775808, 76627963145224191], [-3372036854775808, 6627963145224191], [-372036854775808, 627963145224191], [-72036854775808, 27963145224191], [-2036854775808, 7963145224191], [-36854775808, 63145224191], [-36854775808, 963145224191], [-6854775808, 3145224191], [-854775808, 145224191], [-54775808, 45224191], [-4775808, 5224191], [-775808, 224191], [-75808, 24191], [-5808, 4191], [-808, 191], [-8, 91], [42, 42], [42, 51]"]
+
+case number_tree_base_4
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, tree_base => 4)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42, [0, 63], [0, 255], [0, 1023], [0, 4095], [0, 16383], [0, 65535], [0, 262143], [0, 1048575], [0, 4194303], [0, 16777215], [0, 67108863], [0, 268435455], [0, 1073741823], [0, 4294967295], [0, 17179869183], [0, 68719476735], [0, 274877906943], [0, 1099511627775], [0, 4398046511103], [0, 17592186044415], [0, 70368744177663], [0, 281474976710655], [0, 1125899906842623], [0, 4503599627370495], [0, 18014398509481983], [0, 72057594037927935], [0, 288230376151711743], [0, 1152921504606846975], [0, 4611686018427387903], [32, 47], [40, 43], [42, 42]"]
+
+case number_min_max
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, min => 0, max => 100)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42, [0, 63], [32, 47], [32, 63], [40, 43], [40, 47], [42, 42], [42, 43]"]
+
+case number_min_max_neg
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(-3, min => -10, max => 10)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==-3, [-10, -3], [-10, 5], [-6, -3], [-4, -3], [-3, -3]"]
+
+case number_granularity
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, min => 0, max => 1000, granularity => 10)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42, [0, 74], [0, 154], [0, 314], [0, 634], [35, 44], [35, 54], [35, 74]"]
+
+case number_outside
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(500, min => 0, max => 100)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(-5, min => 0, max => 100)) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["==500, [64, 127], [96, 103], [96, 111], [96, 127], [100, 100], [100, 101], [100, 103]","==-5, [0, 0], [0, 1], [0, 3], [0, 7], [0, 15], [0, 31], [0, 63]"]
+
+case number_equality
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, comparison_type => 'equality')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42"]
+
+case number_range
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, comparison_type => 'range')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: unsupported comparison type: 'range', supported comparison types are 'all' or 'equality'
+
+case number_prefixtree
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, algorithm => 'prefixtree')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42, [-9223372036854775806, 9223372036854775807], [-9223372036854775804, 9223372036854775807], [-9223372036854775800, 9223372036854775807], [-9223372036854775792, 9223372036854775807], [-9223372036854775776, 9223372036854775807], [-9223372036854775744, 9223372036854775807], [-9223372036854775680, 9223372036854775807], [-9223372036854775552, 9223372036854775807], [-9223372036854775296, 9223372036854775807], [-9223372036854774784, 9223372036854775807], [-9223372036854773760, 9223372036854775807], [-9223372036854771712, 9223372036854775807], [-9223372036854767616, 9223372036854775807], [-9223372036854759424, 9223372036854775807], [-9223372036854743040, 9223372036854775807], [-9223372036854710272, 9223372036854775807], [-9223372036854644736, 9223372036854775807], [-9223372036854513664, 9223372036854775807], [-9223372036854251520, 9223372036854775807], [-9223372036853727232, 9223372036854775807], [-9223372036852678656, 9223372036854775807], [-9223372036850581504, 9223372036854775807], [-9223372036846387200, 9223372036854775807], [-9223372036837998592, 9223372036854775807], [-9223372036821221376, 9223372036854775807], [-9223372036787666944, 9223372036854775807], [-9223372036720558080, 9223372036854775807], [-9223372036586340352, 9223372036854775807], [-9223372036317904896, 9223372036854775807], [-9223372035781033984, 9223372036854775807], [-9223372034707292160, 9223372036854775807], [-9223372032559808512, 9223372036854775807], [-9223372028264841216, 9223372036854775807], [-9223372019674906624, 9223372036854775807], [-9223372002495037440, 9223372036854775807], [-9223371968135299072, 9223372036854775807], [-9223371899415822336, 9223372036854775807], [-9223371761976868864, 9223372036854775807], [-9223371487098961920, 9223372036854775807], [-9223370937343148032, 9223372036854775807], [-9223369837831520256, 9223372036854775807], [-9223367638808264704, 9223372036854775807], [-9223363240761753600, 9223372036854775807], [-9223354444668731392, 9223372036854775807], [-9223336852482686976, 9223372036854775807], [-9223301668110598144, 9223372036854775807], [-9223231299366420480, 9223372036854775807], [-9223090561878065152, 9223372036854775807], [-9222809086901354496, 9223372036854775807], [-9222246136947933184, 9223372036854775807], [-9221120237041090560, 9223372036854775807], [-9218868437227405312, 9223372036854775807], [-9214364837600034816, 9223372036854775807], [-9205357638345293824, 9223372036854775807], [-9187343239835811840, 9223372036854775807], [-9151314442816847872, 9223372036854775807], [-9079256848778919936, 9223372036854775807], [-8935141660703064064, 9223372036854775807], [-8646911284551352320, 9223372036854775807], [-8070450532247928832, 9223372036854775807], [-6917529027641081856, 9223372036854775807], [-4611686018427387904, 9223372036854775807], [0, 9223372036854775807], [0, 63], [0, 127], [0, 255], [0, 511], [0, 1023], [0, 2047], [0, 4095], [0, 8191], [0, 16383], [0, 32767], [0, 65535], [0, 131071], [0, 262143], [0, 524287], [0, 1048575], [0, 2097151], [0, 4194303], [0, 8388607], [0, 16777215], [0, 33554431], [0, 67108863], [0, 134217727], [0, 268435455], [0, 536870911], [0, 1073741823], [0, 2147483647], [0, 4294967295], [0, 8589934591], [0, 17179869183], [0, 34359738367], [0, 68719476735], [0, 137438953471], [0, 274877906943], [0, 549755813887], [0, 1099511627775], [0, 2199023255551], [0, 4398046511103], [0, 8796093022207], [0, 17592186044415], [0, 35184372088831], [0, 70368744177663], [0, 140737488355327], [0, 281474976710655], [0, 562949953421311], [0, 1125899906842623], [0, 2251799813685247], [0, 4503599627370495], [0, 9007199254740991], [0, 18014398509481983], [0, 36028797018963967], [0, 72057594037927935], [0, 144115188075855871], [0, 288230376151711743], [0, 576460752303423487], [0, 1152921504606846975], [0, 2305843009213693951], [0, 4611686018427387903], [0, 9223372036854775807], [32, 47], [32, 63], [40, 43], [40, 47], [42, 42], [42, 43]"]
+
+case number_logtree
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, algorithm => 'logtree')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==42, [0, 63], [0, 127], [0, 255], [0, 511], [0, 1023], [0, 2047], [0, 4095], [0, 8191], [0, 16383], [0, 32767], [0, 65535], [0, 131071], [0, 262143], [0, 524287], [0, 1048575], [0, 2097151], [0, 4194303], [0, 8388607], [0, 16777215], [0, 33554431], [0, 67108863], [0, 134217727], [0, 268435455], [0, 536870911], [0, 1073741823], [0, 2147483647], [0, 4294967295], [0, 8589934591], [0, 17179869183], [0, 34359738367], [0, 68719476735], [0, 137438953471], [0, 274877906943], [0, 549755813887], [0, 1099511627775], [0, 2199023255551], [0, 4398046511103], [0, 8796093022207], [0, 17592186044415], [0, 35184372088831], [0, 70368744177663], [0, 140737488355327], [0, 281474976710655], [0, 562949953421311], [0, 1125899906842623], [0, 2251799813685247], [0, 4503599627370495], [0, 9007199254740991], [0, 18014398509481983], [0, 36028797018963967], [0, 72057594037927935], [0, 144115188075855871], [0, 288230376151711743], [0, 576460752303423487], [0, 1152921504606846975], [0, 2305843009213693951], [0, 4611686018427387903], [0, 9223372036854775807], [32, 47], [32, 63], [40, 43], [40, 47], [42, 42], [42, 43]"]
+
+case number_extremes
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(9223372036854775807)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(-9223372036854775808)) AS b, DEBUG_TOKENLIST(TOKENIZE_NUMBER(-1)) AS c
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING
+  ["==9223372036854775807, [0, 9223372036854775807], [4611686018427387904, 9223372036854775807], [6917529027641081856, 9223372036854775807], [8070450532247928832, 9223372036854775807], [8646911284551352320, 9223372036854775807], [8935141660703064064, 9223372036854775807], [9079256848778919936, 9223372036854775807], [9151314442816847872, 9223372036854775807], [9187343239835811840, 9223372036854775807], [9205357638345293824, 9223372036854775807], [9214364837600034816, 9223372036854775807], [9218868437227405312, 9223372036854775807], [9221120237041090560, 9223372036854775807], [9222246136947933184, 9223372036854775807], [9222809086901354496, 9223372036854775807], [9223090561878065152, 9223372036854775807], [9223231299366420480, 9223372036854775807], [9223301668110598144, 9223372036854775807], [9223336852482686976, 9223372036854775807], [9223354444668731392, 9223372036854775807], [9223363240761753600, 9223372036854775807], [9223367638808264704, 9223372036854775807], [9223369837831520256, 9223372036854775807], [9223370937343148032, 9223372036854775807], [9223371487098961920, 9223372036854775807], [9223371761976868864, 9223372036854775807], [9223371899415822336, 9223372036854775807], [9223371968135299072, 9223372036854775807], [9223372002495037440, 9223372036854775807], [9223372019674906624, 9223372036854775807], [9223372028264841216, 9223372036854775807], [9223372032559808512, 9223372036854775807], [9223372034707292160, 9223372036854775807], [9223372035781033984, 9223372036854775807], [9223372036317904896, 9223372036854775807], [9223372036586340352, 9223372036854775807], [9223372036720558080, 9223372036854775807], [9223372036787666944, 9223372036854775807], [9223372036821221376, 9223372036854775807], [9223372036837998592, 9223372036854775807], [9223372036846387200, 9223372036854775807], [9223372036850581504, 9223372036854775807], [9223372036852678656, 9223372036854775807], [9223372036853727232, 9223372036854775807], [9223372036854251520, 9223372036854775807], [9223372036854513664, 9223372036854775807], [9223372036854644736, 9223372036854775807], [9223372036854710272, 9223372036854775807], [9223372036854743040, 9223372036854775807], [9223372036854759424, 9223372036854775807], [9223372036854767616, 9223372036854775807], [9223372036854771712, 9223372036854775807], [9223372036854773760, 9223372036854775807], [9223372036854774784, 9223372036854775807], [9223372036854775296, 9223372036854775807], [9223372036854775552, 9223372036854775807], [9223372036854775680, 9223372036854775807], [9223372036854775744, 9223372036854775807], [9223372036854775776, 9223372036854775807], [9223372036854775792, 9223372036854775807], [9223372036854775800, 9223372036854775807], [9223372036854775804, 9223372036854775807], [9223372036854775806, 9223372036854775807], [9223372036854775807, 9223372036854775807]","==-9223372036854775808, [-9223372036854775808, -9223372036854775808], [-9223372036854775808, -9223372036854775807], [-9223372036854775808, -9223372036854775805], [-9223372036854775808, -9223372036854775801], [-9223372036854775808, -9223372036854775793], [-9223372036854775808, -9223372036854775777], [-9223372036854775808, -9223372036854775745], [-9223372036854775808, -9223372036854775681], [-9223372036854775808, -9223372036854775553], [-9223372036854775808, -9223372036854775297], [-9223372036854775808, -9223372036854774785], [-9223372036854775808, -9223372036854773761], [-9223372036854775808, -9223372036854771713], [-9223372036854775808, -9223372036854767617], [-9223372036854775808, -9223372036854759425], [-9223372036854775808, -9223372036854743041], [-9223372036854775808, -9223372036854710273], [-9223372036854775808, -9223372036854644737], [-9223372036854775808, -9223372036854513665], [-9223372036854775808, -9223372036854251521], [-9223372036854775808, -9223372036853727233], [-9223372036854775808, -9223372036852678657], [-9223372036854775808, -9223372036850581505], [-9223372036854775808, -9223372036846387201], [-9223372036854775808, -9223372036837998593], [-9223372036854775808, -9223372036821221377], [-9223372036854775808, -9223372036787666945], [-9223372036854775808, -9223372036720558081], [-9223372036854775808, -9223372036586340353], [-9223372036854775808, -9223372036317904897], [-9223372036854775808, -9223372035781033985], [-9223372036854775808, -9223372034707292161], [-9223372036854775808, -9223372032559808513], [-9223372036854775808, -9223372028264841217], [-9223372036854775808, -9223372019674906625], [-9223372036854775808, -9223372002495037441], [-9223372036854775808, -9223371968135299073], [-9223372036854775808, -9223371899415822337], [-9223372036854775808, -9223371761976868865], [-9223372036854775808, -9223371487098961921], [-9223372036854775808, -9223370937343148033], [-9223372036854775808, -9223369837831520257], [-9223372036854775808, -9223367638808264705], [-9223372036854775808, -9223363240761753601], [-9223372036854775808, -9223354444668731393], [-9223372036854775808, -9223336852482686977], [-9223372036854775808, -9223301668110598145], [-9223372036854775808, -9223231299366420481], [-9223372036854775808, -9223090561878065153], [-9223372036854775808, -9222809086901354497], [-9223372036854775808, -9222246136947933185], [-9223372036854775808, -9221120237041090561], [-9223372036854775808, -9218868437227405313], [-9223372036854775808, -9214364837600034817], [-9223372036854775808, -9205357638345293825], [-9223372036854775808, -9187343239835811841], [-9223372036854775808, -9151314442816847873], [-9223372036854775808, -9079256848778919937], [-9223372036854775808, -8935141660703064065], [-9223372036854775808, -8646911284551352321], [-9223372036854775808, -8070450532247928833], [-9223372036854775808, -6917529027641081857], [-9223372036854775808, -4611686018427387905], [-9223372036854775808, -1]","==-1, [-9223372036854775808, -1], [-4611686018427387904, -1], [-2305843009213693952, -1], [-1152921504606846976, -1], [-576460752303423488, -1], [-288230376151711744, -1], [-144115188075855872, -1], [-72057594037927936, -1], [-36028797018963968, -1], [-18014398509481984, -1], [-9007199254740992, -1], [-4503599627370496, -1], [-2251799813685248, -1], [-1125899906842624, -1], [-562949953421312, -1], [-281474976710656, -1], [-140737488355328, -1], [-70368744177664, -1], [-35184372088832, -1], [-17592186044416, -1], [-8796093022208, -1], [-4398046511104, -1], [-2199023255552, -1], [-1099511627776, -1], [-549755813888, -1], [-274877906944, -1], [-137438953472, -1], [-68719476736, -1], [-34359738368, -1], [-17179869184, -1], [-8589934592, -1], [-4294967296, -1], [-2147483648, -1], [-1073741824, -1], [-536870912, -1], [-268435456, -1], [-134217728, -1], [-67108864, -1], [-33554432, -1], [-16777216, -1], [-8388608, -1], [-4194304, -1], [-2097152, -1], [-1048576, -1], [-524288, -1], [-262144, -1], [-131072, -1], [-65536, -1], [-32768, -1], [-16384, -1], [-8192, -1], [-4096, -1], [-2048, -1], [-1024, -1], [-512, -1], [-256, -1], [-128, -1], [-64, -1], [-32, -1], [-16, -1], [-8, -1], [-4, -1], [-2, -1], [-1, -1]"]
+
+case number_float
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(1.5)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==1.5, [1e-323, 1e189), [1e-323, 1e701), [0, 2.00000000000001e0), [0, 4.00000000000001e0), [1e0, 2.00000000000001e0), [1.4e0, 1.50000000000001e0), [1.4e0, 1.60000000000001e0), [1.4e0, 1.80000000000001e0), [1.5e0, 1.50000000000001e0), [1.5e0, 1.60000000000001e0), [1e-67, 1e61), [1e-67, 1e189), [1e-3, 1e1), [1e-3, 1e5), [1e-3, 1e13), [1e-3, 1e29), [1e-3, 1e61), [1e-1, 1e1), [1e0, 1e1), <warning(printed values for DOUBLE tokens are approximate)>"]
+
+case number_float_fp
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(1.5, algorithm => 'floatingpoint')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==1.5, [1e-323, 1e189), [1e-323, 1e701), [0, 2.00000000000001e0), [0, 4.00000000000001e0), [1e0, 2.00000000000001e0), [1.4e0, 1.50000000000001e0), [1.4e0, 1.60000000000001e0), [1.4e0, 1.80000000000001e0), [1.5e0, 1.50000000000001e0), [1.5e0, 1.60000000000001e0), [1e-67, 1e61), [1e-67, 1e189), [1e-3, 1e1), [1e-3, 1e5), [1e-3, 1e13), [1e-3, 1e29), [1e-3, 1e61), [1e-1, 1e1), [1e0, 1e1), <warning(printed values for DOUBLE tokens are approximate)>"]
+
+case number_array
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER([1, 2])) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(ARRAY<INT64>[])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Range indexing is not supported for number arrays. Set comparison_type=>'equality' to index this array for equality search.
+
+case number_array_null
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER([5, NULL])) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Range indexing is not supported for number arrays. Set comparison_type=>'equality' to index this array for equality search.
+
+case json_scalars
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON 'true')) AS a, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON 'false')) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '1.5')) AS c, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '"s"')) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '2')) AS e, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '-1')) AS f,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '""')) AS g
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING, f STRING, g STRING
+  ["\\x04","\\x08","\\x14\\x00\\x00\\x00\\x00\\x00\\x00??","\\x05s","\\\"","\\x1a\\x01","\\x01"]
+
+case json_containers
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{}')) AS a, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[]')) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[[1]]')) AS c, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"a": 1, "b": 2}')) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"b": 1, "a": 2}')) AS e
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING
+  ["\\x0c","\\x10","\\x10, \\x10\\x10, \\x10\\x10\\x12","\\x0c, \\x0c\\x01\\x61, \\x0c\\x01\\x61\\x12, \\x0c\\x01\\x62, \\x0c\\x01\\x62\\\"","\\x0c, \\x0c\\x01\\x61, \\x0c\\x01\\x61\\\", \\x0c\\x01\\x62, \\x0c\\x01\\x62\\x12"]
+
+case json_arrays
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[1, 1]')) AS a, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[1, 2, 3]')) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[2]')) AS c, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[1, 2.5]')) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '["a", "b"]')) AS e, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[true, false, null]')) AS f,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[{"a": 1}, {"a": 2}]')) AS g
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING, f STRING, g STRING
+  ["\\x10, \\x10\\x12, \\x10\\x12","\\x10, \\x10\\x12, \\x10\\\", \\x10\\x32","\\x10, \\x10\\\"","\\x10, \\x10\\x12, \\x10\\x14\\x00\\x00\\x00\\x00\\x00\\x00\\x04@","\\x10, \\x10\\x05\\x61, \\x10\\x05\\x62","\\x10, \\x10\\x04, \\x10\\x08, \\x10\\x00","\\x10, \\x10\\x0c, \\x10\\x0c\\x01\\x61, \\x10\\x0c\\x01\\x61\\x12, \\x10\\x0c, \\x10\\x0c\\x01\\x61, \\x10\\x0c\\x01\\x61\\\""]
+
+case json_keys
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"a.b": 1}')) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"ø": "Æ"}')) AS b, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"": 1}')) AS c,
+    DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"k": "a,b"}')) AS d, DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"key": "Value"}')) AS e
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING
+  ["\\x0c, \\x0c\\x03\\x61.b, \\x0c\\x03\\x61.b\\x12","\\x0c, \\x0c\\x02ø, \\x0c\\x02ø\\tÆ","\\x0c, \\x0c\\x00, \\x0c\\x00\\x12","\\x0c, \\x0c\\x01k, \"\\x0c\\x01k\\ra,b\"","\\x0c, \\x0c\\x03key, \\x0c\\x03key\\x15Value"]
+
+case json_long
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON(CONCAT('{"', REPEAT('k', 200), '": "', REPEAT('v', 300), '"}')))) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Function not found: JSON [at 1:38]
+
+case json_array_input
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON([JSON '1', JSON '"x"'])) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKENIZE_JSON\n Argument types: ARRAY<JSON>\n Signature: TOKENIZE_JSON(JSON)\n Argument 1: Unable to coerce type ARRAY<JSON> to expected type JSON [at 1:24]
+
+case json_null
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(CAST(NULL AS JSON))) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  [null]
+
+case substring_short_words
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('a bc def', ngram_size_min => 2, ngram_size_max => 3)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('a', ngram_size_min => 2, ngram_size_max => 3)) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('ab a', ngram_size_min => 2, ngram_size_max => 3)) AS c
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING
+  ["[de, ef], a, <gap(1)>, bc, <gap(1)>, def","a","ab, <gap(1)>, a"]
+
+case substring_symbols
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('foo_bar foo@bar x&y é-f')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["[&, &y, _, _b, _ba, a, ar, b, ba, fo, o, o_, o_b, oo, oo_, r, x, x&, y], foo_, oo_b, o_ba, _bar, <gap(1)>, foo, <gap(1)>, bar, <gap(1)>, x&y, <gap(1)>, é, <gap(1)>, f"]
+
+case substring_letters
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('x y z U.S.A.')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["x, <gap(1)>, y, <gap(1)>, z, <gap(1)>, u, <gap(1)>, s, <gap(1)>, a"]
+
+case substring_relative
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('alpha beta', relative_search_types => ['all'])) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["[^, ^^a, ^^alp, ^a, ^al, ^b, ^be, a, a^, a^^, a^b, al, alp, b, be, bet, e, et, eta, eta^^, h, ha, ha^, l, lp, lph, p, ph, pha, t, ta, ta^], ^^al, ^alp, alph, lpha, pha^, ha^b, a^be, ^bet, beta, eta^, ta^^"]
+
+case substring_relative_word_prefix
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('alpha beta', relative_search_types => ['word_prefix'])) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('alpha beta', relative_search_types => ['value_suffix'])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["[^a, ^al, ^b, ^be, a, al, alp, b, be, bet, e, et, eta, h, ha, l, lp, lph, p, ph, pha, t, ta], ^alp, alph, lpha, <gap(1)>, ^bet, beta","[a, a^^, al, alp, b, be, bet, e, et, eta, eta^^, h, ha, l, lp, lph, p, ph, pha, t, ta], alph, lpha, <gap(1)>, beta, eta^, ta^^"]
+
+case substring_empty
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('')) AS a, DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('!!!')) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING(['', 'ab'])) AS c, DEBUG_TOKENLIST(TOKENIZE_SUBSTRING(['ab', ''])) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING(['ab', NULL, 'cd'])) AS e
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING
+  ["","","[a, b], ab","[a, b], ab","[a, b, c, d], ab, <gap(25)>, cd"]
+
+case substring_repeat
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('abab abab')) AS a, DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('aaaaaa', ngram_size_max => 2)) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["[a, ab, aba, b, ba, bab], abab, <gap(1)>, abab","a, aa, aa, aa, aa, aa"]
+
+case fulltext_empty
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('!!!')) AS a, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(['', 'a'])) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(['a', ''])) AS c, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(['a', NULL, 'b'])) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(['a', '!!', 'b'])) AS e, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(ARRAY<STRING>[])) AS f
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING, f STRING
+  ["","a(boundary, end_boundary)","a(boundary, end_boundary)","a(boundary, end_boundary), <gap(25)>, b(boundary, end_boundary)","a(boundary, end_boundary), <gap(25)>, b(boundary, end_boundary)",""]
+
+case fulltext_symbols
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('foo -> bar && baz @foo x@y')) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('foo foo')) AS b, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('_a_')) AS c
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING
+  ["foo(boundary), ->, bar, &&, baz, [@foo, foo], [x, x@y], y(end_boundary)","foo(boundary), foo(end_boundary)","[_a_, a](boundary, end_boundary)"]
+
+case fulltext_html
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('<b>Hi</b> there', content_type => 'text/html')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["hi(font_size=3, boundary), there(font_size=2, end_boundary)"]
+
+case concat_empty
+query:
+  SELECT DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_FULLTEXT(''), TOKENIZE_FULLTEXT(ARRAY<STRING>[])])) AS a,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_FULLTEXT(CAST(NULL AS STRING)), TOKENIZE_FULLTEXT('a')])) AS b,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_FULLTEXT('a'), TOKENIZE_FULLTEXT('b'), TOKENIZE_FULLTEXT('c d')])) AS c,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_FULLTEXT(''), TOKENIZE_FULLTEXT('a')])) AS d,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_FULLTEXT('a')])) AS e
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING
+  ["","a(boundary, end_boundary)","a(boundary, end_boundary), <gap(25)>, b(boundary, end_boundary), <gap(25)>, cd(boundary, end_boundary)","a(boundary, end_boundary)","a(boundary, end_boundary)"]
+
+case concat_ngrams
+query:
+  SELECT DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_NGRAMS('abc'), TOKENIZE_NGRAMS('de')])) AS a,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_SUBSTRING('alpha beta'), TOKENIZE_SUBSTRING('gamma')])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TOKENLIST_CONCAT can only be used with TOKENLIST values generated by TOKENIZE_FULLTEXT or TOKENIZE_SUBSTRING.
+
+case concat_other
+query:
+  SELECT DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_NUMBER(1), TOKENIZE_NUMBER(2)])) AS a,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKEN('a'), TOKEN('b')])) AS b,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_BOOL(true), TOKENIZE_BOOL(false)])) AS c
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TOKENLIST_CONCAT can only be used with TOKENLIST values generated by TOKENIZE_FULLTEXT or TOKENIZE_SUBSTRING.
+
+case ngrams_arrays
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS(['ab', 'cd'])) AS a, DEBUG_TOKENLIST(TOKENIZE_NGRAMS(['abcdef', 'ghijk'])) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_NGRAMS(['', 'ab'])) AS c, DEBUG_TOKENLIST(TOKENIZE_NGRAMS(ARRAY<STRING>[])) AS d
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING
+  ["[a, ab, b, c, cd, d]","[a, ab, abc, abcd, b, bc, bcd, c, cd, cde, d, de, def, e, ef, f, g, gh, ghi, h, hi, hij, i, ij, ijk, j, jk, k], bcde, cdef, <gap(25)>, ghij, hijk","[a, ab, b]",""]
+
+case ngrams_repeat
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS('aaaaaa', ngram_size_max => 2)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NGRAMS('abab abab')) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["[a, aa], aa, aa, aa, aa","[\" \", \" a\", \" ab\", \"ab \", \"b \", \"b a\", a, ab, aba, abab, b, ba, bab], \"bab \", \"ab a\", \"b ab\", \" aba\", abab"]
+
+case ngrams_remove_diacritics
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS('Héllo', remove_diacritics => true)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["[H, He, Hel, Hell, e, el, ell, l, ll, llo, lo, o], ello"]
+
+case fulltext_remove_diacritics
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('Héllo Wörld', remove_diacritics => true)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["hello(boundary), world(end_boundary)"]
+
+case substring_remove_diacritics
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING('Héllo', remove_diacritics => true)) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["[e, el, ell, h, he, hel, l, ll, llo, lo, o], hell, ello"]
+
+case concat_substring
+query:
+  SELECT DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_SUBSTRING('alpha beta'), TOKENIZE_SUBSTRING('gamma')])) AS a,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_SUBSTRING('ab'), TOKENIZE_SUBSTRING(ARRAY<STRING>[])])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["[a, al, alp, b, be, bet, e, et, eta, h, ha, l, lp, lph, p, ph, pha, t, ta], alph, lpha, <gap(1)>, beta, <gap(25)>, [a, am, amm, g, ga, gam, m, ma, mm, mma], gamm, amma","[a, b], ab, <gap(25)>"]
+
+case concat_null
+query:
+  SELECT DEBUG_TOKENLIST(TOKENLIST_CONCAT([TOKENIZE_FULLTEXT(CAST(NULL AS STRING))])) AS a,
+    DEBUG_TOKENLIST(TOKENLIST_CONCAT(ARRAY<TOKENLIST>[])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  [null,null]
+
+case ngrams_arrays_short_first
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NGRAMS(['ab', 'cdefg'])) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NGRAMS(['abcde', 'fg', 'hijkl'])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["[a, ab, b, c, cd, cde, cdef, d, de, def, e, ef, efg, f, fg, g], defg","[a, ab, abc, abcd, b, bc, bcd, c, cd, cde, d, de, e, f, fg, g, h, hi, hij, i, ij, ijk, j, jk, jkl, k, kl, l], bcde, <gap(50)>, hijk, ijkl"]
+
+case substring_arrays_short
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_SUBSTRING(['ab', 'cdefg'])) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_SUBSTRING(['abcde', '!!', 'hijkl'])) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["[a, b, c, cd, cde, d, de, def, e, ef, efg, f, fg, g], ab, <gap(25)>, cdef, defg","[a, ab, abc, b, bc, bcd, c, cd, cde, d, de, e, h, hi, hij, i, ij, ijk, j, jk, jkl, k, kl, l], abcd, bcde, <gap(25)>, hijk, ijkl"]
+
+case number_bucket_count
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 63)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 64)) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 65)) AS c,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 640, granularity => 10)) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 635, granularity => 10)) AS e,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 630, granularity => 10)) AS f,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(5, min => 0, max => 645, granularity => 10)) AS g
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING, f STRING, g STRING
+  ["==5, [0, 7], [0, 15], [0, 31], [0, 63], [4, 5], [4, 7], [5, 5]","==5, [0, 7], [0, 15], [0, 31], [0, 63], [4, 5], [4, 7], [5, 5]","==5, [0, 7], [0, 15], [0, 31], [0, 63], [4, 5], [4, 7], [5, 5]","==5, [0, 14], [0, 34], [0, 74], [0, 154], [0, 314], [0, 634], [5, 14]","==5, [0, 14], [0, 34], [0, 74], [0, 154], [0, 314], [0, 634], [5, 14]","==5, [0, 14], [0, 34], [0, 74], [0, 154], [0, 314], [0, 634], [5, 14]","==5, [0, 14], [0, 34], [0, 74], [0, 154], [0, 314], [0, 634], [5, 14]"]
+
+case number_granularity_rounding
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(45, min => 0, max => 1000, granularity => 10)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(44, min => 0, max => 1000, granularity => 10)) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(7, min => 0, max => 100, granularity => 3)) AS c,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(8, min => 1, max => 100, granularity => 3)) AS d,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(-7, min => -100, max => 100, granularity => 5)) AS e,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(1000, min => 0, max => 1000, granularity => 10)) AS f
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING, e STRING, f STRING
+  ["==45, [0, 74], [0, 154], [0, 314], [0, 634], [35, 54], [35, 74], [45, 54]","==44, [0, 74], [0, 154], [0, 314], [0, 634], [35, 44], [35, 54], [35, 74]","==7, [0, 10], [0, 22], [0, 46], [0, 94], [5, 7], [5, 10]","==8, [1, 11], [1, 23], [1, 47], [1, 95], [6, 8], [6, 11]","==-7, [-100, 57], [-22, -3], [-22, 17], [-22, 57], [-12, -3], [-7, -3]","==1000, [635, 1274], [955, 1034], [955, 1114], [955, 1274], [995, 1004], [995, 1014], [995, 1034]"]
+
+case number_base_options
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, min => 0, max => 1000, tree_base => 10)) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, min => 0, max => 1000, tree_base => 3, granularity => 2)) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(42, min => 0, max => 100, comparison_type => 'equality')) AS c
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: min, max, granularity, tree_base, precision, and algorithm arguments are not allowed in equality comparison mode (because they would not affect the generated tokenlist).
+
+case number_array_equality
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER([3, 1, 3], comparison_type => 'equality')) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER([5, NULL], comparison_type => 'equality')) AS b,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(ARRAY<INT64>[], comparison_type => 'equality')) AS c,
+    DEBUG_TOKENLIST(TOKENIZE_NUMBER(CAST(NULL AS INT64))) AS d
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING, c STRING, d STRING
+  ["==1, ==3","==5","",null]
+
+case number_float_equality
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_NUMBER(1.5, comparison_type => 'equality')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["==1.5, <warning(printed values for DOUBLE tokens are approximate)>"]
+
+case json_ints
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[0, 3, 7, 8, 15, 16, 100, 1000, 100000, -2, -8, -9, -100]')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["\\x10, \\x10\\x02, \\x10\\x32, \\x10r, \\x10?, \\x10?, \\x10\\n\\x10, \\x10\\nd, \\x10*?\\x03, \\x10J??\\x01, \\x10\\x1a\\x02, \\x10\\x1a\\x08, \\x10\\x1a\\t, \\x10\\x1a\\x64"]
+
+case json_big_numbers
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '[9223372036854775807, -9223372036854775808, 18446744073709551615, 1e20, 1.0, 0.5, -0.5]')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["\\x10, \\x10????????\\x7f, \\x10?\\x00\\x00\\x00\\x00\\x00\\x00\\x00?, \\x10?????????, \\x10\\x14@??x\\x1d?\\x15\\x44, \\x10\\x12, \\x10\\x14\\x00\\x00\\x00\\x00\\x00\\x00??, \\x10\\x14\\x00\\x00\\x00\\x00\\x00\\x00??"]
+
+case json_long_strings
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(PARSE_JSON(CONCAT('{"', REPEAT('k', 200), '": "', REPEAT('v', 300), '"}')))) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["\\x0c, \\x0c?\\x01kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk, \\x0c?\\x01kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk?\\tvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"]
+
+case json_string_lengths
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(PARSE_JSON(CONCAT('["', REPEAT('v', 31), '", "', REPEAT('w', 32), '", "', REPEAT('x', 63), '", "', REPEAT('y', 64), '", "', REPEAT('z', 127), '"]')))) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["\\x10, \\x10}vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv, \\x10?\\x01wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww, \\x10?\\x01xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, \\x10?\\x02yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy, \\x10?\\x03zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"]
+
+case json_nested_deep
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_JSON(JSON '{"a": [{"b": [true]}], "c": {}}')) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING
+  ["\\x0c, \\x0c\\x01\\x61, \\x0c\\x01\\x61\\x10, \\x0c\\x01\\x61\\x10\\x0c, \\x0c\\x01\\x61\\x10\\x0c\\x01\\x62, \\x0c\\x01\\x61\\x10\\x0c\\x01\\x62\\x10, \\x0c\\x01\\x61\\x10\\x0c\\x01\\x62\\x10\\x04, \\x0c\\x01\\x63, \\x0c\\x01\\x63\\x0c"]
+
+case fulltext_html_tags
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('a <i>b</i>', content_type => 'text/html')) AS a,
+    DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('a <i>b</i>')) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["a(font_size=2, boundary), b(font_size=3, end_boundary)","a(boundary), i, b, </, i(end_boundary)"]

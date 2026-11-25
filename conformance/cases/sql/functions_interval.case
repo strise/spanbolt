@@ -152,6 +152,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function MAKE_INTERVAL Argument types: days => INT64 Signature: MAKE_INTERVAL([[year=>]INT64], [[month=>]INT64], [[day=>]INT64], [[hour=>]INT64], [[minute=>]INT64], [[second=>]INT64]) Named argument `days` does not exist in signature [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function MAKE_INTERVAL\n Argument types: days => INT64\n Signature: MAKE_INTERVAL([[year=>]INT64], [[month=>]INT64], [[day=>]INT64], [[hour=>]INT64], [[minute=>]INT64], [[second=>]INT64])\n Named argument `days` does not exist in signature [at 1:8]
 
 case make_interval_string_arg
 query:
@@ -159,6 +162,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function MAKE_INTERVAL Argument types: STRING Signature: MAKE_INTERVAL([INT64], [INT64], [INT64], [INT64], [INT64], [INT64]) Argument 1: Unable to coerce type STRING to expected type INT64 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function MAKE_INTERVAL\n Argument types: STRING\n Signature: MAKE_INTERVAL([INT64], [INT64], [INT64], [INT64], [INT64], [INT64])\n Argument 1: Unable to coerce type STRING to expected type INT64 [at 1:8]
 
 case make_interval_in_timestamp_add
 query:
@@ -292,6 +298,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function JUSTIFY_DAYS Argument types: INT64 Signature: JUSTIFY_DAYS(INTERVAL) Argument 1: Unable to coerce type INT64 to expected type INTERVAL [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function JUSTIFY_DAYS\n Argument types: INT64\n Signature: JUSTIFY_DAYS(INTERVAL)\n Argument 1: Unable to coerce type INT64 to expected type INTERVAL [at 1:8]
 
 case justify_from_string_cast
 query:

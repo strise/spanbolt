@@ -17,6 +17,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid NUMERIC literal: "1.0000000001" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid NUMERIC literal: \"1.0000000001\" [at 1:8]
 
 case float_edges
 query:

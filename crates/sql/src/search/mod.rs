@@ -26,15 +26,15 @@
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
-//! Not followed yet: SCORE with `enhance_query => true`; SNIPPET's preference for snippets that
-//! don't cross a sentence end, and for the occurrence of a repeated term nearest the other terms;
-//! DEBUG_TOKENLIST (UNIMPLEMENTED: prod's token lists keep values and positions that
+//! Not followed yet: SCORE with `enhance_query => true`; SNIPPET widths of scripts Arial doesn't
+//! cover (Georgian, Armenian, Indic, Thai); DEBUG_TOKENLIST (UNIMPLEMENTED: prod's token lists keep values and positions that
 //! spanbolt's don't).
 
 mod eval;
 mod index;
 mod rquery;
 mod score;
+mod snippet_widths;
 mod tokens;
 
 pub use index::search_keys;
@@ -120,7 +120,10 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
                 })
             })
         }),
-        "snippet" => f(move |_, a| eval::snippet(a, emu)),
+        "snippet" => {
+            let cache = eval::SnippetCache::default();
+            f(move |_, a| eval::snippet(a, emu, &cache))
+        }
         _ => return None,
     })
 }

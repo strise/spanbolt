@@ -107,6 +107,8 @@ pub(super) struct Compiled {
     words: Vec<Vec<u8>>,
     /// Prod's SCORE terms (from the query before stopwords are dropped); `None` in emulator mode.
     score: Option<ScoreQuery>,
+    /// Prod's SEARCH matches a NULL document (`score::matches_null`).
+    null_matches: bool,
 }
 
 fn collect_simple(n: &Node, out: &mut Vec<Vec<u8>>) -> bool {
@@ -119,7 +121,7 @@ fn collect_simple(n: &Node, out: &mut Vec<Vec<u8>>) -> bool {
         }
         Node::And(c) | Node::Or(c) => c.iter().all(|c| collect_simple(c, out)),
         Node::Not(c) => collect_simple(c, out),
-        Node::Number(_) | Node::Phrase(_) | Node::Around(_) => false,
+        Node::Number(_) | Node::Phrase(_) | Node::Around(_) | Node::InOrder(_) => false,
     }
 }
 
@@ -129,7 +131,7 @@ fn eval_simple(n: &Node, present: &dyn Fn(&[u8]) -> bool) -> bool {
         Node::And(c) => c.iter().all(|c| eval_simple(c, present)),
         Node::Or(c) => c.iter().any(|c| eval_simple(c, present)),
         Node::Not(c) => !eval_simple(c, present),
-        Node::Number(_) | Node::Phrase(_) | Node::Around(_) => false,
+        Node::Number(_) | Node::Phrase(_) | Node::Around(_) | Node::InOrder(_) => false,
     }
 }
 
@@ -150,7 +152,12 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
     {
         return n.clone();
     }
-    let parse = rquery::parse(q, emulator);
+    let parse = rquery::parse_query(q, emulator);
+    let null_matches = match &parse {
+        Ok(Some(p)) if !emulator => score::matches_null(&p.node, p.dropped_or),
+        _ => false,
+    };
+    let parse = parse.map(|p| p.map(|p| p.node));
     let score = match &parse {
         Ok(Some(n)) if !emulator => Some(ScoreQuery::new(n)),
         _ => None,
@@ -178,6 +185,7 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
         terms,
         words: normalized_terms(q, emulator),
         score,
+        null_matches,
     });
     if let Ok(mut c) = QUERIES.lock() {
         if c.len() >= 4096 {
@@ -240,7 +248,7 @@ fn collect_terms(n: &Node, out: &mut Vec<Vec<u8>>) {
                 out.push(t.clone());
             }
         }
-        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) => {
+        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => {
             c.iter().for_each(|c| collect_terms(c, out))
         }
         Node::Not(c) => collect_terms(c, out),
@@ -301,6 +309,8 @@ enum Mode {
     Unear {
         max_gap: i64,
         max_widths: Vec<i64>,
+        /// Prod's `"a AROUND b"`: each operand after the one before it.
+        ordered: bool,
     },
 }
 
@@ -369,13 +379,24 @@ impl PhraseMatcher<'_> {
             Mode::Unear {
                 max_gap,
                 max_widths,
+                ordered,
             } => {
-                let max_p = self.partial.iter().map(|h| h.pos).max().unwrap_or(0);
-                let min_l = self.partial.iter().map(Hit::limit).min().unwrap_or(0);
+                // The emulator computes the window in 32-bit ints that wrap, so a distance near
+                // i32::MAX matches only some rows (`AROUND(2147483647)` none).
+                let max_p = self.partial.iter().map(|h| h.pos).max().unwrap_or(0) as i32;
+                let min_l = self.partial.iter().map(Hit::limit).min().unwrap_or(0) as i32;
+                let gap = *max_gap as i32;
+                let min_pos = max_p
+                    .wrapping_sub(gap)
+                    .wrapping_sub(max_widths[next] as i32);
                 (
-                    max_p - max_gap - max_widths[next],
-                    min_l + max_gap,
-                    Some(max_p - max_gap),
+                    if *ordered {
+                        i64::from(min_pos).max(last.limit())
+                    } else {
+                        i64::from(min_pos)
+                    },
+                    i64::from(min_l.wrapping_add(gap)),
+                    Some(i64::from(max_p.wrapping_sub(gap))),
                 )
             }
         }
@@ -441,7 +462,7 @@ fn match_node(n: &Node, map: &TokenMap, in_phrase: bool) -> Result<Match> {
                 Some(Vec::new())
             }
         }
-        Node::Around(c) => {
+        Node::Around(c) | Node::InOrder(c) => {
             let results = match_children(c, map, true)?;
             let mut max_gap = -1;
             let mut hits = Vec::new();
@@ -473,6 +494,7 @@ fn match_node(n: &Node, map: &TokenMap, in_phrase: bool) -> Result<Match> {
                 mode: Mode::Unear {
                     max_gap,
                     max_widths,
+                    ordered: matches!(n, Node::InOrder(_)),
                 },
                 inputs: &hits,
                 partial: Vec::new(),
@@ -512,6 +534,15 @@ fn tokenlist(v: &Value) -> Result<Option<Vec<&[u8]>>> {
     }
 }
 
+/// SEARCH over a NULL document: NULL, except for the queries prod matches it with.
+fn null_search(c: &Compiled) -> Value {
+    if c.null_matches {
+        Value::Bool(true)
+    } else {
+        Value::Null
+    }
+}
+
 pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
     if let Some(e) = invalid_query_type(&args[1]) {
         return Err(e);
@@ -524,10 +555,7 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         if let Ok(Some(n)) = &c.parse {
             let mut pos = vec![Vec::new(); c.terms.len()];
             if term_positions(b, "SEARCH", &c.terms, &mut pos)? {
-                return Ok(Value::Null);
-            }
-            if !emulator && rquery::only_negations(n) {
-                return Ok(Value::Bool(false));
+                return Ok(null_search(&c));
             }
             if c.simple.is_some() {
                 let present = |t: &[u8]| {
@@ -557,7 +585,10 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         return Ok(Value::Null);
     };
     if source_null {
-        return Ok(Value::Null);
+        return Ok(match dialect(args)? {
+            Dialect::RQuery if !q.is_empty() => null_search(&compiled_for(q, emulator)),
+            _ => Value::Null,
+        });
     }
     if q.is_empty() {
         return Ok(Value::Bool(false));
@@ -583,7 +614,6 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         Dialect::RQuery => {
             let c = compiled_for(q, emulator);
             Ok(Value::Bool(match &c.parse {
-                Ok(Some(n)) if !emulator && rquery::only_negations(n) => false,
                 Ok(Some(n)) => match_node(n, &map, false)?.is_some(),
                 Ok(None) => false,
                 Err(e) => return Err(e.clone()),

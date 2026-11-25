@@ -369,3 +369,31 @@ fn deep_expressions_analyse_on_a_small_stack() {
         .join()
         .expect("analysis");
 }
+
+#[test]
+fn views_analyse_in_strict_mode_with_exact_table_names() {
+    let cat = Catalog::new(
+        r#"{"tables":[{"name":"Account","columns":[{"name":"Id","type":"INT64"}]}],
+            "extra_features":[]}"#,
+    )
+    .expect("catalog");
+    let view = |sql: &str, exact: &str| {
+        cat.analyze_view(sql, exact)
+            .map(|_| ())
+            .map_err(|e| e.message)
+    };
+    assert!(view("SELECT a.Id FROM Account AS a", r#"["Account"]"#).is_ok());
+    let e = view("SELECT Id FROM Account", "").unwrap_err();
+    assert!(
+        e.contains("cannot be used without a qualifier in strict name resolution mode"),
+        "{e}"
+    );
+    // Case-insensitive unless the table is listed.
+    assert!(view("SELECT a.Id FROM ACCOUNT AS a", "").is_ok());
+    let e = view(
+        "SELECT a.Id FROM Account AS a WHERE EXISTS (SELECT 1 FROM ACCOUNT AS b)",
+        r#"["Account"]"#,
+    )
+    .unwrap_err();
+    assert!(e.starts_with("Table not found: ACCOUNT [at 1:59]"), "{e}");
+}

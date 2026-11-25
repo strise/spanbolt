@@ -1,0 +1,10 @@
+# TOKEN with an untyped NULL: no signature matches it (#159). Recorded from the emulator only; the
+# Spanner grant had expired. Spanner lists TOKEN's signatures from BYTES (debug_tokenlist_formats/token_int).
+tags: sql search
+
+case token_null_select
+query:
+  SELECT TOKEN(NULL) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKEN Argument types: NULL Signature: TOKEN(STRING) Argument 1: Unable to coerce type INT64 to expected type STRING Signature: TOKEN(BYTES) Argument 1: Unable to coerce type INT64 to expected type BYTES Signature: TOKEN(ARRAY<STRING>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> Signature: TOKEN(ARRAY<BYTES>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES> [at 1:8]

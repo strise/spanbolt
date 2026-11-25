@@ -113,11 +113,14 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
             let float_value = float(sig.args.first());
             let float_bounds = sig.args.iter().skip(3).take(3).any(|t| float(Some(t)));
             f(move |_, a| {
+                if !emu {
+                    tokens::prod_number_options(a)?;
+                }
                 tokens::tokenize_number(a, float_bounds, float_value)
                     .map_err(|e| prod_message(emu, e, prod_tokenize_number))
             })
         }
-        "tokenlist_concat" => f(|_, a| tokens::tokenlist_concat(a)),
+        "tokenlist_concat" => f(move |_, a| tokens::tokenlist_concat(a, emu)),
         "search" => f(move |_, a| eval::search(a, emu)),
         "score" => f(move |_, a| eval::score(a, emu)),
         "search_substring" => f(move |_, a| eval::search_substring(a, emu)),

@@ -808,7 +808,7 @@ pub fn search_substring(args: &[Value], emulator: bool) -> Result<Value> {
         } else if i == 0 {
             return Err(not_match("SEARCH_SUBSTRING", "TOKENIZE_SUBSTRING"));
         } else {
-            words.extend(split(t));
+            words.extend(tokens::substring_words(tokens::unescape(t), emulator));
         }
     }
     let mut requested = 0;
@@ -837,7 +837,7 @@ pub fn search_substring(args: &[Value], emulator: bool) -> Result<Value> {
         return Ok(Value::Null);
     }
     let lq = tokens::fold(q, emulator);
-    let subs: Vec<&[u8]> = split(lq.as_bytes()).collect();
+    let subs: Vec<&[u8]> = tokens::substring_words(lq.as_bytes(), emulator);
     if subs.is_empty() {
         return Ok(Value::Bool(false));
     }
@@ -941,7 +941,7 @@ pub fn search_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
         } else if i == 0 {
             return Err(not_match("SEARCH_NGRAMS", NGRAM_FUNCS));
         } else if substring {
-            words.extend(split(t));
+            words.extend(tokens::substring_words(tokens::unescape(t), emulator));
         } else {
             tl.push(t.to_vec());
         }
@@ -1022,7 +1022,7 @@ fn trigrams(pre: &str, text: &str, post: &str, out: &mut HashSet<[char; 3]>) {
 fn ngrams_text(grams: &[&[u8]], min: usize) -> String {
     let mut text = String::new();
     for g in grams {
-        let g = String::from_utf8_lossy(g);
+        let g = String::from_utf8_lossy(tokens::unescape(g));
         if g.chars().count() != min {
             break;
         }
@@ -1069,7 +1069,7 @@ fn score_ngrams_prod(args: &[Value]) -> Result<Value> {
         if substring {
             for t in value {
                 // Prod scores the words of the value joined by single spaces.
-                let words: Vec<&[u8]> = split(t).collect();
+                let words = tokens::substring_words(tokens::unescape(t), false);
                 trigrams(
                     "  ",
                     &String::from_utf8_lossy(&words.join(&b' ')),
@@ -1083,7 +1083,7 @@ fn score_ngrams_prod(args: &[Value]) -> Result<Value> {
     }
     if substring {
         let lq = tokens::fold(q, false);
-        let words: Vec<&[u8]> = split(lq.as_bytes()).collect();
+        let words = tokens::substring_words(lq.as_bytes(), false);
         trigrams(
             "  ",
             &String::from_utf8_lossy(&words.join(&b' ')),

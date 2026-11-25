@@ -1,0 +1,488 @@
+# Runs of single letters (#86): case, initials and length. Space-separated letters join only
+# when they have the same case (`I J` is ij, `x I` stays apart); a letter right before a `.` is
+# an initial and joins nothing (`x y.`); `.`/`-` runs ignore case; a token holds at most 21
+# letters. See search_letters.case.
+tags: sql search
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok);
+  CREATE TABLE Q (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX QIdx ON Q(Tok)
+insert T cols=Id,Body:
+  [1, "X y"]
+  [2, "x Y"]
+  [3, "I J"]
+  [4, "i x"]
+  [5, "x I"]
+  [6, "a B c"]
+  [7, "I am"]
+  [8, "x I y"]
+  [9, "A b"]
+  [10, "Q b"]
+  [11, "x i"]
+  [12, "i j"]
+  [13, "I a"]
+  [14, "x. y"]
+  [15, "x.y. z"]
+  [16, "x-y. z"]
+  [17, "U.S. A"]
+  [18, "x.-y"]
+  [19, "x-.y"]
+  [20, "(x y)"]
+  [21, "\"x y\""]
+  [22, "x y."]
+  [23, "x y, z"]
+  [24, "x y!"]
+  [25, "x.y z"]
+  [26, "x y.z"]
+  [27, "x-1"]
+  [28, "1-x"]
+  [29, "x/y z"]
+  [30, "x y/z"]
+  [31, "x-y-zz"]
+  [32, "xx-y"]
+  [33, "x-yy"]
+  [34, "X-Y"]
+  [35, "x.Y"]
+  [36, "x--y z"]
+  [37, "- x y"]
+  [38, "x y -"]
+  [39, "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z"]
+  [40, "a b c d e f g h i j k l m n o p q r s t u v w x y z"]
+  [41, "x y z w v u t s r q p o n m l k j i h g f e d c b a x y z w v u t s r q p o n m l k j i h g f e d c b a"]
+  [42, "x."]
+  [43, "X."]
+  [44, "i."]
+  [45, "x-"]
+  [46, "-x"]
+  [47, "x.y-z"]
+  [48, "x-y.z"]
+  [49, "x . y"]
+  [50, "x . y z"]
+  [51, "A.B c"]
+  [52, "x y Z"]
+  [53, "Z x y"]
+  [54, "x y I"]
+  [55, "I x y"]
+  [56, "I"]
+  [57, "x Y z"]
+  [58, "X y Z"]
+  [59, "xy Z w"]
+insert Q cols=Id,Body:
+  [1, "xy"]
+  [2, "x"]
+  [3, "y"]
+  [4, "xyz"]
+  [5, "z"]
+  [6, "yx"]
+  [7, "x hello y"]
+  [8, "hello"]
+  [9, "xyhello"]
+  [10, "i"]
+  [11, "ix"]
+
+case tokens
+query:
+  SELECT Id, Body, DEBUG_TOKENLIST(Tok) AS t FROM T ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:18]
+expect@spanner:
+  columns: Id INT64, Body STRING, t STRING
+  ["1","X y","x(boundary), y(end_boundary)"]
+  ["2","x Y","x(boundary), y(end_boundary)"]
+  ["3","I J","ij(boundary, end_boundary)"]
+  ["4","i x","ix(boundary, end_boundary)"]
+  ["5","x I","x(boundary), i(end_boundary)"]
+  ["6","a B c","a(boundary), b, c(end_boundary)"]
+  ["7","I am","i(boundary), am(end_boundary)"]
+  ["8","x I y","x(boundary), i, y(end_boundary)"]
+  ["9","A b","a(boundary), b(end_boundary)"]
+  ["10","Q b","q(boundary), b(end_boundary)"]
+  ["11","x i","xi(boundary, end_boundary)"]
+  ["12","i j","ij(boundary, end_boundary)"]
+  ["13","I a","i(boundary), a(end_boundary)"]
+  ["14","x. y","x(boundary), y(end_boundary)"]
+  ["15","x.y. z","xy(boundary), z(end_boundary)"]
+  ["16","x-y. z","xy(boundary), z(end_boundary)"]
+  ["17","U.S. A","us(boundary), a(end_boundary)"]
+  ["18","x.-y","x(boundary), y(end_boundary)"]
+  ["19","x-.y","x(boundary), y(end_boundary)"]
+  ["20","(x y)","xy(boundary, end_boundary)"]
+  ["21","\"x y\"","xy(boundary, end_boundary)"]
+  ["22","x y.","x(boundary), y(end_boundary)"]
+  ["23","x y, z","xy(boundary), z(end_boundary)"]
+  ["24","x y!","xy(boundary, end_boundary)"]
+  ["25","x.y z","xy(boundary), z(end_boundary)"]
+  ["26","x y.z","x(boundary), yz(end_boundary)"]
+  ["27","x-1","x(boundary), 1(end_boundary)"]
+  ["28","1-x","1(boundary), x(end_boundary)"]
+  ["29","x/y z","x(boundary), yz(end_boundary)"]
+  ["30","x y/z","xy(boundary), z(end_boundary)"]
+  ["31","x-y-zz","xy(boundary), zz(end_boundary)"]
+  ["32","xx-y","xx(boundary), y(end_boundary)"]
+  ["33","x-yy","x(boundary), yy(end_boundary)"]
+  ["34","X-Y","xy(boundary, end_boundary)"]
+  ["35","x.Y","xy(boundary, end_boundary)"]
+  ["36","x--y z","x(boundary), --, yz(end_boundary)"]
+  ["37","- x y","xy(boundary, end_boundary)"]
+  ["38","x y -","xy(boundary, end_boundary)"]
+  ["39","a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z","abcdefghijklmnopqrstu(boundary), vwxyz(end_boundary)"]
+  ["40","a b c d e f g h i j k l m n o p q r s t u v w x y z","abcdefghijklmnopqrstu(boundary), vwxyz(end_boundary)"]
+  ["41","x y z w v u t s r q p o n m l k j i h g f e d c b a x y z w v u t s r q p o n m l k j i h g f e d c b a","xyzwvutsrqponmlkjihgf(boundary), edcbaxyzwvutsrqponmlk, jihgfedcba(end_boundary)"]
+  ["42","x.","x(boundary, end_boundary)"]
+  ["43","X.","x(boundary, end_boundary)"]
+  ["44","i.","i(boundary, end_boundary)"]
+  ["45","x-","x(boundary, end_boundary)"]
+  ["46","-x","x(boundary, end_boundary)"]
+  ["47","x.y-z","xy(boundary), z(end_boundary)"]
+  ["48","x-y.z","xy(boundary), z(end_boundary)"]
+  ["49","x . y","x(boundary), y(end_boundary)"]
+  ["50","x . y z","x(boundary), yz(end_boundary)"]
+  ["51","A.B c","ab(boundary), c(end_boundary)"]
+  ["52","x y Z","xy(boundary), z(end_boundary)"]
+  ["53","Z x y","z(boundary), xy(end_boundary)"]
+  ["54","x y I","xy(boundary), i(end_boundary)"]
+  ["55","I x y","i(boundary), xy(end_boundary)"]
+  ["56","I","i(boundary, end_boundary)"]
+  ["57","x Y z","x(boundary), y, z(end_boundary)"]
+  ["58","X y Z","x(boundary), y, z(end_boundary)"]
+  ["59","xy Z w","xy(boundary), z, w(end_boundary)"]
+
+# Rows 20 and 21 fail in default mode: prod keeps a closing `)` or `"` at the end of a snippet.
+case snip
+query:
+  SELECT Id, SNIPPET(Body, 'x y') AS a, SNIPPET(Body, 'x') AS c FROM T ORDER BY Id
+expect:
+  columns: Id INT64, a JSON, c JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"X y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"X y\"}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x Y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x Y\"}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I J\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I J\"}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"i x\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"i x\"}]}"]
+  ["5","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x I\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x I\"}]}"]
+  ["6","{\"snippets\":[{\"highlights\":[],\"snippet\":\"a B c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"a B c\"}]}"]
+  ["7","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I am\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I am\"}]}"]
+  ["8","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":6,\"start_position\":5}],\"snippet\":\"x I y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x I y\"}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[],\"snippet\":\"A b\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"A b\"}]}"]
+  ["10","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Q b\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Q b\"}]}"]
+  ["11","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x i\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x i\"}]}"]
+  ["12","{\"snippets\":[{\"highlights\":[],\"snippet\":\"i j\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"i j\"}]}"]
+  ["13","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I a\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I a\"}]}"]
+  ["14","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":5,\"start_position\":4}],\"snippet\":\"x. y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x. y\"}]}"]
+  ["15","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x.y. z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.y. z\"}]}"]
+  ["16","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x-y. z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-y. z\"}]}"]
+  ["17","{\"snippets\":[{\"highlights\":[],\"snippet\":\"U.S. A\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"U.S. A\"}]}"]
+  ["18","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":5,\"start_position\":4}],\"snippet\":\"x.-y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.-y\"}]}"]
+  ["19","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":5,\"start_position\":4}],\"snippet\":\"x-.y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-.y\"}]}"]
+  ["20","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":2},{\"end_position\":5,\"start_position\":4}],\"snippet\":\"(x y)\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":2}],\"snippet\":\"(x y)\"}]}"]
+  ["21","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":2},{\"end_position\":5,\"start_position\":4}],\"snippet\":\"\\\"x y\\\"\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":2}],\"snippet\":\"\\\"x y\\\"\"}]}"]
+  ["22","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y.\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y.\"}]}"]
+  ["23","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y, z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y, z\"}]}"]
+  ["24","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y!\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y!\"}]}"]
+  ["25","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x.y z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.y z\"}]}"]
+  ["26","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y.z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y.z\"}]}"]
+  ["27","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-1\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-1\"}]}"]
+  ["28","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"1-x\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"1-x\"}]}"]
+  ["29","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x/y z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x/y z\"}]}"]
+  ["30","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y/z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y/z\"}]}"]
+  ["31","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x-y-zz\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-y-zz\"}]}"]
+  ["32","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4}],\"snippet\":\"xx-y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xx-y\"}]}"]
+  ["33","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-yy\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-yy\"}]}"]
+  ["34","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"X-Y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"X-Y\"}]}"]
+  ["35","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x.Y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.Y\"}]}"]
+  ["36","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":5,\"start_position\":4}],\"snippet\":\"x--y z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x--y z\"}]}"]
+  ["37","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3},{\"end_position\":6,\"start_position\":5}],\"snippet\":\"- x y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"- x y\"}]}"]
+  ["38","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y -\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y -\"}]}"]
+  ["39","{\"snippets\":[{\"highlights\":[{\"end_position\":48,\"start_position\":47},{\"end_position\":50,\"start_position\":49}],\"snippet\":\"a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":48,\"start_position\":47}],\"snippet\":\"a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z\"}]}"]
+  ["40","{\"snippets\":[{\"highlights\":[{\"end_position\":48,\"start_position\":47},{\"end_position\":50,\"start_position\":49}],\"snippet\":\"a b c d e f g h i j k l m n o p q r s t u v w x y z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":48,\"start_position\":47}],\"snippet\":\"a b c d e f g h i j k l m n o p q r s t u v w x y z\"}]}"]
+  ["41","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3},{\"end_position\":54,\"start_position\":53},{\"end_position\":56,\"start_position\":55}],\"snippet\":\"x y z w v u t s r q p o n m l k j i h g f e d c b a x y z w v u t s r q p o n m l k j i h g f e d c b a\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":54,\"start_position\":53}],\"snippet\":\"x y z w v u t s r q p o n m l k j i h g f e d c b a x y z w v u t s r q p o n m l k j i h g f e d c b a\"}]}"]
+  ["42","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.\"}]}"]
+  ["43","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"X.\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"X.\"}]}"]
+  ["44","{\"snippets\":[{\"highlights\":[],\"snippet\":\"i.\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"i.\"}]}"]
+  ["45","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-\"}]}"]
+  ["46","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":2}],\"snippet\":\"-x\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":2}],\"snippet\":\"-x\"}]}"]
+  ["47","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x.y-z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x.y-z\"}]}"]
+  ["48","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x-y.z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-y.z\"}]}"]
+  ["49","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":6,\"start_position\":5}],\"snippet\":\"x . y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x . y\"}]}"]
+  ["50","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":6,\"start_position\":5}],\"snippet\":\"x . y z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x . y z\"}]}"]
+  ["51","{\"snippets\":[{\"highlights\":[],\"snippet\":\"A.B c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"A.B c\"}]}"]
+  ["52","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y Z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y Z\"}]}"]
+  ["53","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3},{\"end_position\":6,\"start_position\":5}],\"snippet\":\"Z x y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"Z x y\"}]}"]
+  ["54","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x y I\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y I\"}]}"]
+  ["55","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3},{\"end_position\":6,\"start_position\":5}],\"snippet\":\"I x y\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":3}],\"snippet\":\"I x y\"}]}"]
+  ["56","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I\"}]}"]
+  ["57","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"x Y z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x Y z\"}]}"]
+  ["58","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"X y Z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"X y Z\"}]}"]
+  ["59","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy Z w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy Z w\"}]}"]
+expect@spanner:
+  columns: Id INT64, a JSON, c JSON
+  ["1","{\"snippets\":[{\"highlights\":[],\"snippet\":\"X y\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"X y\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x Y\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x Y\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[],\"snippet\":\"IJ\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"IJ\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ix\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ix\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["5","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x I\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x I\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["6","{\"snippets\":[{\"highlights\":[],\"snippet\":\"a B c\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"a B c\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["7","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I am\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I am\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["8","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x I y\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x I y\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[],\"snippet\":\"A b\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"A b\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["10","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Q b\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Q b\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["11","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xi\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xi\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["12","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ij\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ij\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["13","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I a\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I a\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["14","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x. y\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x. y\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["15","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["16","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy. z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy. z\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["17","{\"snippets\":[{\"highlights\":[],\"snippet\":\"US A\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"US A\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["18","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x.-y\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x.-y\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["19","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x-.y\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x-.y\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["20","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"(xy)\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"(xy)\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["21","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"\\\"xy\\\"\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\\\"xy\\\"\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["22","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x y\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["23","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy, z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy, z\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["24","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["25","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["26","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x yz\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["27","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x-1\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x-1\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["28","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1-x\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":3,\"end\":4}],\"snippet\":\"1-x\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["29","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x/yz\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x/yz\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["30","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy/z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy/z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["31","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy-zz\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy-zz\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["32","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xx-y\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xx-y\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["33","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x-yy\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x-yy\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["34","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"XY\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"XY\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["35","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xY\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xY\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["36","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x--yz\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x--yz\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["37","{\"snippets\":[{\"highlights\":[{\"begin\":3,\"end\":5}],\"snippet\":\"- xy\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"- xy\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["38","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["39","{\"snippets\":[{\"highlights\":[],\"snippet\":\"abcdefghijklmnopqrstu.vwxyz\",\"source_begin\":1,\"source_end\":48}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"abcdefghijklmnopqrstu.vwxyz\",\"source_begin\":1,\"source_end\":48}]}"]
+  ["40","{\"snippets\":[{\"highlights\":[],\"snippet\":\"abcdefghijklmnopqrstu vwxyz\",\"source_begin\":1,\"source_end\":48}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"abcdefghijklmnopqrstu vwxyz\",\"source_begin\":1,\"source_end\":48}]}"]
+  ["41","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzwvutsrqponmlkjihgf edcbaxyzwvutsrqponmlk jihgfedcba\",\"source_begin\":1,\"source_end\":95}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzwvutsrqponmlkjihgf edcbaxyzwvutsrqponmlk jihgfedcba\",\"source_begin\":1,\"source_end\":95}]}"]
+  ["42","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}"]
+  ["43","{\"snippets\":[{\"highlights\":[],\"snippet\":\"X\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"X\",\"source_begin\":1,\"source_end\":2}]}"]
+  ["44","{\"snippets\":[{\"highlights\":[],\"snippet\":\"i\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"i\",\"source_begin\":1,\"source_end\":2}]}"]
+  ["45","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}"]
+  ["46","{\"snippets\":[{\"highlights\":[],\"snippet\":\"-x\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":3}],\"snippet\":\"-x\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["47","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy-z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy-z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["48","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy.z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy.z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["49","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x . y\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x . y\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["50","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x . yz\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x . yz\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["51","{\"snippets\":[{\"highlights\":[],\"snippet\":\"AB c\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"AB c\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["52","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy Z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy Z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["53","{\"snippets\":[{\"highlights\":[{\"begin\":3,\"end\":5}],\"snippet\":\"Z xy\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Z xy\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["54","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy I\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy I\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["55","{\"snippets\":[{\"highlights\":[{\"begin\":3,\"end\":5}],\"snippet\":\"I xy\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I xy\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["56","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"I\",\"source_begin\":1,\"source_end\":2}]}"]
+  ["57","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x Y z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x Y z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["58","{\"snippets\":[{\"highlights\":[],\"snippet\":\"X y Z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"X y Z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["59","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy Z w\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy Z w\",\"source_begin\":1,\"source_end\":7}]}"]
+
+case search
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "I x") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["7"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "i x") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["11"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "X y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x Y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "(x y)") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `(x y)`, has error(s): -Encountered error on column 1 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x (y)") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x (y)`, has error(s): -Encountered error on column 3 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+  ["7"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x \"y\"") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "\"x\" y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x.y.") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x.y.`, has error(s): -Encountered error on column 4 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y,") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x, y") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x, y`, has error(s): -Syntax error on column 4: Expecting 'AROUND(
+expect@spanner:
+  columns: Id INT64
+  ["7"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x -y z") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["7"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y -z") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x OR y z") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["7"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y OR z") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["5"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x OR -y") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x AROUND(2) y z") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "\"x y\" OR z") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["5"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["5"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x\ty") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "xy*") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x y*") ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x* y") ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `x* y`, has error(s): -Syntax error on column 4: Expecting 'AROUND(
+expect@spanner:
+  columns: Id INT64
+  ["7"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x.Y") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM Q WHERE SEARCH(Tok, "x-y-z") ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+# Column c8 fails in default mode: prod doesn't highlight the stopword `i`.
+case snipq
+query:
+  SELECT SNIPPET('xy x y xyz yx i ix', "x y") AS c0, SNIPPET('xy x y xyz yx i ix', "y x") AS c1, SNIPPET('xy x y xyz yx i ix', "x y z") AS c2, SNIPPET('xy x y xyz yx i ix', "x-y") AS c3, SNIPPET('xy x y xyz yx i ix', "\"x y\"") AS c4, SNIPPET('xy x y xyz yx i ix', "x OR y") AS c5, SNIPPET('xy x y xyz yx i ix', "-x y") AS c6, SNIPPET('xy x y xyz yx i ix', "x AROUND y") AS c7, SNIPPET('xy x y xyz yx i ix', "I x") AS c8, SNIPPET('xy x y xyz yx i ix', "x AROUND(2) y z") AS c9, SNIPPET('xy x y xyz yx i ix', "x y -z") AS c10
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":16,\"start_position\":15}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":4},{\"end_position\":7,\"start_position\":6}],\"snippet\":\"xy x y xyz yx i ix\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3},{\"begin\":4,\"end\":6}],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":11,\"end\":13}],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":10}],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3},{\"begin\":4,\"end\":6}],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3},{\"begin\":4,\"end\":6}],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3},{\"begin\":4,\"end\":6}],\"snippet\":\"xy xy xyz yx i ix\",\"source_begin\":1,\"source_end\":19}]}"]

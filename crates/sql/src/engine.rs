@@ -168,7 +168,7 @@ impl Engine {
             // spanbolt's follow the emulator's format, so there is nothing faithful to print:
             // TOKEN, TOKENIZE_BOOL, TOKENIZE_NUMBER and TOKENIZE_JSON lists hold no values here,
             // the NUMBER range tree and the JSON path encoding are undocumented, and prod's
-            // fulltext tokens differ (it joins runs of single letters: "b c" is one token, bc).
+            // fulltext tokens differ (it keeps `x_y` and `x&y` whole and adds `x@y` next to `x`).
             // Kept UNIMPLEMENTED on purpose (#65).
             if !self.opts.emulator_compat
                 && e.code == spanbolt_storage::Code::InvalidArgument

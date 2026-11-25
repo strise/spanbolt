@@ -41,6 +41,7 @@ fn tokens_of(v: &Value) -> impl Iterator<Item = &[u8]> {
     iter(b)
         .filter_map(|t| t.ok())
         .filter(|t| !is_signature(t) && *t != GAP)
+        .map(|t| t.strip_prefix(&[super::tokens::ALT][..]).unwrap_or(t))
 }
 
 fn add(map: &mut imbl::HashMap<Vec<u8>, Set>, v: &Value, k: &Key) {

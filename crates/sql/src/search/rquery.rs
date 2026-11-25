@@ -155,9 +155,14 @@ fn lex(s: &[u8], emulator: bool) -> Vec<Tok> {
         last_col = cols[i];
         let c = s[i];
         let symbols = (!emulator).then(|| symbol_run(s, i)).flatten();
+        // Prod's tokenizer also stores `#tag`, `@foo` and `$5` at the start of a word.
+        let prefixed = !emulator
+            && matches!(c, b'#' | b'@' | b'$')
+            && (i == 0 || !s[i - 1].is_ascii_alphanumeric())
+            && s.get(i + 1).is_some_and(u8::is_ascii_alphanumeric);
         let (k, len) = if let Some(len) = symbols {
             (Some(K::Term), len)
-        } else if is_sep(c) && (emulator || !prod_word_byte(s, i)) {
+        } else if is_sep(c) && !prefixed && (emulator || !prod_word_byte(s, i)) {
             let mut j = i;
             while j < s.len() && is_sep(s[j]) {
                 j += 1;
@@ -178,10 +183,11 @@ fn lex(s: &[u8], emulator: bool) -> Vec<Tok> {
             } else {
                 (Some(K::Sep), 1)
             }
-        } else if c.is_ascii_alphanumeric()
+        } else if prefixed
+            || c.is_ascii_alphanumeric()
             || (!emulator && (unicode_alnum(s, i).is_some() || prod_word_byte(s, i)))
         {
-            let mut j = i;
+            let mut j = i + usize::from(prefixed);
             while j < s.len() {
                 if s[j].is_ascii_alphanumeric() || (!emulator && prod_word_byte(s, j)) {
                     j += 1;
@@ -224,10 +230,7 @@ fn lex(s: &[u8], emulator: bool) -> Vec<Tok> {
         if let Some(k) = k {
             // Prod's terms can touch (`--fox`): they are separate terms.
             let word = |k: K| matches!(k, K::Term | K::Number);
-            if !emulator
-                && word(k)
-                && toks.last().is_some_and(|t: &Tok| word(t.k) && t.end == i)
-            {
+            if !emulator && word(k) && toks.last().is_some_and(|t: &Tok| word(t.k) && t.end == i) {
                 toks.push(Tok {
                     k: K::Sep,
                     start: i,
@@ -303,11 +306,41 @@ fn prod_word_byte(s: &[u8], j: usize) -> bool {
     s[j] == b'_' || (s[j] == b'&' && !s.get(j + 1).is_some_and(|b| SYMBOLS.contains(b)))
 }
 
-/// Where a prod term starting at `i` ends, given the word `s[i..j]`: `3.14` and `c++`/`c#` are
-/// one term, as in the tokenizer.
+/// Where a prod term starting at `i` ends, given the word `s[i..j]`: `3.14`, `foo+`, `c++`,
+/// `c#`, `foo's` and an address (`foo@bar.com`) are one term, as in the tokenizer.
 fn prod_word_end(s: &[u8], i: usize, j: usize) -> usize {
     let word = &s[i..j];
     let digit = |k: usize| s.get(k).is_some_and(u8::is_ascii_digit);
+    let alnum = |k: usize| {
+        s.get(k)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+    };
+    let ends = |k: usize| !alnum(k) && !s.get(k).is_some_and(|b| is_symbol(*b));
+    if s.get(j) == Some(&b'@') && alnum(j + 1) && !word.contains(&b'@') {
+        let mut k = j + 1;
+        loop {
+            while alnum(k) {
+                k += 1;
+            }
+            if s.get(k) == Some(&b'.') && alnum(k + 1) {
+                k += 1;
+            } else {
+                break;
+            }
+        }
+        if s.get(k) != Some(&b'@') {
+            return k;
+        }
+    }
+    for apostrophe in [&b"'s"[..], "\u{2019}s".as_bytes()] {
+        let end = j + apostrophe.len();
+        if s[j..].starts_with(apostrophe) && !alnum(end) {
+            return end;
+        }
+    }
+    if s.get(j) == Some(&b'+') && ends(j + 1) {
+        return j + 1;
+    }
     if word.iter().all(u8::is_ascii_digit) && s.get(j) == Some(&b'.') && digit(j + 1) {
         let mut k = j + 1;
         while digit(k) {
@@ -319,7 +352,9 @@ fn prod_word_end(s: &[u8], i: usize, j: usize) -> usize {
         for suffix in [&b"++"[..], b"#"] {
             let end = j + suffix.len();
             if s[j..].starts_with(suffix)
-                && !s.get(end).is_some_and(|b| b.is_ascii_alphanumeric() || is_symbol(*b))
+                && !s
+                    .get(end)
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || is_symbol(*b))
             {
                 return end;
             }
@@ -329,7 +364,7 @@ fn prod_word_end(s: &[u8], i: usize, j: usize) -> usize {
 }
 
 /// ASCII symbols that make up prod's symbol tokens (`tokens::SYMBOL_TOKENS`).
-const SYMBOLS: &[u8] = b"-<>/&@";
+const SYMBOLS: &[u8] = b"-<>/&@=:+#";
 
 fn is_symbol(b: u8) -> bool {
     SYMBOLS.contains(&b) || b == b'+' || b == b'#'
@@ -339,7 +374,8 @@ fn is_symbol(b: u8) -> bool {
 fn symbol_run(s: &[u8], i: usize) -> Option<usize> {
     let n = s[i..].iter().take_while(|b| SYMBOLS.contains(b)).count();
     let run = std::str::from_utf8(&s[i..i + n]).ok()?;
-    super::tokens::SYMBOL_TOKENS.contains(&run).then_some(n)
+    // `||` stays an OR.
+    (run != "||" && super::tokens::SYMBOL_TOKENS.contains(&run)).then_some(n)
 }
 
 /// Length of the UTF-8 character at `i` (1 for a stray byte).
@@ -762,26 +798,19 @@ impl Parser<'_> {
             K::Term | K::Number => {
                 let t = self.bump();
                 let raw = &self.s[t.start..t.end];
-                // Prod's tokenizer keeps no `_` at the ends of a token (`_foo` is `foo`).
-                let raw = match (self.emulator, trim_underscores(raw)) {
-                    (false, t) if !t.is_empty() => t,
-                    _ => raw,
-                };
                 Ok(Node::Term(if self.emulator || raw.is_ascii() {
                     raw.to_ascii_lowercase()
                 } else {
-                    String::from_utf8_lossy(raw).to_lowercase().into_bytes()
+                    // Prod's tokenizer reads `’` as `'` (`foo’s`).
+                    String::from_utf8_lossy(raw)
+                        .to_lowercase()
+                        .replace('\u{2019}', "'")
+                        .into_bytes()
                 }))
             }
             _ => Err(self.parse_error("term")),
         }
     }
-}
-
-fn trim_underscores(t: &[u8]) -> &[u8] {
-    let start = t.iter().position(|&b| b != b'_').unwrap_or(t.len());
-    let end = t.iter().rposition(|&b| b != b'_').map_or(start, |e| e + 1);
-    &t[start..end]
 }
 
 /// Prod's distance for a bare `AROUND` and for one it can't read (`AROUND(1.5)`).
@@ -1082,7 +1111,19 @@ mod tests {
         assert_eq!(prod("- -apple"), "(n apple)");
         // Terms read like the tokenizer stores them (#119).
         assert_eq!(prod("foo_bar"), "foo_bar");
-        assert_eq!(prod("_foo"), "foo");
+        assert_eq!(prod("_foo"), "_foo");
+        assert_eq!(prod("foo@bar.com"), "foo@bar.com");
+        assert_eq!(prod("foo@bar baz"), "(a foo@bar baz)");
+        assert_eq!(prod("foo's"), "foo's");
+        assert_eq!(prod("foo’s"), "foo's");
+        assert_eq!(prod("foo+"), "foo+");
+        assert_eq!(prod("a+b"), "(a a b)");
+        assert_eq!(prod("&>"), "&>");
+        assert_eq!(prod("##tag"), "(a ## tag)");
+        assert_eq!(prod("#tag"), "#tag");
+        assert_eq!(prod("\"#tag\""), "(p #tag)");
+        assert_eq!(prod("@foo $5"), "(a @foo $5)");
+        assert_eq!(prod("a | b"), "(o a b)");
         assert_eq!(prod("_"), "_");
         assert_eq!(prod("at&t"), "at&t");
         assert_eq!(prod("&"), "&");

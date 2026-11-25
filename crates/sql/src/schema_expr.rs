@@ -152,8 +152,12 @@ impl ExprEvaluator for SchemaExprs {
         &self,
         schema: &Arc<spanbolt_ddl::Schema>,
         name: &str,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         self.engine.validate_property_graph(schema, name)
+    }
+
+    fn emulator_graph_ddl(&self, state: &spanbolt_storage::DbState) -> Vec<(String, String)> {
+        self.engine.emulator_graph_ddl(state)
     }
 
     fn check_graph_dependents(

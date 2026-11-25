@@ -357,7 +357,15 @@ fn by_name(mut v: Vec<Json>) -> Vec<Json> {
     v
 }
 
-pub fn metadata_json(g: &GraphDef) -> Json {
+/// `INFORMATION_SCHEMA.PROPERTY_GRAPHS.PROPERTY_GRAPH_METADATA_JSON`. Cloud Spanner (`sorted`)
+/// lists property definitions and declarations by name; the emulator in declaration order.
+pub fn metadata_json(g: &GraphDef, sorted: bool) -> Json {
+    let sort = |mut v: Vec<Json>, key: &str| {
+        if sorted {
+            v.sort_by(|a, b| a[key].as_str().cmp(&b[key].as_str()));
+        }
+        v
+    };
     let element = |e: &ElementTable, kind: &str| {
         let mut v = json!({
             "name": e.name,
@@ -367,12 +375,12 @@ pub fn metadata_json(g: &GraphDef) -> Json {
             "baseTableName": e.table,
             "keyColumns": cols(e, &e.key),
             "labelNames": e.labels,
-            "propertyDefinitions": e.properties.iter()
+            "propertyDefinitions": sort(e.properties.iter()
                 .map(|p| json!({
                     "propertyDeclarationName": p.name,
                     "valueExpressionSql": p.sql,
                 }))
-                .collect::<Vec<_>>(),
+                .collect(), "propertyDeclarationName"),
         });
         let reference = |r: &NodeRef| {
             json!({
@@ -404,8 +412,94 @@ pub fn metadata_json(g: &GraphDef) -> Json {
         "nodeTables": by_name(g.nodes.iter().map(|e| element(e, "NODE")).collect()),
         "edgeTables": by_name(g.edges.iter().map(|e| element(e, "EDGE")).collect()),
         "labels": labels,
-        "propertyDeclarations": g.properties.iter()
+        "propertyDeclarations": sort(g.properties.iter()
             .map(|p| json!({"name": p.name, "type": types::spanner_name(&p.ty)}))
-            .collect::<Vec<_>>(),
+            .collect(), "name"),
     })
+}
+
+/// The properties element table `e` exposes under `label`, in the order `e` defines them.
+fn label_properties<'g>(g: &'g GraphDef, e: &'g ElementTable, label: &str) -> Vec<&'g PropertyDef> {
+    let Some(l) = g.labels.iter().find(|l| l.name.eq_ignore_ascii_case(label)) else {
+        return Vec::new();
+    };
+    e.properties
+        .iter()
+        .filter(|p| l.properties.iter().any(|n| n.eq_ignore_ascii_case(&p.name)))
+        .collect()
+}
+
+fn element_head(e: &ElementTable) -> String {
+    let q = spanbolt_ddl::quote_ident;
+    if e.name.eq_ignore_ascii_case(&e.table) {
+        spanbolt_ddl::quote_path(&e.table)
+    } else {
+        format!("{} AS {}", spanbolt_ddl::quote_path(&e.table), q(&e.name))
+    }
+}
+
+fn names(e: &ElementTable, is: &[usize]) -> String {
+    is.iter()
+        .map(|&i| spanbolt_ddl::quote_ident(&e.columns[i]))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `SOURCE KEY(..) REFERENCES N(..)`-style clauses of an edge table, one per entry.
+fn references(g: &GraphDef, e: &ElementTable) -> Vec<String> {
+    [("SOURCE", &e.source), ("DESTINATION", &e.destination)]
+        .into_iter()
+        .filter_map(|(what, r)| {
+            let r = r.as_ref()?;
+            let node = &g.nodes[r.node];
+            Some(format!(
+                "{what} KEY({}) REFERENCES {}({})",
+                names(e, &r.edge_columns),
+                spanbolt_ddl::quote_ident(&node.name),
+                names(node, &r.node_columns)
+            ))
+        })
+        .collect()
+}
+
+/// The graph as emulator 1.5.59's GetDatabaseDdl prints it: element tables by name, each label
+/// with only its property names, sorted (expressions are left out).
+pub fn emulator_ddl(g: &GraphDef) -> String {
+    let table = |e: &ElementTable| {
+        let mut out = format!("{} KEY({})", element_head(e), names(e, &e.key));
+        for r in references(g, e) {
+            out.push(' ');
+            out.push_str(&r);
+        }
+        let labels = e
+            .labels
+            .iter()
+            .map(|label| {
+                let mut props: Vec<&str> = label_properties(g, e, label)
+                    .iter()
+                    .map(|p| p.name.as_str())
+                    .collect();
+                props.sort_unstable();
+                if props.is_empty() {
+                    format!("LABEL {label}")
+                } else {
+                    format!("LABEL {label} PROPERTIES(\n{})", props.join(",\n"))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{out} {labels}")
+    };
+    let block = |what: &str, tables: &[ElementTable]| {
+        let mut ts: Vec<&ElementTable> = tables.iter().collect();
+        ts.sort_by(|a, b| a.name.cmp(&b.name));
+        let body = ts.into_iter().map(table).collect::<Vec<_>>().join(",\n");
+        format!("\n{what} TABLES(\n  {body}\n)")
+    };
+    let mut out = format!("CREATE PROPERTY GRAPH {}", g.name);
+    out.push_str(&block("NODE", &g.nodes));
+    if !g.edges.is_empty() {
+        out.push_str(&block("EDGE", &g.edges));
+    }
+    out
 }

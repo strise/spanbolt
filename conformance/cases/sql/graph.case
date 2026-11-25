@@ -38,6 +38,8 @@ query:
 expect:
   columns: PROPERTY_GRAPH_CATALOG STRING, PROPERTY_GRAPH_SCHEMA STRING, PROPERTY_GRAPH_NAME STRING
   ["","","Ownership"]
+expect@spanner:
+  same
 
 case property_graph_metadata
 # Label order in the emulator's metadata follows a hash set, so labels are left out.
@@ -50,6 +52,9 @@ query:
 expect:
   columns: node_tables JSON, edge_tables JSON, properties JSON, name STRING
   ["[{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"Company\",\"keyColumns\":[\"Id\"],\"kind\":\"NODE\",\"labelNames\":[\"Company\",\"Entity\"],\"name\":\"Company\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Name\",\"valueExpressionSql\":\"Name\"},{\"propertyDeclarationName\":\"Bankrupt\",\"valueExpressionSql\":\"Bankrupt\"}]},{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"Person\",\"keyColumns\":[\"Id\"],\"kind\":\"NODE\",\"labelNames\":[\"Person\",\"Entity\"],\"name\":\"Person\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Name\",\"valueExpressionSql\":\"Name\"},{\"propertyDeclarationName\":\"Country\",\"valueExpressionSql\":\"Country\"}]}]","[{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"CompanyOwns\",\"destinationNodeTable\":{\"edgeTableColumns\":[\"Dst\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"},\"keyColumns\":[\"Id\"],\"kind\":\"EDGE\",\"labelNames\":[\"Owns\"],\"name\":\"CompanyOwns\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Src\",\"valueExpressionSql\":\"Src\"},{\"propertyDeclarationName\":\"Dst\",\"valueExpressionSql\":\"Dst\"},{\"propertyDeclarationName\":\"Share\",\"valueExpressionSql\":\"Share\"},{\"propertyDeclarationName\":\"Active\",\"valueExpressionSql\":\"Active\"}],\"sourceNodeTable\":{\"edgeTableColumns\":[\"Src\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"}},{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"PersonOwns\",\"destinationNodeTable\":{\"edgeTableColumns\":[\"Dst\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"},\"keyColumns\":[\"Id\"],\"kind\":\"EDGE\",\"labelNames\":[\"Owns\"],\"name\":\"PersonOwns\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Src\",\"valueExpressionSql\":\"Src\"},{\"propertyDeclarationName\":\"Dst\",\"valueExpressionSql\":\"Dst\"},{\"propertyDeclarationName\":\"Share\",\"valueExpressionSql\":\"Share\"},{\"propertyDeclarationName\":\"Active\",\"valueExpressionSql\":\"Active\"}],\"sourceNodeTable\":{\"edgeTableColumns\":[\"Src\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Person\"}}]","[{\"name\":\"Id\",\"type\":\"STRING\"},{\"name\":\"Name\",\"type\":\"STRING\"},{\"name\":\"Country\",\"type\":\"STRING\"},{\"name\":\"Bankrupt\",\"type\":\"BOOL\"},{\"name\":\"Src\",\"type\":\"STRING\"},{\"name\":\"Dst\",\"type\":\"STRING\"},{\"name\":\"Share\",\"type\":\"FLOAT64\"},{\"name\":\"Active\",\"type\":\"BOOL\"}]","Ownership"]
+expect@spanner:
+  columns: node_tables JSON, edge_tables JSON, properties JSON, name STRING
+  ["[{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"Company\",\"keyColumns\":[\"Id\"],\"kind\":\"NODE\",\"labelNames\":[\"Company\",\"Entity\"],\"name\":\"Company\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Bankrupt\",\"valueExpressionSql\":\"Bankrupt\"},{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Name\",\"valueExpressionSql\":\"Name\"}]},{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"Person\",\"keyColumns\":[\"Id\"],\"kind\":\"NODE\",\"labelNames\":[\"Entity\",\"Person\"],\"name\":\"Person\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Country\",\"valueExpressionSql\":\"Country\"},{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Name\",\"valueExpressionSql\":\"Name\"}]}]","[{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"CompanyOwns\",\"destinationNodeTable\":{\"edgeTableColumns\":[\"Dst\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"},\"keyColumns\":[\"Id\"],\"kind\":\"EDGE\",\"labelNames\":[\"Owns\"],\"name\":\"CompanyOwns\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Active\",\"valueExpressionSql\":\"Active\"},{\"propertyDeclarationName\":\"Dst\",\"valueExpressionSql\":\"Dst\"},{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Share\",\"valueExpressionSql\":\"Share\"},{\"propertyDeclarationName\":\"Src\",\"valueExpressionSql\":\"Src\"}],\"sourceNodeTable\":{\"edgeTableColumns\":[\"Src\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"}},{\"baseCatalogName\":\"\",\"baseSchemaName\":\"\",\"baseTableName\":\"PersonOwns\",\"destinationNodeTable\":{\"edgeTableColumns\":[\"Dst\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Company\"},\"keyColumns\":[\"Id\"],\"kind\":\"EDGE\",\"labelNames\":[\"Owns\"],\"name\":\"PersonOwns\",\"propertyDefinitions\":[{\"propertyDeclarationName\":\"Active\",\"valueExpressionSql\":\"Active\"},{\"propertyDeclarationName\":\"Dst\",\"valueExpressionSql\":\"Dst\"},{\"propertyDeclarationName\":\"Id\",\"valueExpressionSql\":\"Id\"},{\"propertyDeclarationName\":\"Share\",\"valueExpressionSql\":\"Share\"},{\"propertyDeclarationName\":\"Src\",\"valueExpressionSql\":\"Src\"}],\"sourceNodeTable\":{\"edgeTableColumns\":[\"Src\"],\"nodeTableColumns\":[\"Id\"],\"nodeTableName\":\"Person\"}}]","[{\"name\":\"Active\",\"type\":\"BOOL\"},{\"name\":\"Bankrupt\",\"type\":\"BOOL\"},{\"name\":\"Country\",\"type\":\"STRING\"},{\"name\":\"Dst\",\"type\":\"STRING\"},{\"name\":\"Id\",\"type\":\"STRING\"},{\"name\":\"Name\",\"type\":\"STRING\"},{\"name\":\"Share\",\"type\":\"FLOAT64\"},{\"name\":\"Src\",\"type\":\"STRING\"}]","Ownership"]
 
 case match_node_filter_order_limit
 # The emulator ignores ORDER BY before LIMIT in a GQL RETURN; the outer query orders instead.
@@ -63,6 +68,8 @@ expect:
   columns: id STRING, name STRING
   ["c3","Top AS"]
   ["c1","Nordvik AS"]
+expect@spanner:
+  same
 
 case edge_properties_and_labels
 query:
@@ -73,6 +80,8 @@ expect:
   columns: owner STRING, share FLOAT64, labels STRING
   ["p1",40.0,"Entity,Person"]
   ["c2",60.0,"Company,Entity"]
+expect@spanner:
+  same
 
 case dangling_edges_do_not_match
 query:
@@ -84,6 +93,8 @@ expect:
   ["co1"]
   ["po1"]
   ["co3"]
+expect@spanner:
+  same
 
 case quantified_path
 query:
@@ -97,6 +108,8 @@ expect:
   ["c2","1"]
   ["p2","3"]
   ["c3","2"]
+expect@spanner:
+  same
 
 case quantified_path_for_and_next
 query:
@@ -114,6 +127,8 @@ expect:
   ["c2","c1"]
   ["p2","c3"]
   ["c3","c2"]
+expect@spanner:
+  same
 
 case optional_match
 query:
@@ -125,6 +140,8 @@ expect:
   columns: company STRING, owner STRING
   ["c3","p2"]
   ["c4",null]
+expect@spanner:
+  same
 
 case any_direction
 query:
@@ -135,6 +152,8 @@ expect:
   columns: other STRING, edge STRING
   ["c3","co2"]
   ["c1","co1"]
+expect@spanner:
+  same
 
 case paths_sharing_a_variable
 query:
@@ -145,6 +164,8 @@ query:
 expect:
   columns: a STRING, b STRING, c STRING
   ["c3","c2","c1"]
+expect@spanner:
+  same
 
 case filter_statement
 query:
@@ -155,6 +176,8 @@ query:
 expect:
   columns: id STRING
   ["c4"]
+expect@spanner:
+  same
 
 case label_shared_by_tables
 query:
@@ -164,6 +187,8 @@ query:
 expect:
   columns: n INT64
   ["6"]
+expect@spanner:
+  same
 
 case graph_table
 query:
@@ -176,6 +201,8 @@ expect:
   ["c2","c1"]
   ["c4","c1"]
   ["p1","c1"]
+expect@spanner:
+  same
 
 case returning_a_node_is_rejected
 query:
@@ -183,6 +210,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Returning graph-typed column is not supported [at 1:42]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Returning expressions of type GRAPH_ELEMENT is not allowed [at 1:1]
 
 case graph_over_a_missing_table
 ddl:
@@ -190,6 +220,9 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Table not found: Missing [at 1:43]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of graph `Broken`: Table not found: Missing [at 3:5]
 
 case drop_property_graph
 ddl:
@@ -198,6 +231,8 @@ query:
   SELECT PROPERTY_GRAPH_NAME FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS
 expect:
   columns: PROPERTY_GRAPH_NAME STRING
+expect@spanner:
+  same
 
 # The emulator returns quantified_path's and optional_match's rows in a different order from run to
 # run (they have no ORDER BY, so they compare as multisets, but re-recording reorders them). These
@@ -215,6 +250,8 @@ expect:
   ["c4","1"]
   ["p1","1"]
   ["p2","3"]
+expect@spanner:
+  same
 
 case optional_match_ordered
 query:
@@ -227,3 +264,5 @@ expect:
   columns: company STRING, owner STRING
   ["c3","p2"]
   ["c4",null]
+expect@spanner:
+  same

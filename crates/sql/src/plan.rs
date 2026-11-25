@@ -83,7 +83,9 @@ impl Options {
     /// `INSERT ... ON CONFLICT`. Production Spanner also analyses window functions and NULLS
     /// FIRST/LAST, then rejects them while planning, and accepts pipe syntax (`FROM t |> WHERE
     /// ...`), which the emulator rejects. Pipe operators resolve to the usual scans; any that
-    /// don't plan are UNIMPLEMENTED.
+    /// don't plan are UNIMPLEMENTED. `SPANBOLT_PRODUCTION` is not a language feature: it gives the
+    /// shim's builtins Cloud Spanner's signatures where they differ from the emulator's (SEARCH and
+    /// SCORE take `enhance_query_options`, SCORE no BYTES query).
     pub fn extra_features(&self) -> &'static [&'static str] {
         if self.emulator_compat {
             &["FEATURE_INSERT_ON_CONFLICT_CLAUSE"]
@@ -93,6 +95,7 @@ impl Options {
                 "FEATURE_ANALYTIC_FUNCTIONS",
                 "FEATURE_NULLS_FIRST_LAST_IN_ORDER_BY",
                 "FEATURE_PIPES",
+                "SPANBOLT_PRODUCTION",
             ]
         }
     }

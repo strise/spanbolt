@@ -55,7 +55,7 @@ std::unique_ptr<Function> Scalar(const std::string& name,
 }  // namespace
 
 void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
-                         googlesql::TypeFactory* types) {
+                         googlesql::TypeFactory* types, bool production) {
   const Type* str = types->get_string();
   const Type* bytes = types->get_bytes();
   const Type* b = types->get_bool();
@@ -149,15 +149,18 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
       "tokenlist_concat",
       {FunctionSignature{tok, {{tok_arr, Req("tokens", false)}}, nullptr}}));
 
-  catalog->AddOwnedFunction(Scalar(
-      "search", {FunctionSignature{b,
-                                   {{tok, Req("tokens", false)},
-                                    {str, Req("query")},
-                                    {b, Opt("enhance_query")},
-                                    {str, Opt("language_tag")},
-                                    {str, Opt("dialect")},
-                                    {str, Opt("dictionary")}},
-                                   nullptr}}));
+  // Cloud Spanner's SEARCH and SCORE take `enhance_query_options => JSON`
+  // before `dictionary`, and SCORE only a STRING query
+  // (conformance/cases/sql/search_signatures.case). The emulator's SCORE also
+  // takes BYTES and fails while running.
+  FunctionArgumentTypeList search_args = {
+      {tok, Req("tokens", false)}, {str, Req("query")},
+      {b, Opt("enhance_query")},   {str, Opt("language_tag")},
+      {str, Opt("dialect")}};
+  if (production) search_args.push_back({js, Opt("enhance_query_options")});
+  search_args.push_back({str, Opt("dictionary")});
+  catalog->AddOwnedFunction(
+      Scalar("search", {FunctionSignature{b, search_args, nullptr}}));
   catalog->AddOwnedFunction(Scalar(
       "search_substring", {FunctionSignature{b,
                                              {{tok, Req("tokens", false)},
@@ -165,19 +168,22 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
                                               {str, Opt("relative_search_type")},
                                               {str, Opt("language_tag")}},
                                              nullptr}}));
-  FunctionArgumentTypeList score_tail = {
-      {b, Opt("enhance_query")}, {str, Opt("language_tag")},
-      {str, Opt("dialect")},     {js, Opt("options", false)},
-      {str, Opt("dictionary")}};
-  catalog->AddOwnedFunction(Scalar(
-      "score",
-      {FunctionSignature{
-           f64, with({{tok, Req("tokens", false)}, {str, Req("query")}}, score_tail),
-           nullptr},
-       FunctionSignature{
-           f64,
-           with({{tok, Req("tokens", false)}, {bytes, Req("query")}}, score_tail),
-           nullptr}}));
+  FunctionArgumentTypeList score_tail = {{b, Opt("enhance_query")},
+                                         {str, Opt("language_tag")},
+                                         {str, Opt("dialect")}};
+  if (production) score_tail.push_back({js, Opt("enhance_query_options")});
+  score_tail.push_back({js, Opt("options", false)});
+  score_tail.push_back({str, Opt("dictionary")});
+  std::vector<FunctionSignature> score_sigs = {FunctionSignature{
+      f64, with({{tok, Req("tokens", false)}, {str, Req("query")}}, score_tail),
+      nullptr}};
+  if (!production) {
+    score_sigs.push_back(FunctionSignature{
+        f64,
+        with({{tok, Req("tokens", false)}, {bytes, Req("query")}}, score_tail),
+        nullptr});
+  }
+  catalog->AddOwnedFunction(Scalar("score", score_sigs));
   catalog->AddOwnedFunction(Scalar(
       "snippet", {FunctionSignature{js,
                                     {{str, Req("value", false)},

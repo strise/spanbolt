@@ -1,0 +1,72 @@
+# SEARCH and SCORE signatures where Cloud Spanner and the emulator differ (spanbolt #131): Spanner
+# takes `enhance_query_options => JSON`, and its SCORE takes no BYTES query. `expect:` is recorded
+# from the emulator; `expect@spanner:` from Cloud Spanner.
+tags: sql search oracle
+schema:
+  CREATE TABLE Docs (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DocsSearch ON Docs(Body_Tokens)
+insert Docs cols=Id,Body:
+  [1, "cloud spanner emulator"]
+  [2, "the lazy dog"]
+
+case search_enhance_query_options
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'cloud', enhance_query_options => JSON '{}')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SEARCH Argument types: TOKENLIST, STRING, enhance_query_options => JSON Signature: SEARCH([tokens=>]TOKENLIST, [query=>]STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature [at 1:27]
+
+case search_enhance_query_options_null
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'cloud', enhance_query_options => NULL)
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SEARCH Argument types: TOKENLIST, STRING, enhance_query_options => NULL Signature: SEARCH([tokens=>]TOKENLIST, [query=>]STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature [at 1:27]
+
+case search_enhance_query_options_string
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'cloud', enhance_query_options => '{}')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SEARCH Argument types: TOKENLIST, STRING, enhance_query_options => STRING Signature: SEARCH([tokens=>]TOKENLIST, [query=>]STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature [at 1:27]
+
+case search_all_options
+query:
+  SELECT Id FROM Docs WHERE SEARCH(Body_Tokens, 'cloud', enhance_query => false, language_tag => 'en', dialect => 'rquery', enhance_query_options => JSON '{}', dictionary => NULL)
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SEARCH Argument types: TOKENLIST, STRING, enhance_query => BOOL, language_tag => STRING, dialect => STRING, enhance_query_options => JSON, dictionary => NULL Signature: SEARCH([tokens=>]TOKENLIST, [query=>]STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature [at 1:27]
+
+case score_enhance_query_options
+query:
+  SELECT Id, SCORE(Body_Tokens, 'cloud', enhance_query_options => JSON '{}') AS s FROM Docs WHERE SEARCH(Body_Tokens, 'cloud')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SCORE Argument types: TOKENLIST, STRING, enhance_query_options => JSON Signature: SCORE([tokens=>]TOKENLIST, [query=>]STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [options => JSON], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature Signature: SCORE([tokens=>]TOKENLIST, [query=>]BYTES, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [options => JSON], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature [at 1:12]
+
+case score_all_options
+query:
+  SELECT Id, SCORE(Body_Tokens, 'cloud', enhance_query => false, language_tag => 'en', dialect => 'rquery', enhance_query_options => JSON '{}', options => JSON '{}', dictionary => NULL) AS s FROM Docs WHERE SEARCH(Body_Tokens, 'cloud')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SCORE Argument types: TOKENLIST, STRING, enhance_query => BOOL, language_tag => STRING, dialect => STRING, enhance_query_options => JSON, options => JSON, dictionary => NULL Signature: SCORE([tokens=>]TOKENLIST, [query=>]STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [options => JSON], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature Signature: SCORE([tokens=>]TOKENLIST, [query=>]BYTES, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [options => JSON], [dictionary => STRING]) Named argument `enhance_query_options` does not exist in signature [at 1:12]
+
+case score_bytes_query_parameter
+query:
+  SELECT Id, SCORE(Body_Tokens, @q) AS s FROM Docs WHERE SEARCH(Body_Tokens, 'cloud')
+params:
+  @q BYTES = "Y2xvdWQ="
+expect:
+  error: INVALID_ARGUMENT
+  message: Invalid search query type: BYTES.
+
+case score_wrong_type
+query:
+  SELECT Id, SCORE(Body_Tokens, 1) AS s FROM Docs WHERE SEARCH(Body_Tokens, 'cloud')
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:SCORE Argument types: TOKENLIST, INT64 Signature: SCORE(TOKENLIST, STRING, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [options => JSON], [dictionary => STRING]) Argument 2: Unable to coerce type INT64 to expected type STRING Signature: SCORE(TOKENLIST, BYTES, [enhance_query => BOOL], [language_tag => STRING], [dialect => STRING], [options => JSON], [dictionary => STRING]) Argument 2: Unable to coerce type INT64 to expected type BYTES [at 1:12]

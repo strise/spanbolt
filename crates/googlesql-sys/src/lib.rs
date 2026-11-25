@@ -177,7 +177,8 @@ impl Catalog {
     }
 
     /// A catalog over shared `tables` plus the builtin and Spanner functions, which the shim
-    /// builds once per process for each `extra_features` set (language feature names). Cheap: it
+    /// builds once per process for each `extra_features` set (language feature names, and
+    /// `SPANBOLT_PRODUCTION` for Cloud Spanner's function signatures). Cheap: it
     /// builds no table and no function. Tables in named schemas (`schema.T`) go in nested
     /// catalogs. Names must be unique.
     pub fn from_tables(

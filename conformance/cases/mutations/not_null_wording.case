@@ -17,6 +17,9 @@ insert T cols=K,S:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: N
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table T does not specify a non-null value for these NOT NULL columns: N.
 
 case insert_missing_two
 insert T cols=K:
@@ -24,6 +27,9 @@ insert T cols=K:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: S
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table T does not specify a non-null value for these NOT NULL columns: N.
 
 case insert_missing_with_nullable
 insert T cols=K,O:
@@ -31,6 +37,9 @@ insert T cols=K,O:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: S
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table T does not specify a non-null value for these NOT NULL columns: N.
 
 case insert_null
 insert T cols=K,S,N:
@@ -38,6 +47,9 @@ insert T cols=K,S,N:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.S in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: S must not be NULL in table T.
 
 case insert_two_nulls
 insert T cols=K,S,N:
@@ -45,6 +57,9 @@ insert T cols=K,S,N:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.S in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: N must not be NULL in table T.
 
 case update_null
 update T cols=K,S:
@@ -52,6 +67,9 @@ update T cols=K,S:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.S in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: S must not be NULL in table T.
 
 case insert_or_update_null
 insert_or_update T cols=K,N:
@@ -59,6 +77,9 @@ insert_or_update T cols=K,N:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: S
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: N must not be NULL in table T.
 
 case insert_or_update_missing_new_row
 insert_or_update T cols=K,S:
@@ -66,6 +87,9 @@ insert_or_update T cols=K,S:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: N
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A potentially-new row in table T does not specify a non-null value for these NOT NULL columns: N.
 
 case insert_or_update_existing_partial
 insert_or_update T cols=K,N:
@@ -73,11 +97,16 @@ insert_or_update T cols=K,N:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: S
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A potentially-new row in table T does not specify a non-null value for these NOT NULL columns: S.
 read T cols=K,S,N:
   all
 expect:
   columns: K INT64, S STRING, N INT64
   ["1","a","1"]
+expect@spanner:
+  same
 
 case insert_or_update_existing_null_all_columns
 insert_or_update T cols=K,S,N:
@@ -85,6 +114,9 @@ insert_or_update T cols=K,S,N:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.N in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: N must not be NULL in table T.
 
 case replace_missing
 replace T cols=K,S:
@@ -92,6 +124,9 @@ replace T cols=K,S:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: N
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table T does not specify a non-null value for these NOT NULL columns: N.
 
 case dml_insert_missing
 dml:
@@ -99,6 +134,9 @@ dml:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table T does not specify a non-null value for NOT NULL column: N
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table T does not specify a non-null value for these NOT NULL columns: N.
 
 case dml_insert_null
 dml:
@@ -106,6 +144,9 @@ dml:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.S in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: S must not be NULL in table T.
 
 case dml_update_null
 dml:
@@ -113,6 +154,9 @@ dml:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.S in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: S must not be NULL in table T.
 
 case dml_update_null_in_txn
 begin txn=t
@@ -121,10 +165,16 @@ dml txn=t:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.N in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: N must not be NULL in table T.
 commit txn=t
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.N in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: N must not be NULL in table T.
 
 case batch_insert_null
 batch:
@@ -134,3 +184,7 @@ expect:
   counts: [1]
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.S in table: T
+expect@spanner:
+  counts: [1]
+  error: FAILED_PRECONDITION
+  message: S must not be NULL in table T.

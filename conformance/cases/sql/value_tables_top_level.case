@@ -15,6 +15,9 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case select_as_struct_from_table
 query:
@@ -22,6 +25,9 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case select_as_value_scalar
 query:
@@ -29,6 +35,9 @@ query:
 expect:
   columns: INT64
   ["1"]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case select_as_value_from_table
 query:
@@ -36,6 +45,9 @@ query:
 expect:
   columns: INT64
   ["1"]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case select_as_value_struct
 query:
@@ -43,6 +55,9 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case select_as_struct_in_subquery
 query:
@@ -50,6 +65,8 @@ query:
 expect:
   columns: ok BOOL
   [true]
+expect@spanner:
+  same
 
 case select_as_value_in_subquery
 query:
@@ -57,6 +74,8 @@ query:
 expect:
   columns: k INT64
   ["1"]
+expect@spanner:
+  same
 
 case select_as_struct_union_all
 query:
@@ -64,3 +83,6 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.

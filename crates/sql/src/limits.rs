@@ -34,6 +34,18 @@ const MAX_NESTED_STRUCT_DEPTH: usize = 15;
 /// Production only; the emulator has no IN-list limit.
 const MAX_IN_LIST: usize = 10_000;
 
+/// Cloud Spanner's analyser runs out of stack on deeply nested expressions, before any limit is
+/// checked. Measured on nested function calls in the resolved AST: an operator (`$add`, ...) level
+/// fits about 925 times, a named function call about 875 times while resolving the query and about
+/// 825 times once its signature is resolved (`conformance/cases/sql/stack_depth.case`). Production
+/// only: the emulator's analyser has the stack for any query the limits allow.
+const STACK_OPERATORS: f64 = 925.0;
+const STACK_CALLS_QUERY: f64 = 875.0;
+const STACK_CALLS_FUNCTION: f64 = 825.0;
+/// How deep the walk goes in resolved nodes. Deeper, a query already breaks the function limits
+/// (and production's stack), and walking on would overflow this thread's stack.
+const MAX_WALK_DEPTH: usize = 2000;
+
 /// The node kinds the limits count, and the list fields some of them bound.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 enum Kind {
@@ -228,6 +240,12 @@ struct Walk<'s> {
     local: Option<Error>,
     /// The longest `IN` list.
     in_list: usize,
+    /// The stack the function calls above the current node take, as a fraction of Spanner's, while
+    /// resolving the query and while resolving a function's signature, and the most of each.
+    stack: (f64, f64),
+    deepest: (f64, f64),
+    /// Nodes past [`MAX_WALK_DEPTH`] were not walked.
+    truncated: bool,
 }
 
 /// One protobuf field: its number and, for a length-delimited one, its bytes.
@@ -305,6 +323,7 @@ impl Walk<'_> {
             .filter(|_| self.compat || own != Some(Kind::ProjectScan));
         let mut listed = 0;
         let (mut is_in, mut arguments) = (false, 0usize);
+        let mut pushed: Option<(f64, f64)> = None;
         for (n, v) in fields(b) {
             let Some(f) = msg.fields.get(&n) else {
                 continue;
@@ -318,8 +337,21 @@ impl Walk<'_> {
                 match (f.name.as_str(), v) {
                     ("argument_list", _) => arguments += 1,
                     ("function", Some(v)) => {
-                        is_in =
-                            FunctionRefProto::decode(v).is_ok_and(|r| r.name().ends_with(":$in"));
+                        let name = FunctionRefProto::decode(v)
+                            .map(|r| r.name().to_string())
+                            .unwrap_or_default();
+                        is_in = name.ends_with(":$in");
+                        let operator = name.rsplit(':').next().is_some_and(|n| n.starts_with('$'));
+                        let cost = if operator {
+                            (1.0 / STACK_OPERATORS, 1.0 / STACK_OPERATORS)
+                        } else {
+                            (1.0 / STACK_CALLS_QUERY, 1.0 / STACK_CALLS_FUNCTION)
+                        };
+                        self.stack.0 += cost.0;
+                        self.stack.1 += cost.1;
+                        self.deepest.0 = self.deepest.0.max(self.stack.0);
+                        self.deepest.1 = self.deepest.1.max(self.stack.1);
+                        pushed = Some(cost);
                     }
                     _ => {}
                 }
@@ -327,9 +359,14 @@ impl Walk<'_> {
             let Some(v) = v else { continue };
             match f.edge {
                 Some(Edge::Parent(t)) => self.message(t, v, depth, own)?,
+                Some(Edge::Child(_)) if depth >= MAX_WALK_DEPTH => self.truncated = true,
                 Some(Edge::Child(t)) => self.message(t, v, depth + 1, None)?,
                 None => {}
             }
+        }
+        if let Some(cost) = pushed {
+            self.stack.0 -= cost.0;
+            self.stack.1 -= cost.1;
         }
         if is_in {
             // `x IN (a, b)` is `$in(x, a, b)`.
@@ -408,24 +445,50 @@ pub fn check(statement: &[u8], compat: bool) -> Result<()> {
         counts: HashMap::new(),
         local: None,
         in_list: 0,
+        stack: (0.0, 0.0),
+        deepest: (0.0, 0.0),
+        truncated: false,
     };
     w.message(schema.root, statement, 0, None)?;
     if compat && let Some(e) = w.local.take() {
         return Err(e);
     }
+    let out_of_stack = |phase: &str| {
+        Error::new(
+            spanbolt_storage::Code::ResourceExhausted,
+            format!(
+                "Out of stack space due to deeply nested query expression during {phase} resolution"
+            ),
+        )
+    };
+    if !compat && (w.deepest.0 > 1.0 || w.deepest.1 > 1.0) {
+        return Err(out_of_stack(if w.deepest.0 > 1.0 {
+            "query"
+        } else {
+            "function"
+        }));
+    }
     let total = |k: Kind| w.counts.get(&k).map_or(0, |c| c.total);
     let nested = |k: Kind| w.counts.get(&k).map_or(0, |c| c.depths.len());
+    let functions = (
+        total(Kind::FunctionCall),
+        MAX_FUNCTION_NODES,
+        "Number of functions exceeds the maximum allowed limit of",
+    );
+    let nested_functions = (
+        nested(Kind::FunctionCall),
+        MAX_NESTED_FUNCTION_NODES,
+        "Number of nested boolean predicates exceeds the maximum allowed limit of",
+    );
+    // Production reports the nesting before the count.
+    let (first, second) = if compat {
+        (functions, nested_functions)
+    } else {
+        (nested_functions, functions)
+    };
     let checks = [
-        (
-            total(Kind::FunctionCall),
-            MAX_FUNCTION_NODES,
-            "Number of functions exceeds the maximum allowed limit of",
-        ),
-        (
-            nested(Kind::FunctionCall),
-            MAX_NESTED_FUNCTION_NODES,
-            "Number of nested boolean predicates exceeds the maximum allowed limit of",
-        ),
+        first,
+        second,
         (
             total(Kind::JoinScan),
             MAX_JOINS,
@@ -466,6 +529,8 @@ pub fn check(statement: &[u8], compat: bool) -> Result<()> {
     }
     match w.local {
         Some(e) => Err(e),
+        // Not checked to the bottom, and too deep for the planner's recursion.
+        None if w.truncated => Err(out_of_stack("query")),
         None => Ok(()),
     }
 }

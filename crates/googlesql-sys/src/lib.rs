@@ -23,6 +23,9 @@ struct Buf {
     len: usize,
 }
 
+// SAFETY: a `Buf` owns bytes the shim allocated; any thread may read and free them (`take`).
+unsafe impl Send for Buf {}
+
 #[repr(C)]
 struct RawResult {
     code: i32,
@@ -228,24 +231,28 @@ impl Catalog {
         &self,
         sql: &str,
     ) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+        let raw = RawPtr(self.raw);
         // SAFETY: catalog pointer is live for &self; sql valid for its length.
-        let r = unsafe { gsql_analyze_ddl(self.raw.as_ptr(), sql.as_ptr().cast(), sql.len()) };
+        let r = with_stack_for(sql.len(), move || unsafe {
+            gsql_analyze_ddl(raw.get(), sql.as_ptr().cast(), sql.len())
+        });
         decode_result(r)
     }
 
     /// Analyses one statement; `params_json` maps parameter names to GoogleSQL type names.
     /// Returns the serialized `AnyResolvedStatementProto`.
     pub fn analyze_raw(&self, sql: &str, params_json: &str) -> Result<Vec<u8>, AnalyzeError> {
+        let raw = RawPtr(self.raw);
         // SAFETY: catalog pointer is live for &self; string pointers valid for their lengths.
-        let r = unsafe {
+        let r = with_stack_for(sql.len(), move || unsafe {
             gsql_analyze(
-                self.raw.as_ptr(),
+                raw.get(),
                 sql.as_ptr().cast(),
                 sql.len(),
                 params_json.as_ptr().cast(),
                 params_json.len(),
             )
-        };
+        });
         let proto = take(r.proto);
         let error = take(r.error);
         if r.code == 0 {
@@ -270,6 +277,45 @@ impl Catalog {
             message: format!("decode AnyResolvedStatementProto: {e}"),
         })
     }
+}
+
+/// The catalog pointer, sent to the thread [`with_stack_for`] may run the analyser on.
+#[derive(Clone, Copy)]
+struct RawPtr(NonNull<RawCatalog>);
+// SAFETY: the catalog is `Sync` (see above), and the pointer outlives the scoped thread.
+unsafe impl Send for RawPtr {}
+
+impl RawPtr {
+    /// A method, so that a closure captures the whole `RawPtr` (which is `Send`), not its field.
+    fn get(self) -> *mut RawCatalog {
+        self.0.as_ptr()
+    }
+}
+
+/// Statements up to this long analyse on the calling thread: at most 512 levels of nesting.
+const INLINE_SQL_BYTES: usize = 1024;
+
+/// Runs `f`, which analyses (or walks the analysis of) `sql_len` bytes of SQL, on a stack deep
+/// enough for it. GoogleSQL recurses once per level of a nested expression, up to about 2.2 KiB a
+/// level, and its stack guard doesn't stop it before a 2 MiB thread overflows (about 1000 levels),
+/// which aborts the process. A level takes at least 3 bytes of SQL (`-(`...`)`; a `+` chain, 2 bytes
+/// a level, stops at the parser's 20000), so a longer statement runs on a scoped thread with
+/// 1 KiB of stack per byte: address space, used only as deep as the recursion goes.
+pub fn with_stack_for<R: Send>(sql_len: usize, f: impl FnOnce() -> R + Send) -> R {
+    if sql_len <= INLINE_SQL_BYTES {
+        return f();
+    }
+    let size = (16 << 20) + sql_len.min(2 << 20) * 1024;
+    std::thread::scope(|s| {
+        let thread = std::thread::Builder::new()
+            .name("googlesql-deep".into())
+            .stack_size(size)
+            .spawn_scoped(s, f)
+            .expect("spawn an analyser thread");
+        thread
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 fn decode_result(r: RawResult) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {

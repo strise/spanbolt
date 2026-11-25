@@ -351,3 +351,21 @@ fn bench_latency() {
         );
     }
 }
+
+#[test]
+fn deep_expressions_analyse_on_a_small_stack() {
+    // GoogleSQL takes about 2 KiB of stack a level; 5000 levels overflowed a 2 MiB thread and
+    // aborted the process before long statements moved to a thread sized for them.
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(|| {
+            let cat = Catalog::new(r#"{"tables":[],"extra_features":[]}"#).expect("catalog");
+            let nested = format!("SELECT {}1{}", "ABS(".repeat(5000), ")".repeat(5000));
+            assert!(cat.analyze_raw(&nested, "{}").is_ok());
+            let chain = format!("SELECT {}", vec!["1"; 5000].join(" + "));
+            assert!(cat.analyze_raw(&chain, "{}").is_ok());
+        })
+        .expect("spawn")
+        .join()
+        .expect("analysis");
+}

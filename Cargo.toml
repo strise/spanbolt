@@ -7,7 +7,7 @@ default-members = ["crates/proto", "crates/storage", "crates/txn", "crates/ddl",
 
 [workspace.package]
 edition = "2024"
-version = "0.2.1"
+version = "0.3.0"
 license = "Apache-2.0"
 repository = "https://github.com/strise/spanbolt"
 homepage = "https://strise.github.io/spanbolt/"
@@ -18,13 +18,13 @@ rust-version = "1.91"
 [workspace.dependencies]
 # Internal crates: `version` is what the published crates depend on (keep it equal to the
 # workspace version; docs/releasing.md).
-googlesql-sys = { path = "crates/googlesql-sys", version = "=0.2.1" }
-spanbolt-ddl = { path = "crates/ddl", version = "=0.2.1" }
-spanbolt-proto = { path = "crates/proto", version = "=0.2.1" }
-spanbolt-server = { path = "crates/server", version = "=0.2.1" }
-spanbolt-sql = { path = "crates/sql", version = "=0.2.1" }
-spanbolt-storage = { path = "crates/storage", version = "=0.2.1" }
-spanbolt-txn = { path = "crates/txn", version = "=0.2.1" }
+googlesql-sys = { path = "crates/googlesql-sys", version = "=0.3.0" }
+spanbolt-ddl = { path = "crates/ddl", version = "=0.3.0" }
+spanbolt-proto = { path = "crates/proto", version = "=0.3.0" }
+spanbolt-server = { path = "crates/server", version = "=0.3.0" }
+spanbolt-sql = { path = "crates/sql", version = "=0.3.0" }
+spanbolt-storage = { path = "crates/storage", version = "=0.3.0" }
+spanbolt-txn = { path = "crates/txn", version = "=0.3.0" }
 arc-swap = "1.9"
 base64 = "0.23"
 clap = { version = "4.6", features = ["derive", "env"] }

@@ -1,4 +1,25 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+
+/// The database's proto bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProtoBundle {
+    /// Full names of the bundle's protos and enums (GetDatabaseDdl lists them sorted).
+    pub types: BTreeMap<String, crate::protos::ProtoKind>,
+    /// The serialized `FileDescriptorSet` of the last statement that changed the bundle, as the
+    /// request sent it: `INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE` and GetDatabaseDdl return it.
+    pub descriptors: Arc<Vec<u8>>,
+    /// Each enum's numbers, sorted: Cloud Spanner rejects writing any other.
+    pub enum_numbers: BTreeMap<String, Arc<[i32]>>,
+}
+
+/// What an `ALTER PROTO BUNDLE` changes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProtoBundleChange {
+    pub insert: Vec<String>,
+    pub update: Vec<String>,
+    pub delete: Vec<String>,
+}
 
 /// Column type in the schema.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -20,9 +41,13 @@ pub enum ColumnType {
     Array(Box<ColumnType>),
     /// Only appears inside queries and ARRAY<STRUCT<...>> columns' expressions.
     Struct(Vec<(Option<String>, ColumnType)>),
-    /// A PROTO by its GoogleSQL full name. Only `INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE`
-    /// (`google.protobuf.FileDescriptorSet`, always NULL) has one: DDL and SQL reject PROTO types.
+    /// A PROTO message by its full name: a type of the proto bundle, or
+    /// `INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE`'s `google.protobuf.FileDescriptorSet`. The
+    /// parser reads every proto or enum type name as `Proto`; applying the statement turns the
+    /// bundle's enums into `Enum`.
     Proto(String),
+    /// An ENUM of the proto bundle, by its full name.
+    Enum(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,6 +252,17 @@ pub struct View {
 /// One parsed DDL statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Statement {
+    /// `descriptors` is the request's `proto_descriptors` (a serialized `FileDescriptorSet`):
+    /// the parser leaves it `None`, the server fills it in before applying.
+    CreateProtoBundle {
+        types: Vec<String>,
+        descriptors: Option<Arc<Vec<u8>>>,
+    },
+    AlterProtoBundle {
+        change: ProtoBundleChange,
+        descriptors: Option<Arc<Vec<u8>>>,
+    },
+    DropProtoBundle,
     CreateSchema {
         name: String,
         if_not_exists: bool,
@@ -389,6 +425,8 @@ pub enum AlterIndex {
 /// name and the objects keep their declared spelling.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Schema {
+    /// `CREATE PROTO BUNDLE`: the proto and enum types columns may use.
+    pub proto_bundle: Option<ProtoBundle>,
     pub schemas: BTreeMap<String, String>,
     pub tables: BTreeMap<String, Table>,
     pub indexes: BTreeMap<String, Index>,

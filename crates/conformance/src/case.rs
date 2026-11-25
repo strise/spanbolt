@@ -71,6 +71,8 @@ pub struct Step {
     pub expect_spanner_span: Option<(usize, usize)>,
     /// Index of the line after the step's last line (body/params), where a new `expect:` goes.
     pub insert_at: usize,
+    /// `ddl protos` / `ddl protos=NAME`: the `proto_descriptors` sent with the statements.
+    pub descriptors: Option<Arc<Vec<u8>>>,
 }
 
 /// A recorded real-Spanner outcome.
@@ -122,6 +124,8 @@ pub struct Case {
     pub name: String,
     pub tags: Vec<String>,
     pub schema: Arc<Vec<String>>,
+    /// The `proto:` block in effect: `proto_descriptors` for `CreateDatabase`.
+    pub descriptors: Option<Arc<Vec<u8>>>,
     pub prelude: Arc<Vec<Step>>,
     pub steps: Vec<Step>,
     pub skip: Option<String>,
@@ -144,6 +148,9 @@ impl Case {
     /// Identity of the starting state (schema + prelude), for template databases.
     pub fn template_key(&self) -> String {
         let mut key = self.schema.join(";\n");
+        if let Some(d) = &self.descriptors {
+            key.push_str(&format!("\n{d:?}"));
+        }
         for s in self.prelude.iter() {
             key.push('\n');
             key.push_str(&format!(
@@ -307,6 +314,9 @@ pub fn parse(text: &str, rel: &str, file: usize) -> Result<Vec<Case>, String> {
     let mut prelude: Vec<Step> = Vec::new();
     let mut prelude_arc: Option<Arc<Vec<Step>>> = None;
     let mut schema_arc: Option<Arc<Vec<String>>> = None;
+    // `proto NAME:` blocks by name (`""` for `proto:`); a case's own blocks extend the file's.
+    let mut file_protos: BTreeMap<String, Arc<Vec<u8>>> = BTreeMap::new();
+    let mut case_protos: Vec<BTreeMap<String, Arc<Vec<u8>>>> = Vec::new();
     let mut cases: Vec<Case> = Vec::new();
     for b in blocks(text)? {
         let at = |e: String| format!("{}: {e}", b.line + 1);
@@ -318,13 +328,21 @@ pub fn parse(text: &str, rel: &str, file: usize) -> Result<Vec<Case>, String> {
             let schema = schema_arc
                 .get_or_insert_with(|| Arc::new(file_schema.clone()))
                 .clone();
+            if prelude_arc.is_none() {
+                for step in &mut prelude {
+                    resolve_protos(step, &file_protos)
+                        .map_err(|e| format!("{}: {e}", step.line + 1))?;
+                }
+            }
             let pre = prelude_arc
                 .get_or_insert_with(|| Arc::new(prelude.clone()))
                 .clone();
+            case_protos.push(file_protos.clone());
             cases.push(Case {
                 name: format!("{rel}/{name}"),
                 tags: file_tags.clone(),
                 schema,
+                descriptors: None,
                 prelude: pre,
                 steps: Vec::new(),
                 skip: None,
@@ -354,6 +372,18 @@ pub fn parse(text: &str, rel: &str, file: usize) -> Result<Vec<Case>, String> {
                 .last_mut()
                 .ok_or_else(|| at("skip: outside a case".into()))?;
             c.skip = Some(reason.trim().to_string());
+            continue;
+        }
+        if b.header == "proto:" || b.header.starts_with("proto ") {
+            let name = b.header.strip_prefix("proto").unwrap_or_default();
+            let name = name
+                .strip_suffix(':')
+                .ok_or_else(|| at("`proto NAME:` needs a body".into()))?;
+            let d = crate::protos::descriptors(&b.body).map_err(at)?;
+            match case_protos.last_mut() {
+                Some(m) => m.insert(name.trim().to_string(), d),
+                None => file_protos.insert(name.trim().to_string(), d),
+            };
             continue;
         }
         if b.header == "schema:" {
@@ -413,11 +443,33 @@ pub fn parse(text: &str, rel: &str, file: usize) -> Result<Vec<Case>, String> {
         }
         steps.push(parse_step(&b).map_err(at)?);
     }
-    for c in &mut cases {
+    for (c, protos) in cases.iter_mut().zip(&case_protos) {
         let mut seen = std::collections::HashSet::new();
         c.tags.retain(|t| seen.insert(t.clone()));
+        c.descriptors = protos.get("").cloned();
+        for step in &mut c.steps {
+            resolve_protos(step, protos).map_err(|e| format!("{}: {e}", step.line + 1))?;
+        }
     }
     Ok(cases)
+}
+
+/// Sets a `ddl` step's descriptors from its `protos` flag (the unnamed `proto:`) or
+/// `protos=NAME` option.
+fn resolve_protos(step: &mut Step, protos: &BTreeMap<String, Arc<Vec<u8>>>) -> Result<(), String> {
+    let name = match (step.has_flag("protos"), step.opts.get("protos")) {
+        (true, _) => "",
+        (false, Some(n)) => n.as_str(),
+        (false, None) => return Ok(()),
+    };
+    if step.verb != Verb::Ddl {
+        return Err("`protos` only applies to `ddl`".into());
+    }
+    let d = protos
+        .get(name)
+        .ok_or_else(|| format!("no `proto {name}:` block for `protos`"))?;
+    step.descriptors = Some(d.clone());
+    Ok(())
 }
 
 fn parse_step(b: &Block) -> Result<Step, String> {
@@ -535,6 +587,7 @@ fn parse_step(b: &Block) -> Result<Step, String> {
         expect_spanner: None,
         expect_spanner_span: None,
         insert_at: b.end,
+        descriptors: None,
     })
 }
 

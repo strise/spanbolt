@@ -749,6 +749,25 @@ pub enum Mutation {
     },
 }
 
+/// Cloud Spanner's error for an ENUM value its enum doesn't define. The emulator aborts on one.
+fn check_enum(v: &Value, numbers: &[i32]) -> Result<()> {
+    let defined = |v: &Value| match v {
+        Value::Int64(n) => i32::try_from(*n).is_ok_and(|n| numbers.binary_search(&n).is_ok()),
+        _ => true,
+    };
+    let ok = match v {
+        Value::Array(items) => items.iter().all(defined),
+        v => defined(v),
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(Error::invalid_argument(
+            "Request contains an invalid argument.",
+        ))
+    }
+}
+
 impl Mutation {
     /// Resolves a write mutation in wire form (column names, rows of `google.protobuf.Value`).
     pub fn write(
@@ -809,7 +828,11 @@ impl Mutation {
                     row.push(Value::Null);
                     continue;
                 }
-                row.push(crate::wire::decode(pv, &cm.ty)?);
+                let v = crate::wire::decode(pv, &cm.ty)?;
+                if let Some(numbers) = &cm.enum_numbers {
+                    check_enum(&v, numbers)?;
+                }
+                row.push(v);
             }
             rows.push(row);
         }

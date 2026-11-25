@@ -5,7 +5,7 @@
 //! In emulator mode the parser reads bytes like the emulator: non-ASCII characters are skipped by
 //! the lexer, so a query term with letters such as `ø` splits into two terms and fails to parse,
 //! and two separators in a row (`a  b`, `a, b`) are a syntax error. Prod mode (the default) follows
-//! Cloud Spanner: Unicode letters and digits are term characters (lower-cased with Unicode rules),
+//! Cloud Spanner: Unicode letters and digits are term characters (normalised like the tokenizer, `fold`),
 //! other non-ASCII characters separate terms, and a run of separators is one separator. It reads
 //! runs of single letters as one term, as its tokenizer stores them (`tokens::joined_letters`).
 //! Prod also ignores a connector (`.`, `/`, `-`, ...) that doesn't join two terms (`apple. pie`),
@@ -338,7 +338,14 @@ fn prod_word_end(s: &[u8], i: usize, j: usize) -> usize {
             return end;
         }
     }
-    if s.get(j) == Some(&b'+') && ends(j + 1) {
+    // `foo+`, also before `.` and `,` (`xy+.`).
+    let mut k = j + 1;
+    while matches!(s.get(k), Some(b'.' | b',')) {
+        k += 1;
+    }
+    if s.get(j) == Some(&b'+')
+        && (ends(j + 1) || (k > j + 1 && !s.get(k).is_some_and(|b| is_symbol(*b))))
+    {
         return j + 1;
     }
     if word.iter().all(u8::is_ascii_digit) && s.get(j) == Some(&b'.') && digit(j + 1) {
@@ -802,8 +809,7 @@ impl Parser<'_> {
                     raw.to_ascii_lowercase()
                 } else {
                     // Prod's tokenizer reads `’` as `'` (`foo’s`).
-                    String::from_utf8_lossy(raw)
-                        .to_lowercase()
+                    super::fold::normalize(&String::from_utf8_lossy(raw))
                         .replace('\u{2019}', "'")
                         .into_bytes()
                 }))

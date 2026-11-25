@@ -33,6 +33,8 @@ pub struct ColumnMeta {
     /// `ON UPDATE (PENDING_COMMIT_TIMESTAMP())`: updates that leave the column out set it to the
     /// commit timestamp.
     pub on_update_commit_ts: bool,
+    /// An ENUM column's (or ENUM array's) defined numbers, sorted: writes of others fail.
+    pub enum_numbers: Option<Arc<[i32]>>,
 }
 
 #[derive(Debug, Clone)]
@@ -235,6 +237,15 @@ pub struct Catalog {
     managed_ids: HashMap<String, IndexId>,
 }
 
+/// The enum an ENUM or ENUM array column type names.
+fn enum_name(ty: &ColumnType) -> Option<&str> {
+    match ty {
+        ColumnType::Enum(n) => Some(n),
+        ColumnType::Array(e) => enum_name(e),
+        _ => None,
+    }
+}
+
 impl Catalog {
     pub fn table_id(&self, name: &str) -> Option<TableId> {
         if let Some(&i) = self.table_ids.get(name) {
@@ -309,6 +320,9 @@ impl Catalog {
                             .as_deref()
                             .is_some_and(spanbolt_ddl::is_pending_commit_timestamp),
                         on_update_commit_ts: c.on_update.is_some(),
+                        enum_numbers: enum_name(&c.ty).and_then(|n| {
+                            schema.proto_bundle.as_ref()?.enum_numbers.get(n).cloned()
+                        }),
                     }
                 })
                 .collect();

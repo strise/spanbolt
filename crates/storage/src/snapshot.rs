@@ -1,14 +1,17 @@
 //! Snapshot files: every instance and database (schema + rows), compact binary, zstd compressed.
 //!
 //! Layout: `MAGIC`, then a zstd stream of: format version, instances, and per database its schema
-//! (GetDatabaseDdl statements, `Schema::to_ddl_snapshot`) and each table's rows keyed by column name (so column order changes stay loadable).
+//! (GetDatabaseDdl statements, `Schema::to_ddl_snapshot`; from version 2 preceded by its proto
+//! bundle, whose descriptors the statements don't carry) and each table's rows keyed by column
+//! name (so column order changes stay loadable).
 //! Indexes are rebuilt on load.
 
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use spanbolt_ddl::Schema;
+use spanbolt_ddl::protos::ProtoKind;
+use spanbolt_ddl::{ProtoBundle, Schema, Statement};
 
 use crate::error::{Error, Result};
 use crate::key::encode_key;
@@ -16,7 +19,8 @@ use crate::state::{DbState, Row, RowMap};
 use crate::value::{Date, Interval, Numeric, Timestamp, Value};
 
 const MAGIC: &[u8; 8] = b"SPANBOLT";
-const FORMAT_VERSION: u32 = 1;
+/// Version 2 added the proto bundle; version 1 files still load.
+const FORMAT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Default)]
 pub struct InstanceImage {
@@ -80,6 +84,7 @@ pub fn write_to<W: Write>(mut w: W, instances: &[InstanceImage]) -> Result<()> {
             e.str(&db.name);
             e.i64(db.commit_ts.secs);
             e.u32(db.commit_ts.nanos);
+            e.bundle(db.state.schema.proto_bundle.as_ref());
             e.strs(&db.state.schema.to_ddl_snapshot());
             let cat = &db.state.catalog;
             e.len(cat.tables.len());
@@ -121,7 +126,7 @@ pub fn read_from<R: Read>(mut r: R) -> Result<Vec<InstanceImage>> {
         .map_err(|_| corrupt())?;
     let mut d = Dec { buf: &data, pos: 0 };
     let version = d.u32()?;
-    if version != FORMAT_VERSION {
+    if version != 1 && version != FORMAT_VERSION {
         return Err(Error::failed_precondition(format!(
             "Unsupported snapshot format version {version}"
         )));
@@ -144,7 +149,8 @@ pub fn read_from<R: Read>(mut r: R) -> Result<Vec<InstanceImage>> {
                 secs: d.i64()?,
                 nanos: d.u32()?,
             };
-            let sch = schema_from_ddl(&d.strs()?)?;
+            let bundle = if version >= 2 { d.bundle()? } else { None };
+            let sch = schema_with_bundle(bundle, &d.strs()?)?;
             let mut state = DbState::new(sch)?;
             for _ in 0..d.len()? {
                 let tname = d.str()?;
@@ -221,6 +227,32 @@ impl Enc {
             self.str(b);
         }
     }
+    /// A proto bundle: present flag, descriptors, then each type with its kind and, for an
+    /// enum, its numbers.
+    fn bundle(&mut self, b: Option<&ProtoBundle>) {
+        let Some(b) = b else {
+            self.len(0);
+            return;
+        };
+        self.len(1);
+        self.bytes(&b.descriptors);
+        self.len(b.types.len());
+        for (name, kind) in &b.types {
+            self.str(name);
+            match kind {
+                ProtoKind::Message => self.len(0),
+                ProtoKind::Enum => {
+                    self.len(1);
+                    let numbers = b.enum_numbers.get(name).map(|n| &n[..]).unwrap_or_default();
+                    self.len(numbers.len());
+                    for &n in numbers {
+                        self.i64(n.into());
+                    }
+                }
+            }
+        }
+    }
+
     fn strs(&mut self, v: &[String]) {
         self.len(v.len());
         for s in v {
@@ -357,6 +389,36 @@ impl Dec<'_> {
         let n = self.len()?;
         (0..n).map(|_| Ok((self.str()?, self.str()?))).collect()
     }
+    fn bundle(&mut self) -> Result<Option<ProtoBundle>> {
+        if self.len()? == 0 {
+            return Ok(None);
+        }
+        let descriptors = Arc::new(self.bytes()?.to_vec());
+        let mut types = std::collections::BTreeMap::new();
+        let mut enum_numbers = std::collections::BTreeMap::new();
+        for _ in 0..self.len()? {
+            let name = self.str()?;
+            let kind = match self.len()? {
+                0 => ProtoKind::Message,
+                1 => {
+                    let mut numbers = Vec::new();
+                    for _ in 0..self.len()? {
+                        numbers.push(i32::try_from(self.i64()?).map_err(|_| corrupt())?);
+                    }
+                    enum_numbers.insert(name.clone(), Arc::from(numbers));
+                    ProtoKind::Enum
+                }
+                _ => return Err(corrupt()),
+            };
+            types.insert(name, kind);
+        }
+        Ok(Some(ProtoBundle {
+            types,
+            descriptors,
+            enum_numbers,
+        }))
+    }
+
     fn strs(&mut self) -> Result<Vec<String>> {
         let n = self.len()?;
         (0..n).map(|_| self.str()).collect()
@@ -404,13 +466,24 @@ impl Dec<'_> {
 
 /// Rebuilds a schema from its GetDatabaseDdl statements.
 pub fn schema_from_ddl(statements: &[String]) -> Result<Schema> {
-    let mut schema = Schema::default();
+    schema_with_bundle(None, statements)
+}
+
+/// [`schema_from_ddl`] with the proto bundle the statements' `CREATE PROTO BUNDLE` stands for.
+fn schema_with_bundle(bundle: Option<ProtoBundle>, statements: &[String]) -> Result<Schema> {
+    let mut schema = Schema {
+        proto_bundle: bundle,
+        ..Schema::default()
+    };
     for sql in statements {
         let stmt = spanbolt_ddl::parse_statement(sql).map_err(|e| {
             Error::failed_precondition(format!(
                 "Snapshot schema statement does not parse: {e}: {sql}"
             ))
         })?;
+        if matches!(stmt, Statement::CreateProtoBundle { .. }) && schema.proto_bundle.is_some() {
+            continue;
+        }
         // The more lenient rules, so a schema the emulator-compat server accepted loads back.
         schema.apply_emulator_compat(&stmt)?;
     }

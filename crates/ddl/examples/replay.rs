@@ -13,7 +13,9 @@ fn main() {
                 let code = match e {
                     DdlError::Syntax(_) => 3,
                     DdlError::NotFound(_) => 5,
+                    DdlError::Exists(_) => 6,
                     DdlError::Unimplemented(_) => 12,
+                    DdlError::Internal(_) => 13,
                     DdlError::Precondition(_) | DdlError::AlreadyExists(_) => 9,
                 };
                 println!("ERR{code} {head} => {e}")

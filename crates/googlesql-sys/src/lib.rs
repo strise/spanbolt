@@ -73,6 +73,13 @@ unsafe extern "C" {
         sql: *const c_char,
         sql_len: usize,
     ) -> RawResult;
+    fn gsql_analyze_view(
+        catalog: *const RawCatalog,
+        sql: *const c_char,
+        sql_len: usize,
+        exact: *const c_char,
+        exact_len: usize,
+    ) -> RawResult;
     fn gsql_buf_free(buf: Buf);
 }
 
@@ -235,6 +242,28 @@ impl Catalog {
         // SAFETY: catalog pointer is live for &self; sql valid for its length.
         let r = with_stack_for(sql.len(), move || unsafe {
             gsql_analyze_ddl(raw.get(), sql.as_ptr().cast(), sql.len())
+        });
+        decode_result(r)
+    }
+
+    /// Analyses the query of a view as Spanner does: in strict name resolution mode (column names
+    /// need a qualifier, no `SELECT *`), without parameters. The tables in `exact_json` (a JSON
+    /// array of full names) are found only by that spelling.
+    pub fn analyze_view(
+        &self,
+        sql: &str,
+        exact_json: &str,
+    ) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+        let raw = RawPtr(self.raw);
+        // SAFETY: catalog pointer is live for &self; string pointers valid for their lengths.
+        let r = with_stack_for(sql.len(), move || unsafe {
+            gsql_analyze_view(
+                raw.get(),
+                sql.as_ptr().cast(),
+                sql.len(),
+                exact_json.as_ptr().cast(),
+                exact_json.len(),
+            )
         });
         decode_result(r)
     }

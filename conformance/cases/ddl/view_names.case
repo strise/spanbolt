@@ -1,0 +1,324 @@
+# Names in view definitions (spanbolt #115, #116). Cloud Spanner and the emulator analyse a view
+# in strict name resolution mode; Spanner also finds a table only by its declared spelling.
+# `expect:` is recorded from the emulator; `expect@spanner:` from Cloud Spanner.
+tags: ddl views oracle
+schema:
+  CREATE TABLE Account (
+    AccountId INT64 NOT NULL,
+    Name STRING(MAX),
+  ) PRIMARY KEY (AccountId);
+  CREATE TABLE Tags (
+    AccountId INT64 NOT NULL,
+    Tag STRING(MAX),
+    Vals ARRAY<INT64>,
+  ) PRIMARY KEY (AccountId)
+
+# One table spelled two ways: as declared, and with other case (#115).
+case two_spellings_1
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a WHERE EXISTS (SELECT 1 FROM ACCOUNT AS b WHERE b.AccountId = a.AccountId)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: ACCOUNT [at 1:104]
+
+case two_spellings_2
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM ACCOUNT AS a WHERE EXISTS (SELECT 1 FROM Account AS b WHERE b.AccountId = a.AccountId)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: ACCOUNT [at 1:63]
+
+case two_spellings_3
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a JOIN account AS b ON a.AccountId = b.AccountId
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 1:81]
+
+case two_spellings_4
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a JOIN Account AS b ON a.AccountId = b.AccountId
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 1:63]
+
+case two_spellings_5
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a WHERE a.AccountId IN (SELECT b.AccountId FROM ACCOUNT AS b)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: ACCOUNT [at 1:122]
+
+case two_spellings_6
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a UNION ALL SELECT b.AccountId FROM ACCOUNT AS b
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: ACCOUNT [at 1:110]
+
+case two_spellings_7
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM account AS a WHERE EXISTS (SELECT 1 FROM ACCOUNT AS b WHERE b.AccountId = a.AccountId)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: account [at 1:63]
+
+case two_spellings_8
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a JOIN tags AS t ON t.AccountId = a.AccountId JOIN Tags AS u ON u.AccountId = a.AccountId
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: tags [at 1:81]
+
+case two_spellings_9
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account WHERE EXISTS (SELECT 1 FROM ACCOUNT AS b)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Table not found: ACCOUNT (Unqualified identifiers in a FROM clause are always resolved as tables. Identifier ACCOUNT is in scope but unqualified names cannot be resolved here.) [at 1:105]
+
+# Unqualified column names, which strict name resolution rejects (#116).
+case unqualified_1
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT AccountId FROM Account
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias AccountId cannot be used without a qualifier in strict name resolution mode [at 1:48]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias AccountId cannot be used without a qualifier in strict name resolution mode [at 1:46]
+
+case unqualified_2
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a WHERE Name = 'x'
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias Name cannot be used without a qualifier in strict name resolution mode [at 1:84]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias Name cannot be used without a qualifier in strict name resolution mode [at 1:82]
+
+case unqualified_3
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT UPPER(Name) AS n FROM Account
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias Name cannot be used without a qualifier in strict name resolution mode [at 1:54]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias Name cannot be used without a qualifier in strict name resolution mode [at 1:52]
+
+case unqualified_4
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a ORDER BY AccountId
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_5
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId AS x FROM Account AS a ORDER BY x
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_6
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.Name AS n, COUNT(*) AS c FROM Account AS a GROUP BY n
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_7
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.Name AS n, COUNT(*) AS c FROM Account AS a GROUP BY 1
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_8
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.Name, COUNT(*) AS c FROM Account AS a GROUP BY a.Name HAVING c > 1
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_9
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a WHERE EXISTS (SELECT 1 FROM Tags AS t WHERE t.AccountId = AccountId)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias AccountId cannot be used without a qualifier in strict name resolution mode [at 1:136]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias AccountId cannot be used without a qualifier in strict name resolution mode [at 1:134]
+
+case unqualified_10
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a JOIN Tags AS t USING (AccountId)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Column name AccountId cannot be used without a qualifier in strict name resolution mode. Use JOIN ON with a qualified name instead [at 1:100]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Column name AccountId cannot be used without a qualifier in strict name resolution mode. Use JOIN ON with a qualified name instead [at 1:98]
+
+case unqualified_11
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT AccountId FROM Account AS a JOIN Tags AS t USING (AccountId)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Column name AccountId cannot be used without a qualifier in strict name resolution mode. Use JOIN ON with a qualified name instead [at 1:98]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Column name AccountId cannot be used without a qualifier in strict name resolution mode. Use JOIN ON with a qualified name instead [at 1:96]
+
+case unqualified_12
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT x FROM UNNEST([1, 2]) AS x
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_13
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT v FROM Tags AS t, t.Vals AS v
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_14
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT v FROM Tags AS t CROSS JOIN UNNEST(t.Vals) AS v
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_15
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT o FROM Tags AS t CROSS JOIN UNNEST(t.Vals) WITH OFFSET AS o
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_16
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT 1 AS one FROM Account
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_17
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT COUNT(*) AS n FROM Account
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_18
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId, (SELECT COUNT(*) FROM Tags AS t WHERE t.AccountId = a.AccountId) AS n FROM Account AS a
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_19
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT s.AccountId FROM (SELECT a.AccountId FROM Account AS a) AS s
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_20
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT AccountId FROM (SELECT a.AccountId FROM Account AS a)
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_21
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account AS a WHERE a.Name = 'x' AND AccountId > 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias AccountId cannot be used without a qualifier in strict name resolution mode [at 1:101]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias AccountId cannot be used without a qualifier in strict name resolution mode [at 1:99]
+
+case unqualified_22
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT a.AccountId FROM Account a
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_23
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Account.AccountId FROM Account
+expect:
+  ok
+expect@spanner:
+  same
+
+case unqualified_24
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT AccountId FROM Account WHERE Name IS NULL
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias Name cannot be used without a qualifier in strict name resolution mode [at 1:77]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Alias Name cannot be used without a qualifier in strict name resolution mode [at 1:75]
+
+case unqualified_25
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT nope FROM Account
+expect:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Unrecognized name: nope [at 1:48]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of view `V`: Unrecognized name: nope [at 1:46]
+
+# Queries outside views resolve unqualified names as usual.
+case query_unqualified
+query:
+  SELECT AccountId FROM Account WHERE Name = 'x'
+expect:
+  columns: AccountId INT64
+expect@spanner:
+  same

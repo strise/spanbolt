@@ -87,6 +87,17 @@ expect:
   "CREATE TABLE Others (\n  OtherId INT64 NOT NULL,\n  ParentId INT64,\n  ParentCode STRING(16),\n  PrevId INT64,\n  Qty INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n  FOREIGN KEY(ParentCode) REFERENCES Parents(Code),\n  FOREIGN KEY(PrevId) REFERENCES Others(OtherId),\n  CHECK(Qty > 0),\n  CHECK(Qty < 100),\n) PRIMARY KEY(OtherId)"
   "CREATE TABLE sch.Items (\n  Id INT64 NOT NULL,\n  ParentId INT64,\n  N INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n) PRIMARY KEY(Id)"
   "CREATE TABLE A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit (\n  Id INT64 NOT NULL,\n  ParentId INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n  CHECK(Id > 0),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE SCHEMA sch"
+  "CREATE TABLE A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit (\n  Id INT64 NOT NULL,\n  ParentId INT64,\n  CHECK(Id > 0),\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Others (\n  OtherId INT64 NOT NULL,\n  ParentId INT64,\n  ParentCode STRING(16),\n  PrevId INT64,\n  Qty INT64,\n  FOREIGN KEY(PrevId) REFERENCES Others(OtherId),\n  CHECK(Qty > 0),\n  CHECK(Qty < 100),\n) PRIMARY KEY(OtherId)"
+  "CREATE TABLE Parents (\n  ParentId INT64 NOT NULL,\n  Code STRING(16),\n) PRIMARY KEY(ParentId)"
+  "ALTER TABLE A_Table_Name_That_Is_Long_Enough_That_The_Generated_Constraint_Names_Must_Be_Cut_To_Fit_The_128_Byte_Identifier_Limit ADD FOREIGN KEY(ParentId) REFERENCES Parents(ParentId)"
+  "ALTER TABLE Others ADD FOREIGN KEY(ParentId) REFERENCES Parents(ParentId)"
+  "ALTER TABLE Others ADD FOREIGN KEY(ParentCode) REFERENCES Parents(Code)"
+  "CREATE UNIQUE INDEX ParentsByCode ON Parents(Code)"
+  "CREATE TABLE sch.Items (\n  Id INT64 NOT NULL,\n  ParentId INT64,\n  N INT64,\n  FOREIGN KEY(ParentId) REFERENCES Parents(ParentId),\n) PRIMARY KEY(Id)"
 
 case violations_name_the_constraint
 insert Others cols=OtherId,Qty:

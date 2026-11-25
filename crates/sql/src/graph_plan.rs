@@ -623,13 +623,22 @@ impl Planner<'_> {
         Ok((t.item, Anchor::Scan, format!("scan {}", t.col)))
     }
 
-    /// Property definitions compiled over base table rows, one per element table slot.
-    fn property_evals(&mut self, name: &str) -> Result<Arc<Vec<Option<Eval>>>> {
+    /// Property definitions compiled over base table rows, one per element table slot. Outside a
+    /// graph query (an element in a GRAPH_TABLE column, read by the enclosing query), the graph
+    /// is the one the element's type `ty` names.
+    fn property_evals(
+        &mut self,
+        name: &str,
+        ty: Option<&TypeProto>,
+    ) -> Result<Arc<Vec<Option<Eval>>>> {
         let key = name.to_ascii_lowercase();
         if let Some(e) = self.graph.as_ref().and_then(|g| g.props.get(&key)) {
             return Ok(e.clone());
         }
-        let (def, _) = self.graph_cx()?;
+        let def = match &self.graph {
+            Some(g) => g.def.clone(),
+            None => self.element_graph(ty)?,
+        };
         let mut evals = Vec::new();
         for t in def.nodes.iter().chain(&def.edges) {
             match t
@@ -654,6 +663,20 @@ impl Planner<'_> {
         Ok(evals)
     }
 
+    /// The definition of the graph that elements of type `ty` belong to.
+    fn element_graph(&self, ty: Option<&TypeProto>) -> Result<Arc<GraphDef>> {
+        let name = ty
+            .and_then(|t| t.graph_element_type.as_ref())
+            .map(|g| g.graph_reference.join("."))
+            .ok_or_else(|| unimplemented("A graph element outside its graph query"))?;
+        self.cat
+            .graphs
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(&name))
+            .map(|(_, d)| d.clone())
+            .ok_or_else(|| Error::not_found(format!("Property graph not found: {name}")))
+    }
+
     pub(super) fn graph_property(
         &mut self,
         g: &ResolvedGraphGetElementPropertyProto,
@@ -664,13 +687,12 @@ impl Planner<'_> {
             .as_ref()
             .and_then(|p| p.name.as_deref())
             .ok_or_else(|| unimplemented("Dynamic graph properties"))?;
-        let x = self.expr(
-            g.expr
-                .as_deref()
-                .ok_or_else(|| Error::internal("property without element"))?,
-            scope,
-        )?;
-        let evals = self.property_evals(name)?;
+        let el = g
+            .expr
+            .as_deref()
+            .ok_or_else(|| Error::internal("property without element"))?;
+        let x = self.expr(el, scope)?;
+        let evals = self.property_evals(name, super::expr_type(el))?;
         Ok(Arc::new(move |cx: &Cx, env: &Env| {
             let v = x(cx, env)?;
             let Some(el) = decode(&v) else {

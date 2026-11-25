@@ -45,7 +45,7 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
         if cat.emulator_compat {
             e
         } else {
-            prod_syntax_error(prod_proto_names(e))
+            prod_analyzer_error(prod_proto_names(e))
         }
     })?;
     googlesql_sys::with_stack_for(sql.len(), || {
@@ -67,18 +67,38 @@ fn prod_proto_names(mut e: Error) -> Error {
     e
 }
 
-/// Production Spanner C-escapes the quotes in a query's syntax error (`Unexpected identifier
-/// \"SELEC\"`, backslashes doubled), and accepts a `;` where a statement may end.
-fn prod_syntax_error(mut e: Error) -> Error {
+/// Production Spanner passes the analyser's located errors (`... [at 1:8]`) through absl's
+/// `CEscape`: quotes and backslashes escaped, newlines as `\n`, bytes outside printable ASCII as
+/// octal (`Unexpected identifier \"SELEC\"`, `No matching signature for function LENGTH\n
+/// Argument types: ...`). A syntax error also accepts a `;` where a statement may end.
+fn prod_analyzer_error(mut e: Error) -> Error {
+    if e.code == Code::Unimplemented {
+        return e;
+    }
     if let Some(rest) = e.message.strip_prefix("Syntax error: ") {
         let rest = rest.replacen("Expected end of input", "Expected \";\" or end of input", 1);
-        let escaped = rest
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\'', "\\'");
-        e.message = format!("Syntax error: {escaped}");
+        e.message = format!("Syntax error: {rest}");
+    } else if !has_location(&e.message) {
+        return e;
     }
+    e.message = spanbolt_storage::wire::c_escape_bytes(e.message.as_bytes());
     e
+}
+
+/// True if the message carries the analyser's error location, `[at LINE:COLUMN]`.
+fn has_location(message: &str) -> bool {
+    message.match_indices("[at ").any(|(i, _)| {
+        let rest = &message[i + 4..];
+        let Some((pos, _)) = rest.split_once(']') else {
+            return false;
+        };
+        pos.split_once(':').is_some_and(|(line, col)| {
+            !line.is_empty()
+                && !col.is_empty()
+                && line.bytes().all(|b| b.is_ascii_digit())
+                && col.bytes().all(|b| b.is_ascii_digit())
+        })
+    })
 }
 
 /// Spanner SQL the catalog doesn't register, so the analyser reports it as missing: UNIMPLEMENTED
@@ -119,5 +139,36 @@ pub fn view(gsql: &googlesql_sys::Catalog, sql: &str) -> Result<ResolvedQueryStm
     match stmt.node {
         Some(StmtNode::ResolvedQueryStmtNode(q)) => Ok(q),
         _ => Err(Error::invalid_argument("View definition is not a query.")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn located_errors_are_c_escaped_in_production() {
+        let e = prod_analyzer_error(Error::invalid_argument(
+            "No matching signature for function F\n  Argument types: 'é' [at 1:8]",
+        ));
+        assert_eq!(
+            e.message,
+            "No matching signature for function F\\n  Argument types: \\'\\303\\251\\' [at 1:8]"
+        );
+        let e = prod_analyzer_error(Error::invalid_argument(
+            "Syntax error: Expected end of input but got \"\\\" [at 1:10]",
+        ));
+        assert_eq!(
+            e.message,
+            "Syntax error: Expected \\\";\\\" or end of input but got \\\"\\\\\\\" [at 1:10]"
+        );
+    }
+
+    #[test]
+    fn unlocated_errors_are_left_alone() {
+        let m = "SEARCH function's first argument must be a TOKENLIST";
+        assert_eq!(prod_analyzer_error(Error::invalid_argument(m)).message, m);
+        let m = "it's [at x:1]";
+        assert_eq!(prod_analyzer_error(Error::invalid_argument(m)).message, m);
     }
 }

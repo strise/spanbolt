@@ -302,7 +302,7 @@ fn write_value(out: &mut String, v: &prost_types::Value) {
 
 /// absl's `CEscape` of raw bytes: the usual escapes, printable ASCII as is, every other byte as
 /// three octal digits.
-pub(crate) fn c_escape_bytes(b: &[u8]) -> String {
+pub fn c_escape_bytes(b: &[u8]) -> String {
     let mut out = String::with_capacity(b.len());
     for &c in b {
         match c {

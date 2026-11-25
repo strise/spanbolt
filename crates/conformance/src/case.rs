@@ -125,11 +125,22 @@ pub struct Case {
     pub prelude: Arc<Vec<Step>>,
     pub steps: Vec<Step>,
     pub skip: Option<String>,
+    /// `skip@emulator:`: run only against Cloud Spanner (`--oracle spanner`), for statements the
+    /// emulator can't answer (it aborts on them).
+    pub skip_emulator: Option<String>,
     pub file: usize,
     pub line: usize,
 }
 
 impl Case {
+    /// Why the case doesn't run against `oracle`'s expectations, if it doesn't.
+    pub fn skip_for(&self, oracle: Oracle) -> Option<&str> {
+        match oracle {
+            Oracle::Emulator => self.skip.as_deref().or(self.skip_emulator.as_deref()),
+            Oracle::Spanner => self.skip.as_deref(),
+        }
+    }
+
     /// Identity of the starting state (schema + prelude), for template databases.
     pub fn template_key(&self) -> String {
         let mut key = self.schema.join(";\n");
@@ -317,6 +328,7 @@ pub fn parse(text: &str, rel: &str, file: usize) -> Result<Vec<Case>, String> {
                 prelude: pre,
                 steps: Vec::new(),
                 skip: None,
+                skip_emulator: None,
                 file,
                 line: b.line,
             });
@@ -328,6 +340,13 @@ pub fn parse(text: &str, rel: &str, file: usize) -> Result<Vec<Case>, String> {
                 Some(c) => c.tags.extend(tags),
                 None => file_tags.extend(tags),
             }
+            continue;
+        }
+        if let Some(reason) = b.header.strip_prefix("skip@emulator:") {
+            let c = cases
+                .last_mut()
+                .ok_or_else(|| at("skip@emulator: outside a case".into()))?;
+            c.skip_emulator = Some(reason.trim().to_string());
             continue;
         }
         if let Some(reason) = b.header.strip_prefix("skip:") {

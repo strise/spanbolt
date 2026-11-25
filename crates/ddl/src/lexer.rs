@@ -31,6 +31,37 @@ const SYMS: &[&str] = &[
     "+", "-", "*", "/", "%", "&", "|", "^", "~", "[", "]", "{", "}", ":", "?", "@", "!", "$",
 ];
 
+/// The identifier the statement starts with, after whitespace and comments; empty if it starts
+/// with anything else.
+pub(crate) fn first_word(src: &str) -> &str {
+    let b = src.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_whitespace() {
+            i += 1;
+        } else if b[i] == b'#' || b[i..].starts_with(b"--") {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+        } else if b[i..].starts_with(b"/*") {
+            match src[i + 2..].find("*/") {
+                Some(end) => i += end + 4,
+                None => return "",
+            }
+        } else {
+            break;
+        }
+    }
+    let rest = &src[i..];
+    if !rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        return "";
+    }
+    let end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
 pub(crate) fn tokenize(src: &str) -> Result<Vec<Token>, DdlError> {
     let b = src.as_bytes();
     let mut out = Vec::with_capacity(src.len() / 4);
@@ -420,7 +451,7 @@ pub fn identifiers(sql: &str) -> Option<Vec<String>> {
 
 /// The identifiers `sql` may use as column names: [`identifiers`] without function names (an
 /// unquoted identifier before `(`), so a call to `UPPER` doesn't read a column `Upper`.
-pub(crate) fn column_references(sql: &str) -> Option<Vec<String>> {
+pub fn column_references(sql: &str) -> Option<Vec<String>> {
     let toks = tokenize(sql).ok()?;
     let mut out = Vec::new();
     let mut it = toks.into_iter().peekable();
@@ -434,6 +465,39 @@ pub(crate) fn column_references(sql: &str) -> Option<Vec<String>> {
         }
     }
     Some(out)
+}
+
+/// A token of a SQL text, for checks that need positions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SqlToken {
+    /// An identifier or keyword, with whether it was backquoted.
+    Ident { text: String, quoted: bool },
+    /// Punctuation or an operator.
+    Sym(&'static str),
+    /// A literal.
+    Literal,
+}
+
+/// The tokens of `sql` with their byte offsets, without comments; `None` if it doesn't lex.
+pub fn sql_tokens(sql: &str) -> Option<Vec<(SqlToken, usize)>> {
+    let toks = tokenize(sql).ok()?;
+    Some(
+        toks.into_iter()
+            .filter_map(|t| {
+                let tok = match t.tok {
+                    Tok::Ident(text) => SqlToken::Ident {
+                        text,
+                        quoted: false,
+                    },
+                    Tok::QuotedIdent(text) => SqlToken::Ident { text, quoted: true },
+                    Tok::Sym(s) => SqlToken::Sym(s),
+                    Tok::Eof => return None,
+                    _ => SqlToken::Literal,
+                };
+                Some((tok, t.start))
+            })
+            .collect(),
+    )
 }
 
 pub fn is_reserved(word: &str) -> bool {

@@ -8,6 +8,7 @@ use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
 use prost_types::value::Kind;
 use spanbolt_ddl::Schema;
 use spanbolt_proto::spanner as pb;
+use spanbolt_storage::expr::SchemaChange;
 use spanbolt_storage::{Code, DbState, Error, Result, Value};
 use spanbolt_txn::{Database, ReadOnlyTxn, ReadWriteTxn};
 
@@ -114,6 +115,218 @@ impl Engine {
         crate::graph::analyse(&cat.gsql, &storage, &|n| cat.view(n), &g.ddl).map(|_| ())
     }
 
+    /// Checks the view `name` of `schema` as `CREATE VIEW` does; `replacing` when `CREATE OR
+    /// REPLACE` changes an existing view. The error is the statement's.
+    pub fn validate_view(&self, schema: &Arc<Schema>, name: &str, replacing: bool) -> Result<()> {
+        let key = name.to_ascii_lowercase();
+        let Some(view) = schema.views.get(&key) else {
+            return Ok(());
+        };
+        // Analysed against the other objects, as the view itself is not defined yet.
+        let mut others = (**schema).clone();
+        others.views.remove(&key);
+        let others = Arc::new(others);
+        let storage = Arc::new(spanbolt_storage::Catalog::build(&others)?);
+        let cat = self.cache.get(
+            &others,
+            &storage,
+            self.opts.extra_features(),
+            self.opts.emulator_compat,
+        )?;
+        let compat = self.opts.emulator_compat;
+        let body = crate::view_check::body(&view.sql);
+        let Err(e) = crate::view_check::check(&cat, body, !compat) else {
+            return Ok(());
+        };
+        if e.code == spanbolt_storage::Code::Unimplemented {
+            return Err(e);
+        }
+        // Positions are in the statement each prints the view as: the emulator always quotes the
+        // name, Spanner only when it must.
+        let quoted = if compat {
+            format!("`{}`", view.name)
+        } else {
+            spanbolt_ddl::quote_ident(&view.name)
+        };
+        let prefix = format!("CREATE VIEW {quoted} SQL SECURITY INVOKER AS ");
+        let reason = shift_first_line(&e.message, prefix.chars().count());
+        let analysing = format!("Error analyzing the definition of view `{}`: ", view.name);
+        Err(match (replacing, compat) {
+            (false, _) => Error::invalid_argument(format!("{analysing}{reason}")),
+            (true, true) => Error::new(
+                spanbolt_storage::Code::FailedPrecondition,
+                format!(
+                    "Cannot replace VIEW `{}` because new definition is invalid with the \
+                     following diagnostic message: {reason}",
+                    view.name
+                ),
+            ),
+            // Spanner's message has the two escaped newlines in it.
+            (true, false) => Error::new(
+                spanbolt_storage::Code::FailedPrecondition,
+                format!(
+                    "Cannot replace VIEW `{}` because new definition is invalid with the \
+                     following diagnostic message:\\n\\n{analysing}{reason}",
+                    view.name
+                ),
+            ),
+        })
+    }
+
+    /// Rejects `change` (from `before` to `after`) when a property graph depends on it, with
+    /// Cloud Spanner's errors. The emulator has no such check and aborts on the next query of
+    /// the graph, so `--emulator-compat` rejects it too.
+    pub fn check_graph_dependents(
+        &self,
+        before: &Arc<Schema>,
+        after: &Arc<Schema>,
+        change: &SchemaChange,
+    ) -> Result<()> {
+        let storage = Arc::new(spanbolt_storage::Catalog::build(before)?);
+        let old = self.cache.get(
+            before,
+            &storage,
+            self.opts.extra_features(),
+            self.opts.emulator_compat,
+        )?;
+        // Graphs in the order the schema created them.
+        let graphs: Vec<&Arc<crate::graph::GraphDef>> = before
+            .opaque
+            .iter()
+            .filter(|o| o.kind == "PROPERTY GRAPH")
+            .filter_map(|o| old.graphs.get(&o.name.to_ascii_lowercase()))
+            .collect();
+        let reads = |g: &crate::graph::GraphDef, view: bool, name: &str| {
+            g.nodes.iter().chain(&g.edges).any(|e| {
+                matches!(e.input, crate::graph::ElementInput::View(_)) == view
+                    && e.table.eq_ignore_ascii_case(name)
+            })
+        };
+        let names = |gs: &[&Arc<crate::graph::GraphDef>], sep: &str, quote: bool| {
+            gs.iter()
+                .map(|g| {
+                    if quote {
+                        format!("`{}`", g.name)
+                    } else {
+                        g.name.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(sep)
+        };
+        let (table, view) = match change {
+            SchemaChange::DropTable(t) => {
+                let using: Vec<_> = graphs.into_iter().filter(|g| reads(g, false, t)).collect();
+                if using.is_empty() {
+                    return Ok(());
+                }
+                return Err(Error::failed_precondition(format!(
+                    "Cannot drop TABLE `{t}` on which there are dependent property graphs: {}.",
+                    names(&using, ", ", false)
+                )));
+            }
+            SchemaChange::DropView(v) => {
+                let using: Vec<_> = graphs.into_iter().filter(|g| reads(g, true, v)).collect();
+                if using.is_empty() {
+                    return Ok(());
+                }
+                return Err(Error::failed_precondition(format!(
+                    "Cannot drop VIEW `{v}` on which there are dependent property_graphs: {}.",
+                    names(&using, ", ", false)
+                )));
+            }
+            SchemaChange::DropColumn { table, column } => {
+                let using: Vec<_> = graphs
+                    .into_iter()
+                    .filter(|g| graph_reads_column(g, table, column))
+                    .collect();
+                if using.is_empty() {
+                    return Ok(());
+                }
+                return Err(Error::failed_precondition(format!(
+                    "Cannot drop column `{column}` from the table `{table}` because it is used by the property graph(s) {}.",
+                    names(&using, ", ", true)
+                )));
+            }
+            SchemaChange::AlterColumn { table, .. } => (Some(table), None),
+            SchemaChange::ReplaceView(v) => (None, Some(v)),
+        };
+        let using: Vec<_> = graphs
+            .into_iter()
+            .filter(|g| match (table, view) {
+                (Some(t), _) => reads(g, false, t),
+                (_, Some(v)) => reads(g, true, v),
+                _ => false,
+            })
+            .collect();
+        if using.is_empty() {
+            return Ok(());
+        }
+        // Each graph is analysed again against the changed schema without any graph.
+        let mut others = (**after).clone();
+        others.opaque.retain(|o| o.kind != "PROPERTY GRAPH");
+        let others = Arc::new(others);
+        let storage = Arc::new(spanbolt_storage::Catalog::build(&others)?);
+        let cat = self.cache.get(
+            &others,
+            &storage,
+            self.opts.extra_features(),
+            self.opts.emulator_compat,
+        )?;
+        for g in using {
+            let Some(ddl) = before
+                .opaque
+                .iter()
+                .find(|o| o.kind == "PROPERTY GRAPH" && o.name == g.name)
+                .map(|o| o.ddl.as_str())
+            else {
+                continue;
+            };
+            let analysed = crate::graph::analyse(&cat.gsql, &storage, &|n| cat.view(n), ddl);
+            let message = match analysed {
+                Err(e) => {
+                    let message = format!(
+                        "Error analyzing the definition of graph `{}`: {}",
+                        g.name, e.message
+                    );
+                    match view {
+                        Some(_) => message,
+                        // The emulator accepts a column change that breaks a graph's key
+                        // references (it fails on the graph's next use).
+                        None if self.opts.emulator_compat => continue,
+                        None => return Err(Error::new(e.code, message)),
+                    }
+                }
+                Ok(new) => {
+                    let Some((p, ty)) = g.properties.iter().find_map(|p| {
+                        let q = new.property(&p.name)?;
+                        (q.ty != p.ty).then_some((p, &q.ty))
+                    }) else {
+                        continue;
+                    };
+                    if view.is_none() {
+                        // Cloud Spanner answers a column type change that a graph property
+                        // can't follow with an empty message.
+                        return Err(Error::invalid_argument(String::new()));
+                    }
+                    format!(
+                        "The schema change implicitly changes the type of the property `{}` for property graph `{}` from `{}` to `{}`.\\nTip: Give explicit type to the property definition before making this change by adding casts/conversions to the intended final output type.",
+                        p.name,
+                        g.name,
+                        types::gsql_name(&p.ty),
+                        types::gsql_name(ty)
+                    )
+                }
+            };
+            let v = view.map(String::as_str).unwrap_or_default();
+            return Err(Error::failed_precondition(format!(
+                "Cannot replace VIEW `{v}`. The new definition causes the definition of PROPERTY GRAPH `{}` to become invalid with the following diagnostic message:\\n\\n{message}",
+                g.name
+            )));
+        }
+        Ok(())
+    }
+
     /// GoogleSQL catalogs this engine holds (pruned when the next catalog is looked up).
     pub fn cached_catalogs(&self) -> usize {
         self.cache.len()
@@ -168,7 +381,7 @@ impl Engine {
             // spanbolt's follow the emulator's format, so there is nothing faithful to print:
             // TOKEN, TOKENIZE_BOOL, TOKENIZE_NUMBER and TOKENIZE_JSON lists hold no values here,
             // the NUMBER range tree and the JSON path encoding are undocumented, and prod's
-            // fulltext tokens differ (it joins runs of single letters: "b c" is one token, bc).
+            // fulltext tokens differ (it keeps `x_y` and `x&y` whole and adds `x@y` next to `x`).
             // Kept UNIMPLEMENTED on purpose (#65).
             if !self.opts.emulator_compat
                 && e.code == spanbolt_storage::Code::InvalidArgument
@@ -231,8 +444,10 @@ impl Engine {
                 let p = planner.scan(scan, &Scope::TOP)?;
                 planner.finish_search()?;
                 if !self.opts.emulator_compat {
-                    crate::struct_shape::check(&q)?;
+                    // Spanner reports a NULL-able or constructed ARRAY<STRUCT> result before a
+                    // field read of a returned struct.
                     crate::struct_result::check(&q)?;
+                    crate::struct_shape::check(&q)?;
                 }
                 let positions = positions(&p.layout, &ids)?;
                 Ok(Prepared {
@@ -718,4 +933,55 @@ fn check_no_struct_columns(fields: &[(String, Type)]) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Moves a trailing `[at 1:C]` position right by `by` columns; other lines keep theirs.
+fn shift_first_line(msg: &str, by: usize) -> String {
+    if let Some(i) = msg.rfind("[at 1:")
+        && let Some(end) = msg[i..].find(']')
+        && let Ok(col) = msg[i + 6..i + end].parse::<usize>()
+    {
+        return format!("{}[at 1:{}]{}", &msg[..i], col + by, &msg[i + end + 1..]);
+    }
+    msg.to_string()
+}
+
+/// Whether an element table of `g` over `table` reads `column`: as a key, an edge's source or
+/// destination column, a node column an edge references, or in a property definition.
+fn graph_reads_column(g: &crate::graph::GraphDef, table: &str, column: &str) -> bool {
+    let over = |e: &crate::graph::ElementTable| {
+        matches!(e.input, crate::graph::ElementInput::Table(_))
+            && e.table.eq_ignore_ascii_case(table)
+    };
+    let named = |e: &crate::graph::ElementTable, cols: &[usize]| {
+        cols.iter().any(|&i| {
+            e.columns
+                .get(i)
+                .is_some_and(|c| c.eq_ignore_ascii_case(column))
+        })
+    };
+    let elements = g.nodes.iter().chain(&g.edges);
+    for e in elements.filter(|e| over(e)) {
+        let refs = [&e.source, &e.destination];
+        if named(e, &e.key)
+            || refs
+                .iter()
+                .flat_map(|r| r.iter())
+                .any(|r| named(e, &r.edge_columns))
+            || e.properties.iter().any(|p| {
+                spanbolt_storage::expr::column_references(&p.sql)
+                    .iter()
+                    .any(|w| w.eq_ignore_ascii_case(column))
+            })
+        {
+            return true;
+        }
+    }
+    // Node columns edges reference.
+    g.edges.iter().any(|e| {
+        [&e.source, &e.destination]
+            .into_iter()
+            .flatten()
+            .any(|r| over(&g.nodes[r.node]) && named(&g.nodes[r.node], &r.node_columns))
+    })
 }

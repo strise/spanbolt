@@ -1,0 +1,348 @@
+# Runs of single letters in fulltext search (#86). Cloud Spanner's TOKENIZE_FULLTEXT joins runs
+# of single ASCII letters into one token (`x y z w` is xyzw, `b c` is bc), reads SEARCH queries
+# the same way (`'x y'` looks for xy) and shows the joined text in SNIPPET; the emulator keeps
+# every letter a token. The rule is `joined_letters` in crates/sql/src/search/tokens.rs; the
+# other files are search_letters_separators.case and search_letters_case.case.
+tags: sql search
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+insert T cols=Id,Body:
+  [1, "x y z w"]
+  [2, "q b c"]
+  [3, "hello b c world"]
+  [4, "x yz w"]
+  [5, "x, y z"]
+  [6, "x-y z"]
+  [7, "1 2 3"]
+  [8, "x 1 y"]
+  [9, "x"]
+  [10, "hello x world"]
+  [11, "X Y"]
+  [12, "é f g"]
+  [13, "x  y\nz"]
+  [14, "ab c d"]
+  [15, "x y z w, then more"]
+  [16, "b. c"]
+  [17, "hello q"]
+  [18, "q hello"]
+  [19, "x y z w v u t s r"]
+  [20, "b c d e f g h ij k l"]
+
+case tokens
+query:
+  SELECT Id, DEBUG_TOKENLIST(Tok) AS t FROM T ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:12]
+expect@spanner:
+  columns: Id INT64, t STRING
+  ["1","xyzw(boundary, end_boundary)"]
+  ["2","qbc(boundary, end_boundary)"]
+  ["3","hello(boundary), bc, world(end_boundary)"]
+  ["4","x(boundary), yz, w(end_boundary)"]
+  ["5","x(boundary), yz(end_boundary)"]
+  ["6","xy(boundary), z(end_boundary)"]
+  ["7","1(boundary), 2, 3(end_boundary)"]
+  ["8","x(boundary), 1, y(end_boundary)"]
+  ["9","x(boundary, end_boundary)"]
+  ["10","hello(boundary), x, world(end_boundary)"]
+  ["11","xy(boundary, end_boundary)"]
+  ["12","é(boundary), fg(end_boundary)"]
+  ["13","xy(boundary), z(end_boundary)"]
+  ["14","ab(boundary), cd(end_boundary)"]
+  ["15","xyzw(boundary), then, more(end_boundary)"]
+  ["16","b(boundary), c(end_boundary)"]
+  ["17","hello(boundary), q(end_boundary)"]
+  ["18","q(boundary), hello(end_boundary)"]
+  ["19","xyzwvutsr(boundary, end_boundary)"]
+  ["20","bcdefgh(boundary), ij, kl(end_boundary)"]
+
+case snip
+query:
+  SELECT Id, SNIPPET(Body, 'x') AS sx, SNIPPET(Body, 'xyzw') AS sxyzw, SNIPPET(Body, 'bc') AS sbc, SNIPPET(Body, 'zzz') AS snone FROM T ORDER BY Id
+expect:
+  columns: Id INT64, sx JSON, sxyzw JSON, sbc JSON, snone JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y z w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w\"}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q b c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q b c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q b c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q b c\"}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello b c world\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello b c world\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello b c world\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello b c world\"}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x yz w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz w\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz w\"}]}"]
+  ["5","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x, y z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x, y z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x, y z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x, y z\"}]}"]
+  ["6","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x-y z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x-y z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x-y z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x-y z\"}]}"]
+  ["7","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\"}]}"]
+  ["8","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x 1 y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 1 y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 1 y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 1 y\"}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\"}]}"]
+  ["10","{\"snippets\":[{\"highlights\":[{\"end_position\":8,\"start_position\":7}],\"snippet\":\"hello x world\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello x world\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello x world\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello x world\"}]}"]
+  ["11","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"X Y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"X Y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"X Y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"X Y\"}]}"]
+  ["12","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é f g\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é f g\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é f g\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é f g\"}]}"]
+  ["13","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x  y\\nz\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x  y\\nz\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x  y\\nz\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x  y\\nz\"}]}"]
+  ["14","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab c d\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab c d\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab c d\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab c d\"}]}"]
+  ["15","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y z w, then more\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w, then more\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w, then more\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w, then more\"}]}"]
+  ["16","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\"}]}"]
+  ["17","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\"}]}"]
+  ["18","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\"}]}"]
+  ["19","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x y z w v u t s r\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w v u t s r\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w v u t s r\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y z w v u t s r\"}]}"]
+  ["20","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b c d e f g h ij k l\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b c d e f g h ij k l\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b c d e f g h ij k l\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b c d e f g h ij k l\"}]}"]
+expect@spanner:
+  columns: Id INT64, sx JSON, sxyzw JSON, sbc JSON, snone JSON
+  ["1","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzw\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":5}],\"snippet\":\"xyzw\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzw\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzw\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"qbc\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"qbc\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"qbc\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"qbc\",\"source_begin\":1,\"source_end\":4}]}"]
+  ["3","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello bc world\",\"source_begin\":1,\"source_end\":16}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello bc world\",\"source_begin\":1,\"source_end\":16}]}","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":9}],\"snippet\":\"hello bc world\",\"source_begin\":1,\"source_end\":16}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello bc world\",\"source_begin\":1,\"source_end\":16}]}"]
+  ["4","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x yz w\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz w\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz w\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x yz w\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["5","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x, yz\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x, yz\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x, yz\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x, yz\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["6","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["7","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"1 2 3\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["8","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x 1 y\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 1 y\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 1 y\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 1 y\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["9","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":2}],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\",\"source_begin\":1,\"source_end\":2}]}"]
+  ["10","{\"snippets\":[{\"highlights\":[{\"begin\":7,\"end\":8}],\"snippet\":\"hello x world\",\"source_begin\":1,\"source_end\":14}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello x world\",\"source_begin\":1,\"source_end\":14}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello x world\",\"source_begin\":1,\"source_end\":14}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello x world\",\"source_begin\":1,\"source_end\":14}]}"]
+  ["11","{\"snippets\":[{\"highlights\":[],\"snippet\":\"XY\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"XY\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"XY\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"XY\",\"source_begin\":1,\"source_end\":3}]}"]
+  ["12","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é fg\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é fg\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é fg\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"é fg\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["13","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":7}]}"]
+  ["14","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab cd\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab cd\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab cd\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab cd\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["15","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzw, then more\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":5}],\"snippet\":\"xyzw, then more\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzw, then more\",\"source_begin\":1,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzw, then more\",\"source_begin\":1,\"source_end\":19}]}"]
+  ["16","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"b. c\",\"source_begin\":1,\"source_end\":5}]}"]
+  ["17","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"hello q\",\"source_begin\":1,\"source_end\":8}]}"]
+  ["18","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"q hello\",\"source_begin\":1,\"source_end\":8}]}"]
+  ["19","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzwvutsr\",\"source_begin\":1,\"source_end\":10}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzwvutsr\",\"source_begin\":1,\"source_end\":10}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzwvutsr\",\"source_begin\":1,\"source_end\":10}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyzwvutsr\",\"source_begin\":1,\"source_end\":10}]}"]
+  ["20","{\"snippets\":[{\"highlights\":[],\"snippet\":\"bcdefgh ij kl\",\"source_begin\":1,\"source_end\":20}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"bcdefgh ij kl\",\"source_begin\":1,\"source_end\":20}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"bcdefgh ij kl\",\"source_begin\":1,\"source_end\":20}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"bcdefgh ij kl\",\"source_begin\":1,\"source_end\":20}]}"]
+
+case search
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'x') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["13"]
+  ["15"]
+  ["19"]
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+  ["5"]
+  ["8"]
+  ["9"]
+  ["10"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'y') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["5"]
+  ["6"]
+  ["8"]
+  ["11"]
+  ["13"]
+  ["15"]
+  ["19"]
+expect@spanner:
+  columns: Id INT64
+  ["8"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'w') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+  ["15"]
+  ["19"]
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xy') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["6"]
+  ["11"]
+  ["13"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xyzw') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["15"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'yz') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+  ["5"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'bc') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'qbc') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'b') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["16"]
+  ["20"]
+expect@spanner:
+  columns: Id INT64
+  ["16"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '"x y"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["13"]
+  ["15"]
+  ["19"]
+expect@spanner:
+  columns: Id INT64
+  ["6"]
+  ["11"]
+  ["13"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'x y') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["5"]
+  ["6"]
+  ["8"]
+  ["11"]
+  ["13"]
+  ["15"]
+  ["19"]
+expect@spanner:
+  columns: Id INT64
+  ["6"]
+  ["11"]
+  ["13"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '12') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '123') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, '1') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+  ["8"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'x1y') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'fg') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["12"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'éfg') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'cd') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["14"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'abcd') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'q') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["17"]
+  ["18"]
+expect@spanner:
+  columns: Id INT64
+  ["17"]
+  ["18"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xyzwvutsr') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["19"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'bcdefgh') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["20"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'ij') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["20"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'ijkl') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'hijkl') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'xyzwvutsr OR ijkl') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["19"]

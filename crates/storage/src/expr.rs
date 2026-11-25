@@ -32,6 +32,17 @@ pub trait ExprEvaluator: Send + Sync {
         Ok(())
     }
 
+    /// Checks the view `name` of `schema` when DDL creates or replaces it; `replacing` when it
+    /// existed before.
+    fn validate_view(
+        &self,
+        _schema: &Arc<spanbolt_ddl::Schema>,
+        _name: &str,
+        _replacing: bool,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Checks the property graph `name` of `schema` when DDL creates or replaces it.
     fn validate_property_graph(
         &self,
@@ -40,6 +51,27 @@ pub trait ExprEvaluator: Send + Sync {
     ) -> Result<()> {
         Ok(())
     }
+
+    /// Rejects `change`, which took `before` to `after`, when a property graph of `before` uses
+    /// what it drops or can no longer be defined after it, with Cloud Spanner's error.
+    fn check_graph_dependents(
+        &self,
+        _before: &Arc<spanbolt_ddl::Schema>,
+        _after: &Arc<spanbolt_ddl::Schema>,
+        _change: &SchemaChange,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// A schema change property graphs may depend on, with the names the schema spells them with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SchemaChange {
+    DropTable(String),
+    DropView(String),
+    ReplaceView(String),
+    DropColumn { table: String, column: String },
+    AlterColumn { table: String, column: String },
 }
 
 /// Where a schema expression appears.
@@ -138,6 +170,15 @@ pub fn identifiers(expr: &str) -> Vec<String> {
     }
 }
 
+/// The identifiers `expr` may use as column names, lowercased: [`identifiers`] without function
+/// names, so a call to `UPPER` doesn't read a column `Upper` (the rule the DDL cycle check uses).
+pub fn column_references(expr: &str) -> Vec<String> {
+    match spanbolt_ddl::column_references(expr) {
+        Some(ids) => ids.into_iter().map(|w| w.to_ascii_lowercase()).collect(),
+        None => identifiers(expr),
+    }
+}
+
 /// Whether `expr` refers to the identifier `name` (case-insensitive; see [`identifiers`]).
 pub fn mentions(expr: &str, name: &str) -> bool {
     identifiers(expr)
@@ -175,7 +216,7 @@ pub fn check_generated_key_inputs(
         if kind == WriteKind::Update && columns.contains(&k) {
             continue;
         }
-        let ids = identifiers(e);
+        let ids = column_references(e);
         let unset = tm.columns.iter().enumerate().any(|(c, cm)| {
             ids.iter().any(|w| w.eq_ignore_ascii_case(&cm.name))
                 && !columns.contains(&c)

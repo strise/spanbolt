@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use spanbolt_ddl::ColumnType;
-use spanbolt_storage::expr::{ExprEvaluator, ExprKind};
+use spanbolt_storage::expr::{ExprEvaluator, ExprKind, SchemaChange};
 use spanbolt_storage::{DbState, Error, Result, TableMeta, Value};
 
 use crate::catalog::SqlCatalog;
@@ -139,12 +139,30 @@ fn is_string_literal(e: &str) -> bool {
 }
 
 impl ExprEvaluator for SchemaExprs {
+    fn validate_view(
+        &self,
+        schema: &Arc<spanbolt_ddl::Schema>,
+        name: &str,
+        replacing: bool,
+    ) -> Result<()> {
+        self.engine.validate_view(schema, name, replacing)
+    }
+
     fn validate_property_graph(
         &self,
         schema: &Arc<spanbolt_ddl::Schema>,
         name: &str,
     ) -> Result<()> {
         self.engine.validate_property_graph(schema, name)
+    }
+
+    fn check_graph_dependents(
+        &self,
+        before: &Arc<spanbolt_ddl::Schema>,
+        after: &Arc<spanbolt_ddl::Schema>,
+        change: &SchemaChange,
+    ) -> Result<()> {
+        self.engine.check_graph_dependents(before, after, change)
     }
 
     fn validate(&self, expr: &str, table: &TableMeta, kind: &ExprKind) -> Result<()> {

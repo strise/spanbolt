@@ -34,6 +34,7 @@ mod time;
 pub mod types;
 mod validate;
 mod value_ops;
+mod view_check;
 
 pub use engine::{Engine, RowSink, Txn};
 pub use plan::Options;

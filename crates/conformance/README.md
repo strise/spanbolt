@@ -109,6 +109,7 @@ expect:
 | `tags: a b` | Extra tags (file-level tags are inherited; the top directory under `cases/` is always a tag). |
 | `schema:` | DDL statements (separated by `;` at line end) passed to `CreateDatabase`. A case's own `schema:` replaces the file's. |
 | `skip: reason` | Do not run (reported as skipped). |
+| `skip@emulator: reason` | Run only against Cloud Spanner (`record`/`check --oracle spanner`), for statements the emulator can't answer (it aborts on them); its steps have `expect@spanner:` blocks only. |
 
 ### Steps
 

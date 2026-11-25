@@ -10,7 +10,8 @@ use super::rquery::{self, Node};
 use super::score::{self, ScoreQuery};
 use super::tokens::{
     self, FULLTEXT, GAP, NGRAMS, PHRASE, SUBSTRING, VALUE_PREFIX, VALUE_SUFFIX, WORD_PREFIX,
-    WORD_SUFFIX, arg, decode, int_arg, is_signature, lower, split, str_arg,
+    WORD_SUFFIX, arg, decode, int_arg, is_signature, join_letters, joined_letters, lower, split,
+    str_arg,
 };
 
 const DEFAULT_MAX_ALLOWED_GAP: i64 = 5;
@@ -67,8 +68,9 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
     Ok((map, source_null))
 }
 
-/// `GetNormalizedTerms`.
-fn normalized_terms(q: &str) -> Vec<Vec<u8>> {
+/// `GetNormalizedTerms`. Prod joins runs of single letters first, like its tokenizer.
+fn normalized_terms(q: &str, emulator: bool) -> Vec<Vec<u8>> {
+    let q = if emulator { q.into() } else { join_letters(q) };
     split(q.as_bytes())
         .map(|t| match std::str::from_utf8(t) {
             Ok(t) => lower(t).into_bytes(),
@@ -174,7 +176,7 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
         parse,
         simple,
         terms,
-        words: normalized_terms(q),
+        words: normalized_terms(q, emulator),
         score,
     });
     if let Ok(mut c) = QUERIES.lock() {
@@ -562,13 +564,13 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
     }
     match dialect(args)? {
         Dialect::Words => {
-            let terms = normalized_terms(q);
+            let terms = normalized_terms(q, emulator);
             Ok(Value::Bool(
                 !terms.is_empty() && terms.iter().all(|t| map.contains_key(t.as_slice())),
             ))
         }
         Dialect::WordsPhrase => {
-            let terms = normalized_terms(q);
+            let terms = normalized_terms(q, emulator);
             let toks = toks.unwrap_or_default();
             Ok(Value::Bool(
                 !terms.is_empty()
@@ -620,7 +622,7 @@ pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
     if source_null {
         return Ok(Value::Float64(0.0));
     }
-    let terms = normalized_terms(q);
+    let terms = normalized_terms(q, emulator);
     let score = if dialect(args)? == Dialect::WordsPhrase {
         let toks = toks.unwrap_or_default();
         if terms.is_empty() || toks.len() < terms.len() {
@@ -646,7 +648,10 @@ fn score_prod(args: &[Value]) -> Result<Value> {
         let Value::String(q) = &args[1] else {
             return None;
         };
-        let terms: Vec<Node> = normalized_terms(q).into_iter().map(Node::Term).collect();
+        let terms: Vec<Node> = normalized_terms(q, false)
+            .into_iter()
+            .map(Node::Term)
+            .collect();
         (!terms.is_empty()).then(|| {
             ScoreQuery::new(&if phrase {
                 Node::Phrase(terms)
@@ -1054,7 +1059,7 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         Ok(v)
     };
     let width = int(4, 160, "max_snippet_width")? as usize;
-    int(5, 3, "max_snippets")?;
+    let max_snippets = int(5, 3, "max_snippets")? as usize;
     // The text the snippet is cut from, and each character's index in the source.
     let mut text = String::with_capacity(target.len());
     let mut source: Vec<usize> = Vec::with_capacity(target.len());
@@ -1069,8 +1074,25 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
             source.push(i);
         }
     }
-    // Spanner trims the text and collapses each run of whitespace to one space; the source
-    // offsets still point into the original value.
+    // Spanner shows runs of single letters joined, as its tokenizer reads them (`x-y z` is
+    // `xy z`), trims the text and collapses each run of whitespace to one space; the source
+    // offsets still point into the original value, except that a joined token's letters count
+    // from its first letter (`x y z w` ends at source 5).
+    let chars: Vec<char> = text.chars().collect();
+    let drop = joined_letters(&chars);
+    let mut joined_text = String::with_capacity(text.len());
+    let mut joined_source = Vec::with_capacity(source.len());
+    for (i, (&c, &s)) in chars.iter().zip(&source).enumerate() {
+        if drop[i] {
+            continue;
+        }
+        joined_text.push(c);
+        joined_source.push(match joined_source.last() {
+            Some(&prev) if i > 0 && drop[i - 1] => prev + 1,
+            _ => s,
+        });
+    }
+    let (text, source) = (joined_text, joined_source);
     let (text, source) = collapse_whitespace(&text, &source);
     if text.is_empty() {
         return Ok(Value::Json(Arc::from("{\"snippets\":[]}")));
@@ -1083,6 +1105,9 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
         char_at[b] = n;
     }
     char_at[text.len()] = chars.len();
+    // Runs of single letters are one term (`x y` highlights xy), so a negated run (`-x y`)
+    // highlights nothing.
+    let query = without_negated(&join_letters(query));
     let terms: Vec<String> = split(query.as_bytes())
         .map(|t| regex::escape(&String::from_utf8_lossy(t)))
         .collect();
@@ -1095,47 +1120,92 @@ fn snippet_prod(args: &[Value]) -> Result<Value> {
             .map(|m| (char_at[m.start()], char_at[m.end()]))
             .collect();
     }
-    let (mut begin, mut end) = (0, chars.len());
-    if end >= width {
-        match width_cut(&chars, matches.first().copied(), width) {
-            Some(span) => (begin, end) = span,
-            None => return Ok(Value::Json(Arc::from("{\"snippets\":[]}"))),
-        }
-    }
-    while end > begin && !alnum(end - 1) {
-        end -= 1;
-    }
-    let snip: String = chars[begin..end].iter().collect();
-    let highlights: Vec<String> = matches
-        .iter()
-        .filter(|(s, e)| *s >= begin && *e <= end)
-        .map(|(s, e)| format!("{{\"begin\":{},\"end\":{}}}", s - begin + 1, e - begin + 1))
-        .collect();
-    let source_begin = source.get(begin).map_or(1, |i| i + 1);
-    let source_end = if end > begin {
-        source[end - 1] + 2
+    let spans = if chars.len() < width {
+        vec![(0, chars.len())]
     } else {
-        source_begin
+        // The first match of each distinct term.
+        let mut seen: HashSet<String> = HashSet::new();
+        let firsts: Vec<(usize, usize)> = matches
+            .iter()
+            .filter(|(b, e)| seen.insert(chars[*b..*e].iter().collect::<String>().to_lowercase()))
+            .copied()
+            .collect();
+        snippet_spans(&chars, &firsts, width, max_snippets)
     };
-    let snip = serde_json::to_string(&snip).map_err(|e| Error::internal(e.to_string()))?;
+    let mut snippets = Vec::with_capacity(spans.len());
+    for (begin, mut end) in spans {
+        while end > begin && !alnum(end - 1) {
+            end -= 1;
+        }
+        let snip: String = chars[begin..end].iter().collect();
+        let highlights: Vec<String> = matches
+            .iter()
+            .filter(|(s, e)| *s >= begin && *e <= end)
+            .map(|(s, e)| format!("{{\"begin\":{},\"end\":{}}}", s - begin + 1, e - begin + 1))
+            .collect();
+        let source_begin = source.get(begin).map_or(1, |i| i + 1);
+        // Prod ends the snippet at the source position of the next character, so a joined token
+        // at the end of the text ends where its letters, counted from its first, end.
+        let source_end = if end > begin {
+            source.get(end).map_or(source[end - 1] + 2, |s| s + 1)
+        } else {
+            source_begin
+        };
+        let snip = serde_json::to_string(&snip).map_err(|e| Error::internal(e.to_string()))?;
+        snippets.push(format!(
+            "{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}",
+            highlights.join(",")
+        ));
+    }
     Ok(Value::Json(Arc::from(format!(
-        "{{\"snippets\":[{{\"highlights\":[{}],\"snippet\":{snip},\"source_begin\":{source_begin},\"source_end\":{source_end}}}]}}",
-        highlights.join(",")
+        "{{\"snippets\":[{}]}}",
+        snippets.join(",")
     ))))
 }
 
-/// The character span of a snippet cut from text wider than `width`. Cloud Spanner keeps words
-/// on both sides of the first match (of the first word without one): this grows the snippet a
-/// word at a time, left then right, while it stays within `width - 2` characters, and stops
-/// growing a side at the first word that doesn't fit. `None` when the match alone doesn't fit
-/// (prod returns no snippet). Fitted to recordings (`snippet_whitespace.case`,
-/// `snippet_width.case`): prod's rule isn't public, and near the end of the text it keeps more
-/// than this does.
-fn width_cut(
+/// `query` without its negated words (`-x`, `-"x y"`), which SNIPPET doesn't highlight.
+fn without_negated(query: &str) -> String {
+    let mut out = String::with_capacity(query.len());
+    let mut chars = query.chars().peekable();
+    let mut word_start = true;
+    while let Some(c) = chars.next() {
+        if word_start && c == '-' {
+            if chars.peek() == Some(&'"') {
+                chars.next();
+                for c in chars.by_ref() {
+                    if c == '"' {
+                        break;
+                    }
+                }
+            } else {
+                while chars.next_if(|c| !c.is_whitespace()).is_some() {}
+            }
+            continue;
+        }
+        word_start = c.is_whitespace();
+        out.push(c);
+    }
+    out
+}
+
+/// The character spans of the snippets cut from text wider than `width`, given the first match
+/// of each distinct query term (in text order). Fitted to recordings (`snippet_whitespace.case`,
+/// `snippet_width.case`, `snippet_terms.case`); prod's rule isn't public.
+///
+/// One snippet keeps words on both sides of the matches (of the first word without one): it grows
+/// a word at a time, left then right, while it stays within `width - 2` characters, and stops
+/// growing a side at the first word that doesn't fit. When the matches don't fit in one snippet,
+/// prod returns one per term, up to `max_snippets`: terms next to each other stay together, and
+/// `k` snippets grow side by side within `width - k - 1` characters in all, dropping the last
+/// term until they fit. A repeated term never gets a second snippet. No snippet when the first
+/// match alone doesn't fit. Near the end of the text prod keeps more than this does, and it
+/// sometimes picks a different term or split.
+fn snippet_spans(
     chars: &[char],
-    first_match: Option<(usize, usize)>,
+    firsts: &[(usize, usize)],
     width: usize,
-) -> Option<(usize, usize)> {
+    max_snippets: usize,
+) -> Vec<(usize, usize)> {
     let mut words: Vec<(usize, usize)> = Vec::new();
     let mut start = None;
     for (i, c) in chars.iter().enumerate() {
@@ -1151,29 +1221,72 @@ fn width_cut(
     if let Some(s) = start {
         words.push((s, chars.len()));
     }
-    let limit = width.saturating_sub(2);
-    let (mut begin, mut end) = first_match.or_else(|| words.first().copied())?;
-    if end - begin > limit {
+    let (Some(&first), Some(&last)) = (firsts.first(), firsts.last()) else {
+        return words
+            .first()
+            .and_then(|&w| grow_snippets(&words, vec![w], width.saturating_sub(2)))
+            .unwrap_or_default();
+    };
+    if let Some(one) = grow_snippets(&words, vec![(first.0, last.1)], width.saturating_sub(2)) {
+        return one;
+    }
+    // Terms with no word between them stay in one snippet.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
+    for &(b, e) in firsts {
+        match groups.last_mut() {
+            Some(g) if !words.iter().any(|w| w.0 >= g.1 && w.1 <= b) => g.1 = e,
+            _ => groups.push((b, e)),
+        }
+    }
+    (1..=groups.len().min(max_snippets))
+        .rev()
+        .find_map(|k| grow_snippets(&words, groups[..k].to_vec(), width.saturating_sub(k + 1)))
+        .unwrap_or_default()
+}
+
+/// Grows `spans` a word at a time, each left then right in turn, while their total length stays
+/// within `limit` and they don't run into each other. `None` when they don't fit to begin with.
+fn grow_snippets(
+    words: &[(usize, usize)],
+    mut spans: Vec<(usize, usize)>,
+    limit: usize,
+) -> Option<Vec<(usize, usize)>> {
+    let mut total: usize = spans.iter().map(|(b, e)| e - b).sum();
+    if total > limit {
         return None;
     }
-    let (mut left, mut right) = (true, true);
-    while left || right {
-        if left {
-            // The last word that ends at or before `begin`.
-            match words.partition_point(|w| w.1 <= begin).checked_sub(1) {
-                Some(i) if end - words[i].0 <= limit => begin = words[i].0,
-                _ => left = false,
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for i in 0..spans.len() {
+            let (b, e) = spans[i];
+            let floor = if i == 0 { 0 } else { spans[i - 1].1 };
+            // The last word that ends at or before `b`, after the previous snippet.
+            if let Some(w) = words
+                .partition_point(|w| w.1 <= b)
+                .checked_sub(1)
+                .map(|j| words[j])
+                && w.0 >= floor
+                && total + (b - w.0) <= limit
+            {
+                total += b - w.0;
+                spans[i].0 = w.0;
+                grew = true;
             }
-        }
-        if right {
-            // The first word that starts at or after `end`.
-            match words.get(words.partition_point(|w| w.0 < end)) {
-                Some(w) if w.1 - begin <= limit => end = w.1,
-                _ => right = false,
+            let (b, e) = (spans[i].0, e);
+            let ceil = spans.get(i + 1).map_or(usize::MAX, |s| s.0);
+            // The first word that starts at or after `e`, before the next snippet.
+            if let Some(&w) = words.get(words.partition_point(|w| w.0 < e))
+                && w.1 <= ceil
+                && total + (w.1 - e) <= limit
+            {
+                total += w.1 - e;
+                spans[i] = (b, w.1);
+                grew = true;
             }
         }
     }
-    Some((begin, end))
+    Some(spans)
 }
 
 /// `text` trimmed, with each run of whitespace replaced by one space, and the source index of
@@ -1300,7 +1413,7 @@ mod tests {
     }
 
     fn ft(x: &str) -> Value {
-        tokens::tokenize_fulltext(&[s(x)]).unwrap()
+        tokens::tokenize_fulltext(&[s(x)], true).unwrap()
     }
 
     fn hit(doc: &str, q: &str) -> bool {
@@ -1323,8 +1436,9 @@ mod tests {
         assert!(!hit(d, "spanner AROUND(0) runs"));
         assert!(hit(d, "runs AROUND(2) spanner"));
         assert!(!hit(d, ""));
-        let a = tokens::tokenize_fulltext(&[Value::Array(Arc::from(vec![s("a b"), s("c d")]))])
-            .unwrap();
+        let a =
+            tokens::tokenize_fulltext(&[Value::Array(Arc::from(vec![s("a b"), s("c d")]))], true)
+                .unwrap();
         assert_eq!(
             search(&[a.clone(), s("\"a b\"")], true).unwrap(),
             Value::Bool(true)
@@ -1334,7 +1448,7 @@ mod tests {
             Value::Bool(false)
         );
         assert_eq!(search(&[ft("x"), Value::Null], true).unwrap(), Value::Null);
-        let n = tokens::tokenize_fulltext(&[Value::Null]).unwrap();
+        let n = tokens::tokenize_fulltext(&[Value::Null], true).unwrap();
         assert_eq!(search(&[n, s("x")], true).unwrap(), Value::Null);
     }
 
@@ -1356,6 +1470,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(v, Value::Float64(3.0));
+    }
+
+    #[test]
+    fn snippet_prod_joins_single_letters() {
+        let snip = |t: &str, q: &str| match snippet(&[s(t), s(q)], false).unwrap() {
+            Value::Json(j) => j.to_string(),
+            v => panic!("{v:?}"),
+        };
+        // Recorded from Cloud Spanner (`search_letters.case`, `snippet_whitespace.case`).
+        assert_eq!(
+            snip("x y z w", "x y z w"),
+            r#"{"snippets":[{"highlights":[{"begin":1,"end":5}],"snippet":"xyzw","source_begin":1,"source_end":5}]}"#
+        );
+        assert_eq!(
+            snip("x y!", "x"),
+            r#"{"snippets":[{"highlights":[],"snippet":"xy","source_begin":1,"source_end":4}]}"#
+        );
+        assert_eq!(
+            snip("x--y z", "x"),
+            r#"{"snippets":[{"highlights":[{"begin":1,"end":2}],"snippet":"x--yz","source_begin":1,"source_end":6}]}"#
+        );
+        assert_eq!(
+            snip("xy x y xyz", "-x y"),
+            r#"{"snippets":[{"highlights":[],"snippet":"xy xy xyz","source_begin":1,"source_end":11}]}"#
+        );
     }
 
     #[test]

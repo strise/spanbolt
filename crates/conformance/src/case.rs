@@ -604,13 +604,22 @@ fn parse_param(line: &str) -> Result<Param, String> {
         .split_once(char::is_whitespace)
         .ok_or_else(|| format!("param needs a type: `{line}`"))?;
     crate::value::parse_type(type_text.trim())?;
-    let value: Json =
-        serde_json::from_str(value.trim()).map_err(|e| format!("param value `{value}`: {e}"))?;
+    let value = deep_json(value.trim()).map_err(|e| format!("param value `{value}`: {e}"))?;
     Ok(Param {
         name: name.to_string(),
         type_text: type_text.trim().to_string(),
         value,
     })
+}
+
+/// Parses a row or a parameter value. serde_json stops at 128 nested arrays; a value of a STRUCT
+/// nested deeper (`struct_depth.case`) is one more for each level.
+fn deep_json(text: &str) -> serde_json::Result<Json> {
+    let mut de = serde_json::Deserializer::from_str(text);
+    de.disable_recursion_limit();
+    let value = serde::Deserialize::deserialize(&mut de)?;
+    de.end()?;
+    Ok(value)
 }
 
 fn parse_expect(body: &[String]) -> Result<Observation, String> {
@@ -631,7 +640,7 @@ fn parse_expect(body: &[String]) -> Result<Observation, String> {
             continue;
         }
         if line.starts_with('[') {
-            let row: Json = serde_json::from_str(line).map_err(|e| format!("row `{line}`: {e}"))?;
+            let row = deep_json(line).map_err(|e| format!("row `{line}`: {e}"))?;
             obs.rows.push(row);
             continue;
         }

@@ -37,22 +37,43 @@ fn is_stopword(t: &[u8]) -> bool {
     STOPWORDS.iter().any(|s| s.as_bytes() == t)
 }
 
-fn positive_terms(n: &Node, out: &mut bool) {
+/// Whether the query has a term that is not a stopword, negated or not.
+fn has_content(n: &Node) -> bool {
     match n {
-        Node::Term(t) => *out |= !is_stopword(t),
-        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) => {
-            c.iter().for_each(|c| positive_terms(c, out))
+        Node::Term(t) => !is_stopword(t),
+        Node::Not(c) => has_content(c),
+        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => {
+            c.iter().any(has_content)
         }
-        Node::Not(_) | Node::Number(_) => {}
+        Node::Number(_) => false,
     }
 }
 
-/// Prod's SEARCH query: stopword terms of AND and OR groups are dropped when the query has a
-/// positive term that is not a stopword. Phrases and AROUND keep theirs.
+fn is_stop_term(n: &Node) -> bool {
+    matches!(n, Node::Term(t) if is_stopword(t))
+}
+
+/// Prod's SEARCH query: when the query has a term that is not a stopword, a stopword in an AND
+/// or OR group matches every document (`the -apple` is `-apple`, `the | -apple` matches all).
+/// Phrases, AROUND and negations keep theirs (`-the` is literal).
 pub fn drop_stopwords(n: Node) -> Node {
-    let mut any = false;
-    positive_terms(&n, &mut any);
-    if any { strip(n) } else { n }
+    if has_content(&n) { strip(n) } else { n }
+}
+
+/// Whether prod's SEARCH matches a NULL document: only for a query whose top-level AND is
+/// negations plus at least one stopword (or lower-case `or`) dropped from it (`the -apple`,
+/// `-apple or`; not `-apple` nor `the | -apple`).
+pub fn matches_null(n: &Node, dropped_or: bool) -> bool {
+    if !has_content(n) {
+        return false;
+    }
+    let c = match n {
+        Node::And(c) => c.as_slice(),
+        other => std::slice::from_ref(other),
+    };
+    let dropped = dropped_or || c.iter().any(is_stop_term);
+    let rest: Vec<&Node> = c.iter().filter(|n| !is_stop_term(n)).collect();
+    dropped && !rest.is_empty() && rest.iter().all(|n| matches!(n, Node::Not(_)))
 }
 
 fn strip(n: Node) -> Node {
@@ -74,6 +95,8 @@ fn strip(n: Node) -> Node {
     };
     match n {
         Node::And(c) => wrap(keep(c), Node::And),
+        // An empty AND matches every document.
+        Node::Or(c) if c.iter().any(is_stop_term) => Node::And(Vec::new()),
         Node::Or(c) => wrap(keep(c), Node::Or),
         Node::Not(c) => Node::Not(Box::new(strip(*c))),
         other => other,
@@ -106,7 +129,7 @@ fn count_terms(n: &Node) -> usize {
         Node::Term(_) => 1,
         Node::Number(_) => 0,
         Node::Not(c) => count_terms(c),
-        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) => {
+        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => {
             c.iter().map(count_terms).sum()
         }
     }
@@ -121,10 +144,11 @@ fn walk(n: &Node, path: &mut Vec<(usize, bool)>, grouped: bool, w: &mut Walk) {
         }
         Node::Number(_) => {}
         Node::Not(c) => w.next += count_terms(c),
-        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) => {
+        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => {
             w.ids += 1;
             path.push((w.ids, matches!(n, Node::Or(_))));
-            let grouped = grouped || matches!(n, Node::Phrase(_) | Node::Around(_));
+            let grouped =
+                grouped || matches!(n, Node::Phrase(_) | Node::Around(_) | Node::InOrder(_));
             c.iter().for_each(|c| walk(c, path, grouped, w));
             path.pop();
         }

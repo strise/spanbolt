@@ -10,8 +10,8 @@ use super::rquery::{self, Node};
 use super::score::{self, ScoreQuery};
 use super::tokens::{
     self, FULLTEXT, GAP, NGRAMS, PHRASE, SUBSTRING, VALUE_PREFIX, VALUE_SUFFIX, WORD_PREFIX,
-    WORD_SUFFIX, arg, decode, int_arg, is_signature, join_letters, joined_letters, lower, split,
-    str_arg,
+    WORD_SUFFIX, arg, decode, fulltext_tokens, int_arg, is_signature, join_letters, joined_letters,
+    lower, split, str_arg,
 };
 
 const DEFAULT_MAX_ALLOWED_GAP: i64 = 5;
@@ -74,6 +74,10 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
             return Err(not_match(func, "TOKENIZE_FULLTEXT"));
         } else if t == GAP {
             pos += 1000;
+        } else if let Some(t) = t.strip_prefix(&[tokens::ALT][..]) {
+            // At the position of the token before it.
+            map.entry(t).or_default().push(pos - 1 - sigs);
+            continue;
         } else {
             map.entry(t).or_default().push(pos - sigs);
         }
@@ -84,7 +88,13 @@ fn token_map<'a>(toks: &[&'a [u8]], func: &str) -> Result<(TokenMap<'a>, bool)> 
 
 /// `GetNormalizedTerms`. Prod joins runs of single letters first, like its tokenizer.
 fn normalized_terms(q: &str, emulator: bool) -> Vec<Vec<u8>> {
-    let q = if emulator { q.into() } else { join_letters(q) };
+    if !emulator {
+        return fulltext_tokens(&lower(&join_letters(q)))
+            .into_iter()
+            .filter(|(_, alt)| !alt)
+            .map(|(t, _)| t.into_bytes())
+            .collect();
+    }
     split(q.as_bytes())
         .map(|t| match std::str::from_utf8(t) {
             Ok(t) => lower(t).into_bytes(),
@@ -121,6 +131,8 @@ pub(super) struct Compiled {
     words: Vec<Vec<u8>>,
     /// Prod's SCORE terms (from the query before stopwords are dropped); `None` in emulator mode.
     score: Option<ScoreQuery>,
+    /// Prod's SEARCH matches a NULL document (`score::matches_null`).
+    null_matches: bool,
 }
 
 fn collect_simple(n: &Node, out: &mut Vec<Vec<u8>>) -> bool {
@@ -133,7 +145,7 @@ fn collect_simple(n: &Node, out: &mut Vec<Vec<u8>>) -> bool {
         }
         Node::And(c) | Node::Or(c) => c.iter().all(|c| collect_simple(c, out)),
         Node::Not(c) => collect_simple(c, out),
-        Node::Number(_) | Node::Phrase(_) | Node::Around(_) => false,
+        Node::Number(_) | Node::Phrase(_) | Node::Around(_) | Node::InOrder(_) => false,
     }
 }
 
@@ -143,7 +155,7 @@ fn eval_simple(n: &Node, present: &dyn Fn(&[u8]) -> bool) -> bool {
         Node::And(c) => c.iter().all(|c| eval_simple(c, present)),
         Node::Or(c) => c.iter().any(|c| eval_simple(c, present)),
         Node::Not(c) => !eval_simple(c, present),
-        Node::Number(_) | Node::Phrase(_) | Node::Around(_) => false,
+        Node::Number(_) | Node::Phrase(_) | Node::Around(_) | Node::InOrder(_) => false,
     }
 }
 
@@ -164,7 +176,12 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
     {
         return n.clone();
     }
-    let parse = rquery::parse(q, emulator);
+    let parse = rquery::parse_query(q, emulator);
+    let null_matches = match &parse {
+        Ok(Some(p)) if !emulator => score::matches_null(&p.node, p.dropped_or),
+        _ => false,
+    };
+    let parse = parse.map(|p| p.map(|p| p.node));
     let score = match &parse {
         Ok(Some(n)) if !emulator => Some(ScoreQuery::new(n)),
         _ => None,
@@ -192,6 +209,7 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
         terms,
         words: normalized_terms(q, emulator),
         score,
+        null_matches,
     });
     if let Ok(mut c) = QUERIES.lock() {
         if c.len() >= 4096 {
@@ -204,6 +222,14 @@ fn compiled(q: &str, emulator: bool) -> Arc<Compiled> {
 
 /// One pass over a fulltext TOKENLIST with `BuildTokenMap`'s validation, collecting the
 /// positions of `terms` only. Returns whether the tokenized source was NULL.
+/// Tokens without the ones prod stores at the position of the token before them
+/// (`tokens::ALT`); the `words_phrase` dialect matches the first token at each position.
+fn primary_tokens(toks: Vec<&[u8]>) -> Vec<&[u8]> {
+    toks.into_iter()
+        .filter(|t| t.first() != Some(&tokens::ALT))
+        .collect()
+}
+
 fn term_positions(
     bytes: &[u8],
     func: &str,
@@ -229,10 +255,18 @@ fn term_positions(
         } else if t == GAP {
             pos += 1000;
         } else {
+            // A token at the position of the token before it.
+            let (t, at) = match t.strip_prefix(&[tokens::ALT][..]) {
+                Some(t) => (t, pos - 1),
+                None => (t, pos),
+            };
             for (i, term) in terms.iter().enumerate() {
                 if term.as_slice() == t {
-                    out[i].push(pos - sigs);
+                    out[i].push(at - sigs);
                 }
+            }
+            if at < pos {
+                continue;
             }
         }
         first = false;
@@ -254,7 +288,7 @@ fn collect_terms(n: &Node, out: &mut Vec<Vec<u8>>) {
                 out.push(t.clone());
             }
         }
-        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) => {
+        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => {
             c.iter().for_each(|c| collect_terms(c, out))
         }
         Node::Not(c) => collect_terms(c, out),
@@ -315,6 +349,8 @@ enum Mode {
     Unear {
         max_gap: i64,
         max_widths: Vec<i64>,
+        /// Prod's `"a AROUND b"`: each operand after the one before it.
+        ordered: bool,
     },
 }
 
@@ -383,13 +419,24 @@ impl PhraseMatcher<'_> {
             Mode::Unear {
                 max_gap,
                 max_widths,
+                ordered,
             } => {
-                let max_p = self.partial.iter().map(|h| h.pos).max().unwrap_or(0);
-                let min_l = self.partial.iter().map(Hit::limit).min().unwrap_or(0);
+                // The emulator computes the window in 32-bit ints that wrap, so a distance near
+                // i32::MAX matches only some rows (`AROUND(2147483647)` none).
+                let max_p = self.partial.iter().map(|h| h.pos).max().unwrap_or(0) as i32;
+                let min_l = self.partial.iter().map(Hit::limit).min().unwrap_or(0) as i32;
+                let gap = *max_gap as i32;
+                let min_pos = max_p
+                    .wrapping_sub(gap)
+                    .wrapping_sub(max_widths[next] as i32);
                 (
-                    max_p - max_gap - max_widths[next],
-                    min_l + max_gap,
-                    Some(max_p - max_gap),
+                    if *ordered {
+                        i64::from(min_pos).max(last.limit())
+                    } else {
+                        i64::from(min_pos)
+                    },
+                    i64::from(min_l.wrapping_add(gap)),
+                    Some(i64::from(max_p.wrapping_sub(gap))),
                 )
             }
         }
@@ -455,7 +502,7 @@ fn match_node(n: &Node, map: &TokenMap, in_phrase: bool) -> Result<Match> {
                 Some(Vec::new())
             }
         }
-        Node::Around(c) => {
+        Node::Around(c) | Node::InOrder(c) => {
             let results = match_children(c, map, true)?;
             let mut max_gap = -1;
             let mut hits = Vec::new();
@@ -487,6 +534,7 @@ fn match_node(n: &Node, map: &TokenMap, in_phrase: bool) -> Result<Match> {
                 mode: Mode::Unear {
                     max_gap,
                     max_widths,
+                    ordered: matches!(n, Node::InOrder(_)),
                 },
                 inputs: &hits,
                 partial: Vec::new(),
@@ -526,6 +574,15 @@ fn tokenlist(v: &Value) -> Result<Option<Vec<&[u8]>>> {
     }
 }
 
+/// SEARCH over a NULL document: NULL, except for the queries prod matches it with.
+fn null_search(c: &Compiled) -> Value {
+    if c.null_matches {
+        Value::Bool(true)
+    } else {
+        Value::Null
+    }
+}
+
 pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
     if let Some(e) =
         invalid_query_type(&args[1]).or_else(|| invalid_enhance_query_options(args, emulator))
@@ -540,10 +597,7 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         if let Ok(Some(n)) = &c.parse {
             let mut pos = vec![Vec::new(); c.terms.len()];
             if term_positions(b, "SEARCH", &c.terms, &mut pos)? {
-                return Ok(Value::Null);
-            }
-            if !emulator && rquery::only_negations(n) {
-                return Ok(Value::Bool(false));
+                return Ok(null_search(&c));
             }
             if c.simple.is_some() {
                 let present = |t: &[u8]| {
@@ -573,7 +627,10 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         return Ok(Value::Null);
     };
     if source_null {
-        return Ok(Value::Null);
+        return Ok(match dialect(args)? {
+            Dialect::RQuery if !q.is_empty() => null_search(&compiled_for(q, emulator)),
+            _ => Value::Null,
+        });
     }
     if q.is_empty() {
         return Ok(Value::Bool(false));
@@ -587,7 +644,7 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         }
         Dialect::WordsPhrase => {
             let terms = normalized_terms(q, emulator);
-            let toks = toks.unwrap_or_default();
+            let toks = primary_tokens(toks.unwrap_or_default());
             Ok(Value::Bool(
                 !terms.is_empty()
                     && toks.len() >= terms.len()
@@ -599,7 +656,6 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
         Dialect::RQuery => {
             let c = compiled_for(q, emulator);
             Ok(Value::Bool(match &c.parse {
-                Ok(Some(n)) if !emulator && rquery::only_negations(n) => false,
                 Ok(Some(n)) => match_node(n, &map, false)?.is_some(),
                 Ok(None) => false,
                 Err(e) => return Err(e.clone()),
@@ -642,7 +698,7 @@ pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
     }
     let terms = normalized_terms(q, emulator);
     let score = if dialect(args)? == Dialect::WordsPhrase {
-        let toks = toks.unwrap_or_default();
+        let toks = primary_tokens(toks.unwrap_or_default());
         if terms.is_empty() || toks.len() < terms.len() {
             0.0
         } else {

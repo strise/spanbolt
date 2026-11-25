@@ -90,14 +90,19 @@ impl Engine {
     }
 
     /// Checks the property graph `name` of `schema` against its tables, as `CREATE PROPERTY GRAPH`
-    /// does: the analyser's error is the statement's error.
-    pub fn validate_property_graph(&self, schema: &Arc<Schema>, name: &str) -> Result<()> {
+    /// does: the analyser's error is the statement's error. Returns the definition to keep:
+    /// Cloud Spanner's printed form, with `ALL COLUMNS` expanded once, now.
+    pub fn validate_property_graph(
+        &self,
+        schema: &Arc<Schema>,
+        name: &str,
+    ) -> Result<Option<String>> {
         let Some(g) = schema
             .opaque
             .iter()
             .find(|o| o.kind == "PROPERTY GRAPH" && o.name.eq_ignore_ascii_case(name))
         else {
-            return Ok(());
+            return Ok(None);
         };
         // Analysed against the other objects, as the graph itself is not defined yet.
         let mut others = (**schema).clone();
@@ -112,7 +117,59 @@ impl Engine {
             self.opts.extra_features(),
             self.opts.emulator_compat,
         )?;
-        crate::graph::analyse(&cat.gsql, &storage, &|n| cat.view(n), &g.ddl).map(|_| ())
+        let views = |n: &str| cat.view(n);
+        let analyse = |ddl: &str| crate::graph::analyse(&cat.gsql, &storage, &views, ddl);
+        let compat = self.opts.emulator_compat;
+        let input = |t: &str| -> Option<crate::graph_ddl::Input> {
+            if let Some(t) = others.table(t) {
+                return Some(crate::graph_ddl::Input {
+                    columns: t.columns.iter().map(|c| c.name.clone()).collect(),
+                    key: t.primary_key.iter().map(|k| k.column.clone()).collect(),
+                });
+            }
+            let v = cat.view(t)?;
+            Some(crate::graph_ddl::Input {
+                columns: v
+                    .query
+                    .output_column_list
+                    .iter()
+                    .map(|o| o.name.clone().unwrap_or_default())
+                    .collect(),
+                key: Vec::new(),
+            })
+        };
+        let printed = crate::graph_ddl::parse(&g.ddl).map(|p| p.print(!compat, &input));
+        if compat {
+            // The emulator reports errors in the statement as written.
+            analyse(&g.ddl)?;
+            return Ok(printed.filter(|p| analyse(p).is_ok()));
+        }
+        // Cloud Spanner analyses its printed form, and says which graph it was.
+        let text = printed.unwrap_or_else(|| g.ddl.clone());
+        analyse(&text).map_err(|e| {
+            if e.code == spanbolt_storage::Code::Unimplemented {
+                return e;
+            }
+            Error::new(
+                e.code,
+                format!(
+                    "Error analyzing the definition of graph `{}`: {}",
+                    g.name, e.message
+                ),
+            )
+        })?;
+        Ok(Some(text))
+    }
+
+    /// The property graphs of `state` as emulator 1.5.59's GetDatabaseDdl prints them, by name.
+    pub fn emulator_graph_ddl(&self, state: &DbState) -> Vec<(String, String)> {
+        let Ok(cat) = self.catalog(state) else {
+            return Vec::new();
+        };
+        cat.graphs
+            .values()
+            .map(|g| (g.name.clone(), crate::graph::emulator_ddl(g)))
+            .collect()
     }
 
     /// Checks the view `name` of `schema` as `CREATE VIEW` does; `replacing` when `CREATE OR

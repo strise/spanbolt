@@ -2,7 +2,6 @@
 
 use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
 use googlesql_sys::proto::{AnyResolvedStatementProto, ResolvedQueryStmtProto};
-use prost::Message;
 use spanbolt_storage::{Code, Error, Result};
 
 use crate::catalog::SqlCatalog;
@@ -51,8 +50,7 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     googlesql_sys::with_stack_for(sql.len(), || {
         crate::limits::check(&bytes, cat.emulator_compat)
     })?;
-    AnyResolvedStatementProto::decode(bytes.as_slice())
-        .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
+    googlesql_sys::decode_statement(&bytes).map_err(|e| Error::internal(e.message))
 }
 
 /// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too
@@ -74,6 +72,12 @@ fn prod_proto_names(mut e: Error) -> Error {
 fn prod_analyzer_error(mut e: Error) -> Error {
     if e.code == Code::Unimplemented {
         return e;
+    }
+    // Spanner names FORMAT's integer type: `Expected INT64` where GoogleSQL says `integer`.
+    if e.message.starts_with("Invalid type for argument ") && e.message.contains(" to FORMAT; ") {
+        e.message = e
+            .message
+            .replacen("; Expected integer;", "; Expected INT64;", 1);
     }
     if let Some(rest) = e.message.strip_prefix("Syntax error: ") {
         let rest = rest.replacen("Expected end of input", "Expected \";\" or end of input", 1);

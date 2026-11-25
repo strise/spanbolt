@@ -83,9 +83,12 @@ impl Options {
     /// `INSERT ... ON CONFLICT`. Production Spanner also analyses window functions and NULLS
     /// FIRST/LAST, then rejects them while planning, and accepts pipe syntax (`FROM t |> WHERE
     /// ...`), which the emulator rejects. Pipe operators resolve to the usual scans; any that
-    /// don't plan are UNIMPLEMENTED. `SPANBOLT_PRODUCTION` is not a language feature: it gives the
-    /// shim's builtins Cloud Spanner's signatures where they differ from the emulator's (SEARCH and
-    /// SCORE take `enhance_query_options`, SCORE no BYTES query).
+    /// don't plan are UNIMPLEMENTED. Production also resolves `a || b || c` as nested binary
+    /// concatenations, so each `||` counts toward the expression nesting limit
+    /// (`conformance/cases/sql/concat_nesting.case`); the emulator makes one CONCAT call of it.
+    /// `SPANBOLT_PRODUCTION` is not a language feature: it gives the shim's builtins Cloud
+    /// Spanner's signatures where they differ from the emulator's (SEARCH and SCORE take
+    /// `enhance_query_options`, SCORE no BYTES query).
     pub fn extra_features(&self) -> &'static [&'static str] {
         if self.emulator_compat {
             &["FEATURE_INSERT_ON_CONFLICT_CLAUSE"]
@@ -95,8 +98,32 @@ impl Options {
                 "FEATURE_ANALYTIC_FUNCTIONS",
                 "FEATURE_NULLS_FIRST_LAST_IN_ORDER_BY",
                 "FEATURE_PIPES",
+                "FEATURE_LEGACY_BINARY_CONCAT",
                 "SPANBOLT_PRODUCTION",
             ]
+        }
+    }
+}
+
+/// The arguments of a call, where the nested binary calls `a || b || c` resolves to in default
+/// mode (`concat(concat(a, b), c)`) are one call of all the operands, as the emulator resolves it:
+/// concatenation is associative, and one call copies each operand once.
+fn concat_operands<'a>(
+    b: &'a ResolvedFunctionCallBaseProto,
+    name: &str,
+    out: &mut Vec<&'a AnyResolvedExprProto>,
+) {
+    let concat = matches!(name, "concat" | "array_concat")
+        && b.error_mode.and_then(|m| ErrorMode::try_from(m).ok()) != Some(ErrorMode::SafeErrorMode);
+    for a in &b.argument_list {
+        match call_base(a).filter(|inner| {
+            concat
+                && fn_name(inner) == name
+                && inner.hint_list.is_empty()
+                && inner.error_mode == b.error_mode
+        }) {
+            Some(inner) => concat_operands(inner, name, out),
+            None => out.push(a),
         }
     }
 }
@@ -2575,13 +2602,23 @@ impl<'c> Planner<'c> {
                 .and_then(|p| p.r#type.as_ref())
                 .ok_or_else(|| Error::internal("call without type"))?,
         )?;
+        // The emulator rewrites ARRAY_SLICE with a NULL array literal, which its validator
+        // rejects for ARRAY<STRUCT> (`struct_returned_twice.case`).
+        if self.opts.emulator_compat
+            && name == "array_slice"
+            && matches!(&ret, Type::Array(e) if matches!(**e, Type::Struct(_)))
+        {
+            return Err(Error::new(Code::Unimplemented, EMULATOR_NULL_STRUCT_ARRAY));
+        }
         if !b.generic_argument_list.is_empty() {
             let ev = self.lambda_call(&name, b, scope)?;
             return Ok(if safe { safe_call(ev) } else { ev });
         }
-        let mut args = Vec::with_capacity(b.argument_list.len());
-        let mut arg_types = Vec::with_capacity(b.argument_list.len());
-        for a in &b.argument_list {
+        let mut operands = Vec::with_capacity(b.argument_list.len());
+        concat_operands(b, &name, &mut operands);
+        let mut args = Vec::with_capacity(operands.len());
+        let mut arg_types = Vec::with_capacity(operands.len());
+        for a in operands {
             args.push(self.expr(a, scope)?);
             arg_types.push(type_of(a)?);
         }

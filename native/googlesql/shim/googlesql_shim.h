@@ -10,6 +10,7 @@ extern "C" {
 
 typedef struct gsql_catalog gsql_catalog;
 typedef struct gsql_table gsql_table;
+typedef struct gsql_protos gsql_protos;
 
 // Bytes owned by the shim. Free with gsql_buf_free.
 typedef struct {
@@ -41,6 +42,24 @@ gsql_table* gsql_table_new(const char* json, size_t json_len, gsql_buf* error);
 // Frees a table. Every catalog that refers to it must be freed first.
 void gsql_table_free(gsql_table* table);
 
+// The types of a proto bundle. `descriptors` is a serialized
+// google.protobuf.FileDescriptorSet (imports it leaves out come from the
+// protos compiled into the shim), `types_json` a JSON array of the bundle's
+// full type names: ["examples.music.SingerInfo","examples.music.Genre"].
+// Immutable. Returns NULL on failure and sets *error.
+gsql_protos* gsql_protos_new(const uint8_t* descriptors, size_t descriptors_len,
+                             const char* types_json, size_t types_len,
+                             gsql_buf* error);
+// Frees bundle types. Every table and catalog that uses them must be freed
+// first.
+void gsql_protos_free(gsql_protos* protos);
+
+// gsql_table_new where column types may also be PROTO<x>, ENUM<x> and arrays
+// of them, for types of `protos` (not owned: they must outlive the table).
+gsql_table* gsql_table_new_with_protos(const char* json, size_t json_len,
+                                       const gsql_protos* protos,
+                                       gsql_buf* error);
+
 // Builds a catalog over `tables` (not owned: they must outlive the catalog)
 // and the process-wide builtin functions for `features_json`, a JSON array of
 // extra language features (empty or NULL for none). Cheap: no table or
@@ -48,6 +67,14 @@ void gsql_table_free(gsql_table* table);
 gsql_catalog* gsql_catalog_from_tables(const gsql_table* const* tables,
                                        size_t n, const char* features_json,
                                        size_t features_len, gsql_buf* error);
+
+// gsql_catalog_from_tables where SQL can also name the types of `protos` (not
+// owned: they must outlive the catalog), in CAST, NEW and parameter types
+// (PROTO<x>, ENUM<x>). Tables built with other bundle types must not be mixed
+// in.
+gsql_catalog* gsql_catalog_from_tables_with_protos(
+    const gsql_table* const* tables, size_t n, const char* features_json,
+    size_t features_len, const gsql_protos* protos, gsql_buf* error);
 
 // Analyses one statement. params_json maps parameter names to type names:
 // {"ids":"ARRAY<STRING>","q":"STRING"}. Undeclared parameters are an error.

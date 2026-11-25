@@ -17,8 +17,11 @@
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
+#include "google/protobuf/descriptor.h"
 #include "google/protobuf/descriptor.pb.h"
+#include "google/protobuf/descriptor_database.h"
 #include "googlesql/public/analyzer.h"
 #include "googlesql/public/analyzer_options.h"
 #include "googlesql/public/analyzer_output.h"
@@ -51,6 +54,24 @@ struct SharedBase {
   googlesql::AnalyzerOptions options;
   explicit SharedBase(googlesql::TypeFactory* types)
       : builtins("spanner_builtins", types) {}
+};
+
+// The types of a proto bundle (CREATE PROTO BUNDLE), over the descriptors of
+// UpdateDatabaseDdl. Immutable; tables and catalogs that use them refer to
+// them without owning them.
+struct gsql_protos {
+  google::protobuf::SimpleDescriptorDatabase files;
+  // Imports the request's descriptors leave out (google/protobuf/*.proto).
+  google::protobuf::DescriptorPoolDatabase generated{
+      *google::protobuf::DescriptorPool::generated_pool()};
+  google::protobuf::MergedDescriptorDatabase merged{&files, &generated};
+  google::protobuf::DescriptorPool pool{&merged};
+  // Own factory: types refer to `pool`, which lives as long as this.
+  // Mutable: arrays of bundle types are made on demand (thread-safe).
+  mutable googlesql::TypeFactory types;
+  // The bundle's types by full name, as CAST and NEW name them.
+  std::vector<std::pair<std::string, const googlesql::Type*>> bundle;
+  absl::flat_hash_map<std::string, const googlesql::Type*> by_name;
 };
 
 struct gsql_catalog {
@@ -170,6 +191,9 @@ googlesql::BuiltinFunctionOptions SpannerBuiltinFunctionOptions(
 std::string NormalizeTypeName(std::string type) {
   static const LazyRE2 kLength = {R"((?i)\b(STRING|BYTES)\s*\(\s*(MAX|\d+)\s*\))"};
   RE2::GlobalReplace(&type, *kLength, R"(\1)");
+  // Spanner spells bundle types PROTO<x> and ENUM<x>; GoogleSQL by name.
+  static const LazyRE2 kBundle = {R"(\b(?:PROTO|ENUM)<([^<>`]+)>)"};
+  RE2::GlobalReplace(&type, *kBundle, R"(`\1`)");
   return type;
 }
 
@@ -288,9 +312,37 @@ absl::StatusOr<const googlesql::Type*> ColumnType(const std::string& name) {
   return type;
 }
 
+// PROTO<x>, ENUM<x> and arrays of them, from the bundle; nullptr for any
+// other type.
+absl::StatusOr<const googlesql::Type*> BundleColumnType(
+    const gsql_protos* protos, const std::string& name) {
+  static const LazyRE2 kBundle = {R"((ARRAY<)?(PROTO|ENUM)<([^<>]+)>(>?))"};
+  std::string array, kind, type_name, close;
+  if (!RE2::FullMatch(name, *kBundle, &array, &kind, &type_name, &close)) {
+    return nullptr;
+  }
+  if (array.empty() != close.empty()) return nullptr;
+  if (protos == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("bad type '", name, "': no proto bundle"));
+  }
+  auto it = protos->by_name.find(type_name);
+  if (it == protos->by_name.end() ||
+      (kind == "PROTO") != it->second->IsProto()) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("bad type '", name, "': not in the proto bundle"));
+  }
+  if (array.empty()) return it->second;
+  const googlesql::Type* out = nullptr;
+  absl::Status made = protos->types.MakeArrayType(it->second, &out);
+  if (!made.ok()) return made;
+  return out;
+}
+
 // {"name":"schema.T","columns":[{"name":"c","type":"INT64","hidden":false,
 //  "writable":true}],"primary_key":[0]}
-absl::StatusOr<std::unique_ptr<gsql_table>> BuildTable(const json& t) {
+absl::StatusOr<std::unique_ptr<gsql_table>> BuildTable(
+    const json& t, const gsql_protos* protos = nullptr) {
   std::string table_name = t.at("name").get<std::string>();
   std::string local_name = table_name;
   if (auto dot = table_name.find('.'); dot != std::string::npos) {
@@ -301,7 +353,9 @@ absl::StatusOr<std::unique_ptr<gsql_table>> BuildTable(const json& t) {
   out->table = std::make_unique<googlesql::SimpleTable>(local_name);
   for (const auto& c : t.at("columns")) {
     std::string column_name = c.at("name").get<std::string>();
-    auto type = ColumnType(c.at("type").get_ref<const std::string&>());
+    const std::string& type_name = c.at("type").get_ref<const std::string&>();
+    auto type = BundleColumnType(protos, type_name);
+    if (type.ok() && *type == nullptr) type = ColumnType(type_name);
     if (!type.ok()) {
       return absl::InvalidArgumentError(absl::StrCat(
           table_name, ".", column_name, ": ", type.status().message()));
@@ -325,7 +379,8 @@ absl::StatusOr<std::unique_ptr<gsql_table>> BuildTable(const json& t) {
 
 // A catalog over `tables` (not owned) and the shared builtins for `features`.
 absl::StatusOr<std::unique_ptr<gsql_catalog>> AssembleCatalog(
-    const gsql_table* const* tables, size_t n, const json& features) {
+    const gsql_table* const* tables, size_t n, const json& features,
+    const gsql_protos* protos = nullptr) {
   auto base = BaseFor(features);
   if (!base.ok()) return base.status();
   auto out = std::make_unique<gsql_catalog>();
@@ -343,6 +398,11 @@ absl::StatusOr<std::unique_ptr<gsql_catalog>> AssembleCatalog(
       target = sub;
     }
     target->AddTable(t->table.get());
+  }
+  if (protos != nullptr) {
+    for (const auto& [name, type] : protos->bundle) {
+      out->tables->AddType(name, type);
+    }
   }
   std::unique_ptr<googlesql::MultiCatalog> multi;
   absl::Status status = googlesql::MultiCatalog::Create(
@@ -464,6 +524,12 @@ class ExactTables : public googlesql::Catalog {
       return TableNotFoundError(path);
     }
     return s;
+  }
+
+  absl::Status FindType(const absl::Span<const std::string>& path,
+                        const googlesql::Type** type,
+                        const FindOptions& options) override {
+    return tables_->FindType(path, type, options);
   }
 
   absl::Status FindPropertyGraph(absl::Span<const std::string> path,
@@ -656,12 +722,75 @@ absl::Status AddPropertyGraph(gsql_catalog& cat, const json& g) {
   return absl::OkStatus();
 }
 
+// Builds the types of a bundle: `descriptors` is a serialized
+// FileDescriptorSet, `types_json` a JSON array of the bundle's full type names.
+absl::StatusOr<std::unique_ptr<gsql_protos>> BuildProtos(
+    const std::string& descriptors, const std::string& types_json) {
+  auto out = std::make_unique<gsql_protos>();
+  google::protobuf::FileDescriptorSet set;
+  if (!set.ParseFromString(descriptors)) {
+    return absl::InvalidArgumentError("proto descriptors do not parse");
+  }
+  for (const auto& file : set.file()) {
+    if (!out->files.Add(file)) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("proto descriptors: cannot add ", file.name()));
+    }
+  }
+  json names = json::parse(types_json, nullptr, /*allow_exceptions=*/false);
+  if (names.is_discarded() || !names.is_array()) {
+    return absl::InvalidArgumentError("proto types are not a JSON array");
+  }
+  for (const auto& n : names) {
+    std::string name = n.get<std::string>();
+    const googlesql::Type* type = nullptr;
+    absl::Status made;
+    if (const auto* m = out->pool.FindMessageTypeByName(name); m != nullptr) {
+      made = out->types.MakeProtoType(m, &type);
+    } else if (const auto* e = out->pool.FindEnumTypeByName(name);
+               e != nullptr) {
+      made = out->types.MakeEnumType(e, &type);
+    } else {
+      return absl::InvalidArgumentError(
+          absl::StrCat("proto type ", name, " is not in the descriptors"));
+    }
+    if (!made.ok()) return made;
+    out->bundle.emplace_back(name, type);
+    out->by_name.emplace(name, type);
+  }
+  return out;
+}
+
 }  // namespace
 
 extern "C" {
 
-gsql_table* gsql_table_new(const char* json_text, size_t json_len,
-                           gsql_buf* error) {
+gsql_protos* gsql_protos_new(const uint8_t* descriptors, size_t descriptors_len,
+                             const char* types_json, size_t types_len,
+                             gsql_buf* error) {
+  absl::StatusOr<std::unique_ptr<gsql_protos>> result;
+  try {
+    result = BuildProtos(
+        std::string(reinterpret_cast<const char*>(descriptors), descriptors_len),
+        std::string(types_json, types_len));
+  } catch (const std::exception& e) {
+    result = absl::InvalidArgumentError(absl::StrCat("proto types: ", e.what()));
+  }
+  if (!result.ok()) {
+    if (error != nullptr) {
+      *error = CopyBytes(std::string(result.status().message()));
+    }
+    return nullptr;
+  }
+  if (error != nullptr) *error = gsql_buf{nullptr, 0};
+  return result->release();
+}
+
+void gsql_protos_free(gsql_protos* protos) { delete protos; }
+
+gsql_table* gsql_table_new_with_protos(const char* json_text, size_t json_len,
+                                       const gsql_protos* protos,
+                                       gsql_buf* error) {
   absl::StatusOr<std::unique_ptr<gsql_table>> result;
   try {
     json doc = json::parse(std::string(json_text, json_len), nullptr,
@@ -669,7 +798,7 @@ gsql_table* gsql_table_new(const char* json_text, size_t json_len,
     if (doc.is_discarded() || !doc.is_object()) {
       result = absl::InvalidArgumentError("table JSON is not an object");
     } else {
-      result = BuildTable(doc);
+      result = BuildTable(doc, protos);
     }
   } catch (const std::exception& e) {
     result = absl::InvalidArgumentError(absl::StrCat("table JSON: ", e.what()));
@@ -684,11 +813,16 @@ gsql_table* gsql_table_new(const char* json_text, size_t json_len,
   return result->release();
 }
 
+gsql_table* gsql_table_new(const char* json_text, size_t json_len,
+                           gsql_buf* error) {
+  return gsql_table_new_with_protos(json_text, json_len, nullptr, error);
+}
+
 void gsql_table_free(gsql_table* table) { delete table; }
 
-gsql_catalog* gsql_catalog_from_tables(const gsql_table* const* tables,
-                                       size_t n, const char* features_json,
-                                       size_t features_len, gsql_buf* error) {
+gsql_catalog* gsql_catalog_from_tables_with_protos(
+    const gsql_table* const* tables, size_t n, const char* features_json,
+    size_t features_len, const gsql_protos* protos, gsql_buf* error) {
   absl::StatusOr<std::unique_ptr<gsql_catalog>> result;
   try {
     json features;
@@ -699,7 +833,7 @@ gsql_catalog* gsql_catalog_from_tables(const gsql_table* const* tables,
         throw std::invalid_argument("extra features are not an array");
       }
     }
-    result = AssembleCatalog(tables, n, features);
+    result = AssembleCatalog(tables, n, features, protos);
   } catch (const std::exception& e) {
     result = absl::InvalidArgumentError(absl::StrCat("catalog: ", e.what()));
   }
@@ -711,6 +845,13 @@ gsql_catalog* gsql_catalog_from_tables(const gsql_table* const* tables,
   }
   if (error != nullptr) *error = gsql_buf{nullptr, 0};
   return result->release();
+}
+
+gsql_catalog* gsql_catalog_from_tables(const gsql_table* const* tables,
+                                       size_t n, const char* features_json,
+                                       size_t features_len, gsql_buf* error) {
+  return gsql_catalog_from_tables_with_protos(tables, n, features_json,
+                                              features_len, nullptr, error);
 }
 
 gsql_catalog* gsql_catalog_new(const char* json_text, size_t json_len,

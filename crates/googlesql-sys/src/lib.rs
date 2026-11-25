@@ -43,16 +43,36 @@ struct RawTable {
     _private: [u8; 0],
 }
 
+#[repr(C)]
+struct RawProtos {
+    _private: [u8; 0],
+}
+
 unsafe extern "C" {
     fn gsql_catalog_new(json: *const c_char, len: usize, error: *mut Buf) -> *mut RawCatalog;
     fn gsql_catalog_free(catalog: *mut RawCatalog);
     fn gsql_table_new(json: *const c_char, len: usize, error: *mut Buf) -> *mut RawTable;
     fn gsql_table_free(table: *mut RawTable);
-    fn gsql_catalog_from_tables(
+    fn gsql_protos_new(
+        descriptors: *const u8,
+        descriptors_len: usize,
+        types: *const c_char,
+        types_len: usize,
+        error: *mut Buf,
+    ) -> *mut RawProtos;
+    fn gsql_protos_free(protos: *mut RawProtos);
+    fn gsql_table_new_with_protos(
+        json: *const c_char,
+        len: usize,
+        protos: *const RawProtos,
+        error: *mut Buf,
+    ) -> *mut RawTable;
+    fn gsql_catalog_from_tables_with_protos(
         tables: *const *const RawTable,
         n: usize,
         features: *const c_char,
         features_len: usize,
+        protos: *const RawProtos,
         error: *mut Buf,
     ) -> *mut RawCatalog;
     fn gsql_analyze(
@@ -122,9 +142,73 @@ fn build_error(err: Buf) -> AnalyzeError {
     }
 }
 
+/// The types of a proto bundle (`CREATE PROTO BUNDLE`), immutable. Tables and catalogs built
+/// with them hold an `Arc`, so they outlive every user.
+pub struct Protos(NonNull<RawProtos>);
+
+// SAFETY: the shim never mutates bundle types after construction except through GoogleSQL's
+// TypeFactory, which is thread-safe.
+unsafe impl Send for Protos {}
+unsafe impl Sync for Protos {}
+
+impl Protos {
+    /// The bundle's `types` (full names: messages, nested messages and enums) from
+    /// `descriptors`, a serialized `google.protobuf.FileDescriptorSet`. Imports the set leaves
+    /// out (`google/protobuf/*.proto`) come from the protos compiled into the shim.
+    pub fn new(descriptors: &[u8], types: &[&str]) -> Result<Self, AnalyzeError> {
+        let types = serde_json_array(types);
+        let mut err = empty_buf();
+        // SAFETY: pointers are valid for the given lengths for the duration of the call.
+        let raw = unsafe {
+            gsql_protos_new(
+                descriptors.as_ptr(),
+                descriptors.len(),
+                types.as_ptr().cast(),
+                types.len(),
+                &mut err,
+            )
+        };
+        NonNull::new(raw).map(Self).ok_or_else(|| build_error(err))
+    }
+}
+
+impl Drop for Protos {
+    fn drop(&mut self) {
+        // SAFETY: created by gsql_protos_new, freed once, after every table and catalog that
+        // uses it (they hold an Arc).
+        unsafe { gsql_protos_free(self.0.as_ptr()) }
+    }
+}
+
+/// A JSON array of strings.
+fn serde_json_array(items: &[&str]) -> String {
+    let quoted: Vec<String> = items
+        .iter()
+        .map(|s| {
+            let mut out = String::with_capacity(s.len() + 2);
+            out.push('"');
+            for c in s.chars() {
+                match c {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                    c => out.push(c),
+                }
+            }
+            out.push('"');
+            out
+        })
+        .collect();
+    format!("[{}]", quoted.join(","))
+}
+
 /// One GoogleSQL table definition, immutable. Any number of catalogs can share it, so a table
 /// that a DDL leaves unchanged is built once for every schema version that has it.
-pub struct Table(NonNull<RawTable>);
+pub struct Table {
+    raw: NonNull<RawTable>,
+    /// The bundle types its columns use; dropped after `raw`.
+    _protos: Option<Arc<Protos>>,
+}
 
 // SAFETY: the shim never mutates a table after construction.
 unsafe impl Send for Table {}
@@ -137,14 +221,38 @@ impl Table {
         let mut err = empty_buf();
         // SAFETY: pointers are valid for the given lengths for the duration of the call.
         let raw = unsafe { gsql_table_new(json.as_ptr().cast(), json.len(), &mut err) };
-        NonNull::new(raw).map(Self).ok_or_else(|| build_error(err))
+        NonNull::new(raw)
+            .map(|raw| Self { raw, _protos: None })
+            .ok_or_else(|| build_error(err))
+    }
+
+    /// [`Table::new`] where column types may also be `PROTO<x>`, `ENUM<x>` and arrays of them,
+    /// for types of `protos`.
+    pub fn with_protos(json: &str, protos: &Arc<Protos>) -> Result<Self, AnalyzeError> {
+        let mut err = empty_buf();
+        // SAFETY: pointers are valid for the given lengths for the duration of the call; the
+        // table keeps `protos` alive.
+        let raw = unsafe {
+            gsql_table_new_with_protos(
+                json.as_ptr().cast(),
+                json.len(),
+                protos.0.as_ptr().cast_const(),
+                &mut err,
+            )
+        };
+        NonNull::new(raw)
+            .map(|raw| Self {
+                raw,
+                _protos: Some(protos.clone()),
+            })
+            .ok_or_else(|| build_error(err))
     }
 }
 
 impl Drop for Table {
     fn drop(&mut self) {
         // SAFETY: created by gsql_table_new, freed once. Catalogs that refer to it hold an Arc.
-        unsafe { gsql_table_free(self.0.as_ptr()) }
+        unsafe { gsql_table_free(self.raw.as_ptr()) }
     }
 }
 
@@ -154,6 +262,8 @@ pub struct Catalog {
     raw: NonNull<RawCatalog>,
     /// Tables the catalog refers to; dropped after `raw` (see `Drop`).
     _tables: Vec<Arc<Table>>,
+    /// The bundle types SQL can name; dropped after `raw`.
+    _protos: Option<Arc<Protos>>,
 }
 
 // SAFETY: the shim never mutates the catalog after construction; each analysis uses its own
@@ -171,6 +281,7 @@ impl Catalog {
             Some(raw) => Ok(Self {
                 raw,
                 _tables: Vec::new(),
+                _protos: None,
             }),
             None => Err(build_error(err)),
         }
@@ -185,22 +296,36 @@ impl Catalog {
         tables: Vec<Arc<Table>>,
         extra_features: &[&str],
     ) -> Result<Self, AnalyzeError> {
+        Self::from_tables_with_protos(tables, extra_features, None)
+    }
+
+    /// [`Catalog::from_tables`] where SQL can also name the types of `protos`: in `CAST`, `NEW`
+    /// and parameter types (`PROTO<x>`, `ENUM<x>`). Tables must use the same `protos`, if any.
+    pub fn from_tables_with_protos(
+        tables: Vec<Arc<Table>>,
+        extra_features: &[&str],
+        protos: Option<Arc<Protos>>,
+    ) -> Result<Self, AnalyzeError> {
         let features = if extra_features.is_empty() {
             String::new()
         } else {
-            let quoted: Vec<String> = extra_features.iter().map(|f| format!("\"{f}\"")).collect();
-            format!("[{}]", quoted.join(","))
+            serde_json_array(extra_features)
         };
-        let ptrs: Vec<*const RawTable> = tables.iter().map(|t| t.0.as_ptr().cast_const()).collect();
+        let ptrs: Vec<*const RawTable> =
+            tables.iter().map(|t| t.raw.as_ptr().cast_const()).collect();
+        let protos_ptr = protos
+            .as_ref()
+            .map_or(std::ptr::null(), |p| p.0.as_ptr().cast_const());
         let mut err = empty_buf();
         // SAFETY: `ptrs` holds live tables (kept alive by `tables`, stored in the catalog);
         // string pointers valid for their lengths for the call.
         let raw = unsafe {
-            gsql_catalog_from_tables(
+            gsql_catalog_from_tables_with_protos(
                 ptrs.as_ptr(),
                 ptrs.len(),
                 features.as_ptr().cast(),
                 features.len(),
+                protos_ptr,
                 &mut err,
             )
         };
@@ -208,6 +333,7 @@ impl Catalog {
             Some(raw) => Ok(Self {
                 raw,
                 _tables: tables,
+                _protos: protos,
             }),
             None => Err(build_error(err)),
         }

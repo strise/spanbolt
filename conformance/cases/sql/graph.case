@@ -214,6 +214,160 @@ expect@spanner:
   error: INVALID_ARGUMENT
   message: Returning expressions of type GRAPH_ELEMENT is not allowed [at 1:1]
 
+case returning_a_node_with_a_property_is_rejected
+query:
+  GRAPH Ownership MATCH (c:Company) RETURN c.Id AS id, c
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:54]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Returning expressions of type GRAPH_ELEMENT is not allowed [at 1:1]
+
+case returning_a_path_is_rejected
+query:
+  GRAPH Ownership MATCH p = (c:Company) RETURN p
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:46]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Returning expressions of type GRAPH_PATH is not allowed [at 1:1]
+
+case returning_an_edge_from_a_linear_query_is_rejected
+query:
+  GRAPH Ownership MATCH (a)-[o:Owns]->(b) WHERE a.Id = 'c2' RETURN o NEXT RETURN o
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:80]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Returning expressions of type GRAPH_ELEMENT is not allowed [at 1:1]
+
+case returning_nodes_in_an_array_is_rejected
+query:
+  GRAPH Ownership MATCH (c:Company) RETURN ARRAY_AGG(c) AS a
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for aggregate function ARRAY_AGG Argument types: GRAPH_NODE(Ownership)<Bankrupt BOOL, Id STRING, Name STRING> Signature: ARRAY_AGG(T1) Argument 1: expected T1, found GRAPH_NODE(Ownership)<Bankrupt BOOL, Id STRING, Name STRING>: which is not allowed for ANY arguments [at 1:42]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Returning expressions of type GRAPH_ELEMENT is not allowed [at 1:1]
+
+case graph_table_without_columns
+query:
+  SELECT * FROM GRAPH_TABLE(Ownership MATCH (c:Company WHERE c.Id = 'c1'))
+expect:
+  error: INVALID_ARGUMENT
+  message: Graph query without COLUMNS clause is not supported [at 1:15]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Returning expressions of type GRAPH_ELEMENT is not allowed [at 1:1]
+
+case graph_table_column_of_a_node_is_rejected
+query:
+  SELECT 1 FROM GRAPH_TABLE(Ownership MATCH (c:Company) COLUMNS (c AS x))
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:64]
+expect@spanner:
+  columns: INT64
+  ["1"]
+  ["1"]
+  ["1"]
+  ["1"]
+
+case node_as_a_function_argument
+query:
+  GRAPH Ownership MATCH (c:Company WHERE c.Id = 'c1') RETURN IF(true, c, c).Id AS id
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function IF Argument types: BOOL, GRAPH_NODE(Ownership)<Bankrupt BOOL, Id STRING, Name STRING>, GRAPH_NODE(Ownership)<Bankrupt BOOL, Id STRING, Name STRING> Signature: IF(BOOL, T1, T1) Argument 2: expected T1, found GRAPH_NODE(Ownership)<Bankrupt BOOL, Id STRING, Name STRING>: which is not allowed for ANY arguments [at 1:60]
+expect@spanner:
+  columns: id STRING
+  ["c1"]
+
+case node_property_read_outside_graph_table
+query:
+  SELECT x.Name FROM GRAPH_TABLE(Ownership MATCH (c:Company WHERE c.Id = 'c1') COLUMNS (c AS x))
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:87]
+expect@spanner:
+  columns: Name STRING
+  ["Nordvik AS"]
+
+case graph_table_without_columns_property
+query:
+  SELECT c.Name FROM GRAPH_TABLE(Ownership MATCH (c:Company WHERE c.Id = 'c1'))
+expect:
+  error: INVALID_ARGUMENT
+  message: Graph query without COLUMNS clause is not supported [at 1:20]
+expect@spanner:
+  columns: Name STRING
+  ["Nordvik AS"]
+
+case graph_table_without_columns_counted
+query:
+  SELECT COUNT(*) AS n FROM GRAPH_TABLE(Ownership MATCH (c:Company))
+expect:
+  error: INVALID_ARGUMENT
+  message: Graph query without COLUMNS clause is not supported [at 1:27]
+expect@spanner:
+  columns: n INT64
+  ["4"]
+
+case nodes_in_an_array_literal
+query:
+  GRAPH Ownership MATCH (c:Company WHERE c.Id = 'c1') RETURN ARRAY_LENGTH([c, c]) AS n
+expect:
+  error: INVALID_ARGUMENT
+  message: Graph element typed expression is not allowed here [at 1:74]
+expect@spanner:
+  columns: n INT64
+  ["2"]
+
+case node_compared_in_a_subquery
+query:
+  SELECT (SELECT COUNT(*) FROM GRAPH_TABLE(Ownership MATCH (a:Company)-[:Owns]->(b:Company) WHERE a = b COLUMNS (a.Id AS id))) AS n
+expect:
+  columns: n INT64
+  ["0"]
+expect@spanner:
+  same
+
+case edge_property_read_outside_graph_table
+query:
+  SELECT x.Share FROM GRAPH_TABLE(Ownership MATCH (a)-[o:Owns]->(b) WHERE a.Id = 'c2' COLUMNS (o AS x))
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:94]
+expect@spanner:
+  columns: Share FLOAT64
+  [60.0]
+
+case grouped_by_a_node_outside_graph_table
+query:
+  SELECT COUNT(*) AS n FROM GRAPH_TABLE(Ownership MATCH (a)-[:Owns]->(b) COLUMNS (b AS x)) GROUP BY x
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:81]
+expect@spanner:
+  columns: n INT64
+  ["3"]
+  ["1"]
+  ["1"]
+
+case path_read_outside_graph_table
+query:
+  SELECT ARRAY_LENGTH(NODES(p)) AS n FROM GRAPH_TABLE(Ownership MATCH p = (a)-[:Owns]->(b) WHERE a.Id = 'c2' COLUMNS (p))
+expect:
+  error: INVALID_ARGUMENT
+  message: Returning graph-typed column is not supported [at 1:117]
+expect@spanner:
+  columns: n INT64
+  ["2"]
+
 case graph_over_a_missing_table
 ddl:
   CREATE PROPERTY GRAPH Broken NODE TABLES (Missing KEY (Id) LABEL X PROPERTIES ALL COLUMNS)

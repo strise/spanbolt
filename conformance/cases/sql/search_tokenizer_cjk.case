@@ -1,0 +1,184 @@
+# Cloud Spanner's fulltext tokenizer on Japanese, Chinese and Korean text (#140): how it cuts
+# words, read through DEBUG_TOKENLIST (Spanner only).
+tags: sql search
+
+case cjk_corpus_1
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['日本語', '日本語を勉強します', '東京都', '東京都庁', '大阪府', '京都大学', '東京大学', '早稲田大学', '日本経済新聞', '国際連合', '自然言語処理', '形態素解析', '人工知能', '機械学習', '情報科学', '電子メール', '携帯電話', '新幹線', '富士山', '日本人', '外国人', '経済産業省', '内閣総理大臣', '今日は良い天気ですね', '私は東京に住んでいます', '彼女は毎朝コーヒーを飲む', 'この本はとても面白かった', '明日の会議は十時からです', 'すもももももももものうち', '吾輩は猫である', 'ありがとうございます', 'おはようございます', 'こんにちは', 'さようなら', '食べました']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["ありがとうございます","ありがとう(boundary), ござい, ます(end_boundary)"]
+  ["おはようございます","おはよう(boundary), ござい, ます(end_boundary)"]
+  ["この本はとても面白かった","この(boundary), 本, は, とても, 面白かっ, た(end_boundary)"]
+  ["こんにちは","こんにちは(boundary, end_boundary)"]
+  ["さようなら","さようなら(boundary, end_boundary)"]
+  ["すもももももももものうち","すもももももも(boundary), も, もの, うち(end_boundary)"]
+  ["京都大学","京都(boundary), 大学(end_boundary)"]
+  ["人工知能","人工(boundary), 知能(end_boundary)"]
+  ["今日は良い天気ですね","今日(boundary), は, 良い, 天気, です, ね(end_boundary)"]
+  ["内閣総理大臣","内閣(boundary), 総理, 大臣(end_boundary)"]
+  ["吾輩は猫である","吾輩(boundary), は, 猫, で, ある(end_boundary)"]
+  ["国際連合","国際(boundary), 連合(end_boundary)"]
+  ["外国人","外国(boundary), 人(end_boundary)"]
+  ["大阪府","大阪(boundary), 府(end_boundary)"]
+  ["富士山","富士山(boundary, end_boundary)"]
+  ["形態素解析","形態素(boundary), 解析(end_boundary)"]
+  ["彼女は毎朝コーヒーを飲む","彼女(boundary), は, 毎朝, コーヒー, を, 飲む(end_boundary)"]
+  ["情報科学","情報(boundary), 科学(end_boundary)"]
+  ["携帯電話","携帯(boundary), 電話(end_boundary)"]
+  ["新幹線","新幹線(boundary, end_boundary)"]
+  ["日本人","日本(boundary), 人(end_boundary)"]
+  ["日本経済新聞","日本(boundary), 経済, 新聞(end_boundary)"]
+  ["日本語","日本(boundary), 語(end_boundary)"]
+  ["日本語を勉強します","日本(boundary), 語, を, 勉強, し, ます(end_boundary)"]
+  ["早稲田大学","早稲田(boundary), 大学(end_boundary)"]
+  ["明日の会議は十時からです","明日(boundary), の, 会議, は, 十, 時, から, です(end_boundary)"]
+  ["東京大学","東京(boundary), 大学(end_boundary)"]
+  ["東京都","東京(boundary), 都(end_boundary)"]
+  ["東京都庁","東京(boundary), 都庁(end_boundary)"]
+  ["機械学習","機械(boundary), 学習(end_boundary)"]
+  ["私は東京に住んでいます","私(boundary), は, 東京, に, 住ん, で, い, ます(end_boundary)"]
+  ["経済産業省","経済(boundary), 産業, 省(end_boundary)"]
+  ["自然言語処理","自然(boundary), 言語, 処理(end_boundary)"]
+  ["電子メール","電子(boundary), メール(end_boundary)"]
+  ["食べました","食べ(boundary), まし, た(end_boundary)"]
+
+case cjk_corpus_2
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['食べられない', '行きたい', '見ている', 'コンピューター', 'インターネット', 'ソフトウェアエンジニア', 'データベース', 'スパナー', 'アメリカ合衆国', '東京タワー', '新宿駅', '渋谷区', '山田太郎', '株式会社', '検索エンジン', '全文検索', '漢字仮名交じり文', '日本語の文章を単語に分割する', '東京特許許可局', '生麦生米生卵', 'お茶', 'お金', '一二三', '二〇二六年', '3月25日', '１２３円', 'ｶﾀｶﾅ', '日本の首都は東京です', '私の名前は田中です', '中文分词测试', '北京大学', '清华大学', '中华人民共和国', '我爱北京天安门', '今天天气很好']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["3月25日","3(boundary), 月, 25, 日(end_boundary)"]
+  ["お茶","お茶(boundary, end_boundary)"]
+  ["お金","お金(boundary, end_boundary)"]
+  ["アメリカ合衆国","アメリカ合衆国(boundary, end_boundary)"]
+  ["インターネット","インターネット(boundary, end_boundary)"]
+  ["コンピューター","コンピューター(boundary, end_boundary)"]
+  ["スパナー","スパナー(boundary, end_boundary)"]
+  ["ソフトウェアエンジニア","ソフトウェア(boundary), エンジニア(end_boundary)"]
+  ["データベース","データベース(boundary, end_boundary)"]
+  ["一二三","一(boundary), 二, 三(end_boundary)"]
+  ["中华人民共和国","中华(boundary), 人民, 共和国(end_boundary)"]
+  ["中文分词测试","中文(boundary), 分词, 测试(end_boundary)"]
+  ["二〇二六年","二(boundary), 〇, 二, 六, 年(end_boundary)"]
+  ["今天天气很好","今天(boundary), 天气, 很, 好(end_boundary)"]
+  ["全文検索","全文(boundary), 検索(end_boundary)"]
+  ["北京大学","北京(boundary), 大学(end_boundary)"]
+  ["山田太郎","山田(boundary), 太郎(end_boundary)"]
+  ["我爱北京天安门","我(boundary), 爱, 北京, 天安门(end_boundary)"]
+  ["新宿駅","新宿(boundary), 駅(end_boundary)"]
+  ["日本の首都は東京です","日本(boundary), の, 首都, は, 東京, です(end_boundary)"]
+  ["日本語の文章を単語に分割する","日本(boundary), 語, の, 文章, を, 単語, に, 分割, する(end_boundary)"]
+  ["東京タワー","東京(boundary), タワー(end_boundary)"]
+  ["東京特許許可局","東京(boundary), 特許, 許可, 局(end_boundary)"]
+  ["株式会社","株式(boundary), 会社(end_boundary)"]
+  ["検索エンジン","検索(boundary), エンジン(end_boundary)"]
+  ["清华大学","清华(boundary), 大学(end_boundary)"]
+  ["渋谷区","渋谷(boundary), 区(end_boundary)"]
+  ["漢字仮名交じり文","漢字(boundary), 仮名, 交じり, 文(end_boundary)"]
+  ["生麦生米生卵","生麦(boundary), 生, 米, 生, 卵(end_boundary)"]
+  ["私の名前は田中です","私(boundary), の, 名前, は, 田中, です(end_boundary)"]
+  ["行きたい","行き(boundary), たい(end_boundary)"]
+  ["見ている","見(boundary), て, いる(end_boundary)"]
+  ["食べられない","食べ(boundary), られ, ない(end_boundary)"]
+  ["１２３円","123(boundary), 円(end_boundary)"]
+  ["ｶﾀｶﾅ","カタカナ(boundary, end_boundary)"]
+
+case cjk_corpus_3
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['我们在学习中文', '自然语言处理', '计算机科学', '人工智能', '机器学习', '数据库', '搜索引擎', '全文检索', '上海市', '广州', '深圳', '香港', '台灣', '臺北市', '繁體中文', '简体中文', '你好', '谢谢', '再见', '我是学生', '他在图书馆看书', '这个问题很难', '研究生命起源', '结婚的和尚未结婚的', '南京市长江大桥', '乒乓球拍卖完了', '中国科学院', '国务院', '长城', '习近平', '马云', '阿里巴巴', '腾讯', '百度', '小米手机']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["上海市","上海(boundary), 市(end_boundary)"]
+  ["中国科学院","中国(boundary), 科学院(end_boundary)"]
+  ["乒乓球拍卖完了","乒乓(boundary), 球, 拍卖, 完了(end_boundary)"]
+  ["习近平","习近平(boundary, end_boundary)"]
+  ["人工智能","人工(boundary), 智能(end_boundary)"]
+  ["他在图书馆看书","他(boundary), 在, 图书, 馆, 看书(end_boundary)"]
+  ["你好","你(boundary), 好(end_boundary)"]
+  ["全文检索","全文(boundary), 检索(end_boundary)"]
+  ["再见","再见(boundary, end_boundary)"]
+  ["南京市长江大桥","南京(boundary), 市, 长江, 大桥(end_boundary)"]
+  ["台灣","台灣(boundary, end_boundary)"]
+  ["国务院","国务院(boundary, end_boundary)"]
+  ["小米手机","小米(boundary), 手机(end_boundary)"]
+  ["广州","广州(boundary, end_boundary)"]
+  ["我们在学习中文","我们(boundary), 在, 学习, 中文(end_boundary)"]
+  ["我是学生","我(boundary), 是, 学生(end_boundary)"]
+  ["搜索引擎","搜索(boundary), 引擎(end_boundary)"]
+  ["数据库","数据库(boundary, end_boundary)"]
+  ["机器学习","机器(boundary), 学习(end_boundary)"]
+  ["深圳","深圳(boundary, end_boundary)"]
+  ["百度","百度(boundary, end_boundary)"]
+  ["研究生命起源","研究(boundary), 生命, 起源(end_boundary)"]
+  ["简体中文","简体(boundary), 中文(end_boundary)"]
+  ["繁體中文","繁體(boundary), 中文(end_boundary)"]
+  ["结婚的和尚未结婚的","结婚(boundary), 的, 和, 尚未, 结婚, 的(end_boundary)"]
+  ["腾讯","腾讯(boundary, end_boundary)"]
+  ["自然语言处理","自然(boundary), 语言, 处理(end_boundary)"]
+  ["臺北市","臺北(boundary), 市(end_boundary)"]
+  ["计算机科学","计算机(boundary), 科学(end_boundary)"]
+  ["谢谢","谢谢(boundary, end_boundary)"]
+  ["这个问题很难","这个(boundary), 问题, 很, 难(end_boundary)"]
+  ["长城","长城(boundary, end_boundary)"]
+  ["阿里巴巴","阿里(boundary), 巴巴(end_boundary)"]
+  ["香港","香港(boundary, end_boundary)"]
+  ["马云","马云(boundary, end_boundary)"]
+
+case cjk_corpus_4
+query:
+  SELECT v, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT(v)) AS t
+  FROM UNNEST(['苹果电脑', '喜欢', '不知道', '一个', '三个人', '第一次', '二零二六年', '한국어', '한국어 텍스트', '안녕하세요', '대한민국', '서울특별시', '자연어처리', '나는학생입니다', '감사합니다', '검색엔진', '데이터베이스', 'abc日本def', 'Google日本', 'iPhone手机', '東京2020', '日本 語', '日', '漢字', '中文English混合', 'テスト test テスト', '日本語、英語、中国語', '「日本語」', '日本語。英語', '第3回', '100円', 'α日本']) AS v
+  ORDER BY v
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:11]
+expect@spanner:
+  columns: v STRING, t STRING
+  ["100円","100(boundary), 円(end_boundary)"]
+  ["Google日本","google(boundary), 日本(end_boundary)"]
+  ["abc日本def","abc(boundary), 日本, def(end_boundary)"]
+  ["iPhone手机","iphone(boundary), 手机(end_boundary)"]
+  ["α日本","α(boundary), 日本(end_boundary)"]
+  ["「日本語」","日本(boundary), 語(end_boundary)"]
+  ["テスト test テスト","テスト(boundary), test, テスト(end_boundary)"]
+  ["一个","一个(boundary, end_boundary)"]
+  ["三个人","三(boundary), 个人(end_boundary)"]
+  ["不知道","不(boundary), 知道(end_boundary)"]
+  ["中文English混合","中文(boundary), english, 混合(end_boundary)"]
+  ["二零二六年","二(boundary), 零, 二, 六, 年(end_boundary)"]
+  ["喜欢","喜欢(boundary, end_boundary)"]
+  ["日","日(boundary, end_boundary)"]
+  ["日本 語","日本(boundary), 語(end_boundary)"]
+  ["日本語、英語、中国語","日本(boundary), 語, 英語, 中国, 語(end_boundary)"]
+  ["日本語。英語","日本(boundary), 語, 英語(end_boundary)"]
+  ["東京2020","東京(boundary), 2020(end_boundary)"]
+  ["漢字","漢字(boundary, end_boundary)"]
+  ["第3回","第(boundary), 3, 回(end_boundary)"]
+  ["第一次","第(boundary), 一, 次(end_boundary)"]
+  ["苹果电脑","苹果(boundary), 电脑(end_boundary)"]
+  ["감사합니다","감사(boundary), 합니다(end_boundary)"]
+  ["검색엔진","검색(boundary), 엔진(end_boundary)"]
+  ["나는학생입니다","나는(boundary), 학생, 입니다(end_boundary)"]
+  ["대한민국","대한민국(boundary, end_boundary)"]
+  ["데이터베이스","데이터베이스(boundary, end_boundary)"]
+  ["서울특별시","서울(boundary), 특별시(end_boundary)"]
+  ["안녕하세요","안녕하세요(boundary, end_boundary)"]
+  ["자연어처리","자연어(boundary), 처리(end_boundary)"]
+  ["한국어","한국어(boundary, end_boundary)"]
+  ["한국어 텍스트","한국어(boundary), 텍스트(end_boundary)"]

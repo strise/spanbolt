@@ -1,0 +1,680 @@
+tags: ddl proto
+# Proto bundles (#127). `expect:` is recorded from the emulator 1.5.59, `expect@spanner:` from Cloud
+# Spanner. `proto:` is the descriptor set CreateDatabase gets; `ddl protos=NAME` sends `proto NAME:`.
+proto:
+  syntax = "proto2";
+  package examples.music;
+  message SingerInfo {
+    optional int64 singer_id = 1;
+    optional string birth_date = 2;
+    optional string nationality = 3;
+    optional Genre genre = 4;
+    repeated string tags = 5;
+    message Nested { optional int32 x = 1; }
+    optional Nested nested = 6;
+  }
+  enum Genre {
+    POP = 0;
+    JAZZ = 1;
+    FOLK = 2;
+    ROCK = 3;
+  }
+  message Other { optional string name = 1; }
+# SingerInfo with one more field.
+proto v2:
+  syntax = "proto2";
+  package examples.music;
+  message SingerInfo {
+    optional int64 singer_id = 1;
+    optional string birth_date = 2;
+    optional string nationality = 3;
+    optional Genre genre = 4;
+    repeated string tags = 5;
+    message Nested { optional int32 x = 1; }
+    optional Nested nested = 6;
+    optional string label = 7;
+  }
+  enum Genre {
+    POP = 0;
+    JAZZ = 1;
+    FOLK = 2;
+    ROCK = 3;
+  }
+  message Other { optional string name = 1; }
+proto garbage:
+  bytes: AQIDBA==
+proto empty:
+  bytes:
+schema:
+  CREATE PROTO BUNDLE (examples.music.SingerInfo, examples.music.Genre, examples.music.SingerInfo.Nested);
+  CREATE TABLE Singers (
+    Id INT64 NOT NULL,
+    Info examples.music.SingerInfo,
+    G examples.music.Genre,
+    Infos ARRAY<examples.music.SingerInfo>,
+    Gs ARRAY<examples.music.Genre>,
+  ) PRIMARY KEY (Id)
+
+case get_ddl
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+
+case quoted_names
+schema:
+  CREATE PROTO BUNDLE (`examples.music.SingerInfo`, `examples.music.Genre`);
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Info `examples.music.SingerInfo`,
+    G `examples.music.Genre` NOT NULL,
+  ) PRIMARY KEY (Id)
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre` NOT NULL,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre NOT NULL,\n) PRIMARY KEY(Id)"
+
+case information_schema_columns
+query:
+  SELECT COLUMN_NAME, ORDINAL_POSITION, IS_NULLABLE, SPANNER_TYPE, DATA_TYPE
+  FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Singers' ORDER BY ORDINAL_POSITION
+expect:
+  columns: COLUMN_NAME STRING, ORDINAL_POSITION INT64, IS_NULLABLE STRING, SPANNER_TYPE STRING, DATA_TYPE STRING
+  ["Id","1","NO","INT64",null]
+  ["Info","2","YES","`examples.music.SingerInfo`",null]
+  ["G","3","YES","`examples.music.Genre`",null]
+  ["Infos","4","YES","ARRAY<`examples.music.SingerInfo`>",null]
+  ["Gs","5","YES","ARRAY<`examples.music.Genre`>",null]
+expect@spanner:
+  columns: COLUMN_NAME STRING, ORDINAL_POSITION INT64, IS_NULLABLE STRING, SPANNER_TYPE STRING, DATA_TYPE STRING
+  ["Id","1","NO","INT64",null]
+  ["Info","2","YES","PROTO<examples.music.SingerInfo>",null]
+  ["G","3","YES","ENUM<examples.music.Genre>",null]
+  ["Infos","4","YES","ARRAY<PROTO<examples.music.SingerInfo>>",null]
+  ["Gs","5","YES","ARRAY<ENUM<examples.music.Genre>>",null]
+
+case schemata_proto_bundle
+query:
+  SELECT SCHEMA_NAME, PROTO_BUNDLE IS NULL FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: SCHEMA_NAME STRING, BOOL
+  ["",false]
+  ["INFORMATION_SCHEMA",false]
+  ["SPANNER_SYS",false]
+expect@spanner:
+  columns: SCHEMA_NAME STRING, BOOL
+  ["",false]
+  ["INFORMATION_SCHEMA",true]
+  ["SPANNER_SYS",true]
+
+case schemata_proto_bundle_value
+query:
+  SELECT SCHEMA_NAME, PROTO_BUNDLE FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ''
+expect:
+  columns: SCHEMA_NAME STRING, PROTO_BUNDLE PROTO<google.protobuf.FileDescriptorSet>
+  ["","CuoCCgpjYXNlLnByb3RvEg5leGFtcGxlcy5tdXNpYyL+AQoKU2luZ2VySW5mbxIbCglzaW5nZXJfaWQYASABKANSCHNpbmdlcklkEh0KCmJpcnRoX2RhdGUYAiABKAlSCWJpcnRoRGF0ZRIgCgtuYXRpb25hbGl0eRgDIAEoCVILbmF0aW9uYWxpdHkSKwoFZ2VucmUYBCABKA4yFS5leGFtcGxlcy5tdXNpYy5HZW5yZVIFZ2VucmUSEgoEdGFncxgFIAMoCVIEdGFncxI5CgZuZXN0ZWQYBiABKAsyIS5leGFtcGxlcy5tdXNpYy5TaW5nZXJJbmZvLk5lc3RlZFIGbmVzdGVkGhYKBk5lc3RlZBIMCgF4GAEgASgFUgF4IhsKBU90aGVyEhIKBG5hbWUYASABKAlSBG5hbWUqLgoFR2VucmUSBwoDUE9QEAASCAoESkFaWhABEggKBEZPTEsQAhIICgRST0NLEAM="]
+expect@spanner:
+  columns: SCHEMA_NAME STRING, PROTO_BUNDLE PROTO<proto2.FileDescriptorSet>
+  ["","CtkCChZwYWNrYWdlOmV4YW1wbGVzLm11c2ljEg5leGFtcGxlcy5tdXNpYyL+AQoKU2luZ2VySW5mbxIbCglzaW5nZXJfaWQYASABKANSCHNpbmdlcklkEh0KCmJpcnRoX2RhdGUYAiABKAlSCWJpcnRoRGF0ZRIgCgtuYXRpb25hbGl0eRgDIAEoCVILbmF0aW9uYWxpdHkSKwoFZ2VucmUYBCABKA4yFS5leGFtcGxlcy5tdXNpYy5HZW5yZVIFZ2VucmUSEgoEdGFncxgFIAMoCVIEdGFncxI5CgZuZXN0ZWQYBiABKAsyIS5leGFtcGxlcy5tdXNpYy5TaW5nZXJJbmZvLk5lc3RlZFIGbmVzdGVkGhYKBk5lc3RlZBIMCgF4GAEgASgFUgF4Ki4KBUdlbnJlEgcKA1BPUBAAEggKBEpBWloQARIICgRGT0xLEAISCAoEUk9DSxAD"]
+
+case schemata_without_bundle
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+query:
+  SELECT SCHEMA_NAME, PROTO_BUNDLE IS NULL FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: SCHEMA_NAME STRING, BOOL
+  ["",true]
+  ["INFORMATION_SCHEMA",true]
+  ["SPANNER_SYS",true]
+expect@spanner:
+  same
+
+case create_after_schema
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos:
+  CREATE PROTO BUNDLE (examples.music.Genre);
+  ALTER TABLE T ADD COLUMN G examples.music.Genre
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  G `examples.music.Genre`,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  G examples.music.Genre,\n) PRIMARY KEY(Id)"
+
+case create_without_descriptors
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl:
+  CREATE PROTO BUNDLE (examples.music.Genre)
+expect:
+  error: INVALID_ARGUMENT
+  message: Contents of proto_descriptor_file cannot be empty
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found in proto descriptors. examples.music.Genre. Did you miss including the proto file in your protoc command?
+
+case create_with_garbage_descriptors
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos=garbage:
+  CREATE PROTO BUNDLE (examples.music.Genre)
+expect:
+  error: INVALID_ARGUMENT
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/catalog/proto_bundle.cc:58) provided_descriptor_set.ParseFromString(proto_descriptor_bytes) Could not parse contents of proto_descriptor_file
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Failed to deserialize proto descriptors into google.protobuf.FileDescriptorSet. Error:
+
+case create_with_empty_descriptors
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos=empty:
+  CREATE PROTO BUNDLE (examples.music.Genre)
+expect:
+  error: INVALID_ARGUMENT
+  message: Contents of proto_descriptor_file cannot be empty
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found in proto descriptors. examples.music.Genre. Did you miss including the proto file in your protoc command?
+
+case create_missing_type
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos:
+  CREATE PROTO BUNDLE (examples.music.Nope)
+expect:
+  error: NOT_FOUND
+  message: Missing descriptor for `examples.music.Nope`
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found in proto descriptors. examples.music.Nope. Did you miss including the proto file in your protoc command?
+
+case create_duplicate_type
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos:
+  CREATE PROTO BUNDLE (examples.music.Genre, examples.music.Genre)
+expect:
+  error: ALREADY_EXISTS
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/catalog/proto_bundle.cc:92) ret.second Type already exists: `examples.music.Genre` the proto bundle
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Type already exists: examples.music.Genre
+
+case create_empty_list
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos:
+  CREATE PROTO BUNDLE ()
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing Spanner DDL statement: CREATE PROTO BUNDLE () : Syntax error on line 1, column 22: Encountered ')' while parsing: identifier
+expect@spanner:
+  same
+
+case create_twice
+ddl protos:
+  CREATE PROTO BUNDLE (examples.music.Other)
+expect:
+  error: FAILED_PRECONDITION
+  message: Removed type `examples.music.SingerInfo` is still being used by column Singers.Info
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Proto bundle already exists; cannot create it
+
+case column_type_not_in_bundle
+ddl protos:
+  CREATE TABLE T (Id INT64 NOT NULL, O examples.music.Other) PRIMARY KEY (Id)
+expect:
+  error: INTERNAL
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/updater/ddl_type_conversion.cc:242) false Unrecognized ddl::ColumnDefinition: column_name: "O" type: NONE proto_type_name: "examples.music.Other"
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found: examples.music.Other.
+
+case column_type_unknown
+ddl:
+  CREATE TABLE T (Id INT64 NOT NULL, O examples.music.Nope) PRIMARY KEY (Id)
+expect:
+  error: INTERNAL
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/updater/ddl_type_conversion.cc:242) false Unrecognized ddl::ColumnDefinition: column_name: "O" type: NONE proto_type_name: "examples.music.Nope"
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found: examples.music.Nope.
+
+case column_without_bundle
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl:
+  ALTER TABLE T ADD COLUMN G examples.music.Genre
+expect:
+  error: INTERNAL
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/updater/ddl_type_conversion.cc:242) false Unrecognized ddl::ColumnDefinition: column_name: "G" type: NONE proto_type_name: "examples.music.Genre"
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found: examples.music.Genre.
+
+case alter_insert
+ddl protos:
+  ALTER PROTO BUNDLE INSERT (examples.music.Other)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.Other,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.Other,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+ddl:
+  CREATE TABLE T (Id INT64 NOT NULL, O examples.music.Other) PRIMARY KEY (Id)
+expect:
+  ok
+expect@spanner:
+  same
+
+case alter_insert_existing
+ddl protos:
+  ALTER PROTO BUNDLE INSERT (examples.music.Genre)
+expect:
+  error: ALREADY_EXISTS
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/catalog/proto_bundle.cc:92) ret.second Type already exists: `examples.music.Genre` the proto bundle
+expect@spanner:
+  error: ALREADY_EXISTS
+  message: Type already exists: examples.music.Genre
+
+case alter_without_descriptors
+ddl:
+  ALTER PROTO BUNDLE INSERT (examples.music.Other)
+expect:
+  error: INVALID_ARGUMENT
+  message: Contents of proto_descriptor_file cannot be empty
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found in proto descriptors. examples.music.Other. Did you miss including the proto file in your protoc command?
+
+case alter_update
+ddl protos=v2:
+  ALTER PROTO BUNDLE UPDATE (examples.music.SingerInfo)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+
+case alter_update_not_in_bundle
+ddl protos:
+  ALTER PROTO BUNDLE UPDATE (examples.music.Other)
+expect:
+  error: NOT_FOUND
+  message: Tried to update `examples.music.Other` which does not already exist.
+expect@spanner:
+  error: NOT_FOUND
+  message: Message type not found in proto bundle: examples.music.Other
+
+case alter_delete_in_use
+ddl protos:
+  ALTER PROTO BUNDLE DELETE (examples.music.SingerInfo)
+expect:
+  error: FAILED_PRECONDITION
+  message: Removed type `examples.music.SingerInfo` is still being used by column Singers.Info
+expect@spanner:
+  error: NOT_FOUND
+  message: Type examples.music.SingerInfo.Nested references type examples.music.SingerInfo which is to be removed from the proto bundle
+
+case alter_delete_nested_in_use
+ddl protos:
+  ALTER PROTO BUNDLE DELETE (examples.music.SingerInfo.Nested)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+
+case alter_delete_unused
+schema:
+  CREATE PROTO BUNDLE (examples.music.SingerInfo, examples.music.Genre, examples.music.Other);
+  CREATE TABLE T (Id INT64 NOT NULL, Info examples.music.SingerInfo) PRIMARY KEY (Id)
+ddl protos:
+  ALTER PROTO BUNDLE DELETE (examples.music.Other)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n) PRIMARY KEY(Id)"
+
+case alter_delete_missing
+ddl protos:
+  ALTER PROTO BUNDLE DELETE (examples.music.Other)
+expect:
+  error: NOT_FOUND
+  message: GOOGLESQL_RET_CHECK failure (backend/schema/catalog/proto_bundle.cc:114) instance_->types_.erase(t) == 1 (0 vs. 1) Tried to remove `examples.music.Other` which does not already exist in the proto bundle.
+expect@spanner:
+  error: NOT_FOUND
+  message: Type not found in proto bundle: examples.music.Other
+
+case alter_insert_update_delete
+schema:
+  CREATE PROTO BUNDLE (examples.music.SingerInfo, examples.music.Genre, examples.music.SingerInfo.Nested);
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos=v2:
+  ALTER PROTO BUNDLE INSERT (examples.music.Other) UPDATE (examples.music.SingerInfo) DELETE (examples.music.Genre)
+expect:
+  ok
+expect@spanner:
+  error: NOT_FOUND
+  message: Type examples.music.SingerInfo references type examples.music.Genre which is to be removed from the proto bundle
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Other,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n) PRIMARY KEY(Id)"
+
+case alter_without_bundle
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl protos:
+  ALTER PROTO BUNDLE INSERT (examples.music.Genre)
+expect:
+  error: FAILED_PRECONDITION
+  message: Proto bundle does not yet exist; cannot alter it
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Proto bundle does not yet exist; cannot alter it
+
+case drop_in_use
+ddl:
+  DROP PROTO BUNDLE
+expect:
+  error: FAILED_PRECONDITION
+  message: Removed type `examples.music.SingerInfo` is still being used by column Singers.Info
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot set new proto bundle: removed type examples.music.Genre is still used by 2 columns
+
+case drop_unused
+schema:
+  CREATE PROTO BUNDLE (examples.music.Genre);
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl:
+  DROP PROTO BUNDLE
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+query:
+  SELECT PROTO_BUNDLE IS NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ''
+expect:
+  columns: BOOL
+  [true]
+expect@spanner:
+  same
+
+case drop_without_bundle
+schema:
+  CREATE TABLE T (Id INT64 NOT NULL) PRIMARY KEY (Id)
+ddl:
+  DROP PROTO BUNDLE
+expect:
+  error: FAILED_PRECONDITION
+  message: Proto bundle does not yet exist; cannot drop it
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Proto bundle does not yet exist; cannot drop it
+
+case drop_column_then_bundle
+ddl:
+  ALTER TABLE Singers DROP COLUMN Info;
+  ALTER TABLE Singers DROP COLUMN G;
+  ALTER TABLE Singers DROP COLUMN Infos;
+  ALTER TABLE Singers DROP COLUMN Gs;
+  DROP PROTO BUNDLE
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  same
+
+case proto_key_column
+ddl:
+  CREATE TABLE T (Info examples.music.SingerInfo NOT NULL) PRIMARY KEY (Info)
+expect:
+  ok
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: 
+
+case enum_key_column
+ddl:
+  CREATE TABLE T (G examples.music.Genre NOT NULL) PRIMARY KEY (G)
+expect:
+  ok
+expect@spanner:
+  same
+
+case enum_index
+ddl:
+  CREATE INDEX SingersByG ON Singers(G)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+  "CREATE INDEX SingersByG ON Singers(G)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+  "CREATE INDEX SingersByG ON Singers(G)"
+
+case proto_index
+ddl:
+  CREATE INDEX SingersByInfo ON Singers(Info)
+expect:
+  ok
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Index SingersByInfo is defined on a column of unsupported type PROTO.
+
+case proto_storing
+ddl:
+  CREATE INDEX SingersById ON Singers(Id) STORING (Info, G)
+expect:
+  ok
+expect@spanner:
+  same
+
+case generated_from_field
+ddl:
+  ALTER TABLE Singers ADD COLUMN SingerId INT64 AS (Info.singer_id) STORED;
+  ALTER TABLE Singers ADD COLUMN Genre examples.music.Genre AS (Info.genre) STORED
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n  SingerId INT64 AS (Info.singer_id) STORED,\n  Genre `examples.music.Genre` AS (Info.genre) STORED,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n  SingerId INT64 AS (Info.singer_id) STORED,\n  Genre examples.music.Genre AS (Info.genre) STORED,\n) PRIMARY KEY(Id)"
+
+case alter_proto_to_bytes
+ddl:
+  ALTER TABLE Singers ALTER COLUMN Info BYTES(MAX)
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info BYTES(MAX),\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info BYTES(MAX),\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+
+case alter_bytes_to_proto
+schema:
+  CREATE PROTO BUNDLE (examples.music.SingerInfo, examples.music.Genre);
+  CREATE TABLE T (Id INT64 NOT NULL, B BYTES(MAX), I INT64) PRIMARY KEY (Id)
+ddl:
+  ALTER TABLE T ALTER COLUMN B examples.music.SingerInfo;
+  ALTER TABLE T ALTER COLUMN I examples.music.Genre
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  B `examples.music.SingerInfo`,\n  I `examples.music.Genre`,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n)"
+  "CREATE TABLE T (\n  Id INT64 NOT NULL,\n  B examples.music.SingerInfo,\n  I examples.music.Genre,\n) PRIMARY KEY(Id)"
+
+case alter_enum_to_int64
+ddl:
+  ALTER TABLE Singers ALTER COLUMN G INT64
+expect:
+  ok
+expect@spanner:
+  same
+
+case alter_proto_to_string
+ddl:
+  ALTER TABLE Singers ALTER COLUMN Info STRING(MAX)
+expect:
+  error: INVALID_ARGUMENT
+  message: Cannot change type of column `Info` from `examples.music.SingerInfo` to `STRING`
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Cannot change type of column Singers.Info from PROTO to STRING.
+
+case enum_default
+ddl:
+  ALTER TABLE Singers ADD COLUMN G2 examples.music.Genre DEFAULT (examples.music.Genre.JAZZ)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the default value of column `Singers`.`G2`: Unrecognized name: examples [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'examples.music.Genre.JAZZ\' from column \'G2\' in table \'Singers\': Unrecognized name: examples [at 1:1]
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+
+case enum_default_string
+ddl:
+  ALTER TABLE Singers ADD COLUMN G2 examples.music.Genre DEFAULT ('JAZZ')
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n  G2 `examples.music.Genre` DEFAULT ('JAZZ'),\n) PRIMARY KEY(Id)"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n  G2 examples.music.Genre DEFAULT ('JAZZ'),\n) PRIMARY KEY(Id)"
+
+case proto_in_view
+ddl:
+  CREATE VIEW V SQL SECURITY INVOKER AS SELECT Singers.Id, Singers.Info, Singers.Info.singer_id AS SingerId FROM Singers
+expect:
+  ok
+expect@spanner:
+  same
+get_ddl
+expect:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info `examples.music.SingerInfo`,\n  G `examples.music.Genre`,\n  Infos ARRAY<`examples.music.SingerInfo`>,\n  Gs ARRAY<`examples.music.Genre`>,\n) PRIMARY KEY(Id)"
+  "CREATE VIEW V SQL SECURITY INVOKER AS SELECT Singers.Id, Singers.Info, Singers.Info.singer_id AS SingerId FROM Singers"
+expect@spanner:
+  statements:
+  "CREATE PROTO BUNDLE (\n  examples.music.Genre,\n  examples.music.SingerInfo,\n  examples.music.SingerInfo.Nested,\n)"
+  "CREATE TABLE Singers (\n  Id INT64 NOT NULL,\n  Info examples.music.SingerInfo,\n  G examples.music.Genre,\n  Infos ARRAY<examples.music.SingerInfo>,\n  Gs ARRAY<examples.music.Genre>,\n) PRIMARY KEY(Id)"
+  "CREATE VIEW V SQL SECURITY INVOKER AS SELECT Singers.Id, Singers.Info, Singers.Info.singer_id AS SingerId FROM Singers"

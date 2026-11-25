@@ -192,7 +192,6 @@ impl<'a> Parser<'a> {
     /// After CREATE/ALTER/DROP: the object kinds Spanner has and spanbolt doesn't support.
     fn unsupported_kind(&self, verb: &str) -> Option<DdlError> {
         const KINDS: &[(&[&str], &str)] = &[
-            (&["PROTO", "BUNDLE"], "PROTO BUNDLE"),
             (&["VECTOR", "INDEX"], "VECTOR INDEX"),
             (&["QUEUE"], "QUEUE"),
             (&["PLACEMENT"], "PLACEMENT"),
@@ -246,6 +245,23 @@ impl<'a> Parser<'a> {
             name.push_str(&self.path_part()?);
         }
         Ok(name)
+    }
+
+    /// `(a.b.C, `a.b.D`)`: the proto and enum full names of a PROTO BUNDLE statement.
+    fn proto_type_list(&mut self) -> R<Vec<String>> {
+        self.expect_sym("(")?;
+        let mut out = Vec::new();
+        loop {
+            out.push(self.path()?);
+            if self.eat_sym(")") {
+                return Ok(out);
+            }
+            self.expect_sym(",")?;
+            // A trailing comma, as GetDatabaseDdl prints the list.
+            if self.eat_sym(")") {
+                return Ok(out);
+            }
+        }
     }
 
     fn ident_list(&mut self) -> R<Vec<String>> {
@@ -500,6 +516,12 @@ impl<'a> Parser<'a> {
     fn create(&mut self) -> R<Statement> {
         let head = self.toks[self.pos - 1].start;
         let or_replace = self.eat_kws(&["OR", "REPLACE"]);
+        if !or_replace && self.eat_kws(&["PROTO", "BUNDLE"]) {
+            return Ok(Statement::CreateProtoBundle {
+                types: self.proto_type_list()?,
+                descriptors: None,
+            });
+        }
         if self.eat_kw("SCHEMA") {
             let if_not_exists = self.if_not_exists();
             let name = self.ident()?;
@@ -943,8 +965,13 @@ impl<'a> Parser<'a> {
     fn scalar_or_compound_type(&mut self) -> R<ColumnType> {
         let word = match self.tok() {
             Tok::Ident(w) => w.to_ascii_uppercase(),
+            // `examples.music.SingerInfo`: a proto or enum of the proto bundle.
+            Tok::QuotedIdent(_) => return Ok(ColumnType::Proto(self.path()?)),
             _ => return Err(self.encountered("type")),
         };
+        if matches!(self.tok_at(1), Tok::Sym(".")) {
+            return Ok(ColumnType::Proto(self.path()?));
+        }
         self.bump();
         let ty = match word.as_str() {
             "BOOL" => ColumnType::Bool,
@@ -1193,6 +1220,27 @@ impl<'a> Parser<'a> {
     }
 
     fn alter(&mut self) -> R<Statement> {
+        if self.eat_kws(&["PROTO", "BUNDLE"]) {
+            let mut change = ProtoBundleChange::default();
+            loop {
+                if self.eat_kw("INSERT") {
+                    change.insert.extend(self.proto_type_list()?);
+                } else if self.eat_kw("UPDATE") {
+                    change.update.extend(self.proto_type_list()?);
+                } else if self.eat_kw("DELETE") {
+                    change.delete.extend(self.proto_type_list()?);
+                } else {
+                    break;
+                }
+            }
+            if change == ProtoBundleChange::default() {
+                return Err(self.encountered("alter_proto_bundle_statement"));
+            }
+            return Ok(Statement::AlterProtoBundle {
+                change,
+                descriptors: None,
+            });
+        }
         if self.eat_kw("TABLE") {
             let if_exists = self.if_exists();
             let table = self.path()?;
@@ -1451,6 +1499,9 @@ impl<'a> Parser<'a> {
     }
 
     fn drop(&mut self) -> R<Statement> {
+        if self.eat_kws(&["PROTO", "BUNDLE"]) {
+            return Ok(Statement::DropProtoBundle);
+        }
         if self.eat_kw("TABLE") {
             let if_exists = self.if_exists();
             return Ok(Statement::DropTable {

@@ -31,6 +31,11 @@ pub fn spanner_type(t: &ColumnType) -> pb::Type {
             proto_type_fqn: name.clone(),
             ..Default::default()
         },
+        ColumnType::Enum(name) => pb::Type {
+            code: C::Enum as i32,
+            proto_type_fqn: name.clone(),
+            ..Default::default()
+        },
         ColumnType::Array(e) => pb::Type {
             code: C::Array as i32,
             array_element_type: Some(Box::new(spanner_type(e))),
@@ -151,6 +156,8 @@ fn prod_value_error(
     }
     let expected = match ty {
         ColumnType::Bytes(_) => "Base64 encoded BYTES".to_string(),
+        ColumnType::Proto(_) => "Base64 encoded PROTO".to_string(),
+        ColumnType::Enum(_) => "ENUM".to_string(),
         t => spanbolt_storage::value::type_name(t),
     };
     Error::failed_precondition(format!(
@@ -158,6 +165,40 @@ fn prod_value_error(
         cols.names.get(i).copied().unwrap_or_default(),
         cols.table
     ))
+}
+
+/// Production Spanner's error for a write whose PROTO or ENUM value doesn't decode (`e` is the
+/// emulator-worded one): `Invalid value for column C in table T: Expected ENUM.` Other types keep
+/// `e`. Only runs on a failed write.
+pub fn prod_write_error(
+    cat: &spanbolt_storage::Catalog,
+    w: &pb::mutation::Write,
+    e: spanbolt_storage::Error,
+) -> spanbolt_storage::Error {
+    let Some(tm) = cat.table_id(&w.table).map(|t| cat.table(t)) else {
+        return e;
+    };
+    let cols: Vec<_> = w.columns.iter().map(|n| tm.column(n)).collect();
+    for row in &w.values {
+        for (v, c) in row.values.iter().zip(&cols) {
+            let Some(cm) = c.map(|c| &tm.columns[c]) else {
+                return e;
+            };
+            if spanbolt_storage::wire::decode(v, &cm.ty).is_ok() {
+                continue;
+            }
+            let expected = match cm.ty {
+                ColumnType::Proto(_) => "Base64 encoded PROTO",
+                ColumnType::Enum(_) => "ENUM",
+                _ => return e,
+            };
+            return spanbolt_storage::Error::failed_precondition(format!(
+                "Invalid value for column {} in table {}: Expected {expected}.",
+                cm.name, tm.name
+            ));
+        }
+    }
+    e
 }
 
 /// Why production Spanner's NUMERIC parser rejects `s`, for the plain decimal forms recorded

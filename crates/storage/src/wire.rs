@@ -34,11 +34,18 @@ pub fn decode(v: &prost_types::Value, ty: &ColumnType) -> Result<Value> {
             Some(Kind::BoolValue(b)) => Value::Bool(*b),
             _ => return Err(mismatch()),
         },
-        ColumnType::Int64 => {
+        ColumnType::Int64 | ColumnType::Enum(_) => {
+            if matches!(ty, ColumnType::Enum(_)) && s.is_none() {
+                return Err(mismatch());
+            }
             let s = need_str()?;
-            Value::Int64(s.parse().map_err(|_| {
-                Error::failed_precondition(format!("Could not parse {s} as an integer"))
-            })?)
+            let parse_err =
+                || Error::failed_precondition(format!("Could not parse {s} as an integer"));
+            // An ENUM's numbers are int32.
+            Value::Int64(match ty {
+                ColumnType::Enum(_) => s.parse::<i32>().map_err(|_| parse_err())?.into(),
+                _ => s.parse().map_err(|_| parse_err())?,
+            })
         }
         ColumnType::Float64 => Value::Float64(float(k, ty)?.ok_or_else(mismatch)?),
         ColumnType::Float32 => {
@@ -57,7 +64,8 @@ pub fn decode(v: &prost_types::Value, ty: &ColumnType) -> Result<Value> {
             })?)
         }
         ColumnType::String(_) => Value::String(Arc::from(need_str()?)),
-        ColumnType::Bytes(_) | ColumnType::TokenList => {
+        // A PROTO value is its message's serialized bytes.
+        ColumnType::Bytes(_) | ColumnType::TokenList | ColumnType::Proto(_) => {
             let s = need_str()?;
             let b: Arc<[u8]> = Arc::from(BASE64.decode(s).map_err(|_| {
                 Error::failed_precondition(format!(
@@ -88,8 +96,6 @@ pub fn decode(v: &prost_types::Value, ty: &ColumnType) -> Result<Value> {
             let s = need_str()?;
             Value::Uuid(parse_uuid(s).ok_or_else(|| generic(s, ty))?)
         }
-        // Only INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE is a PROTO, and it is only ever NULL.
-        ColumnType::Proto(_) => return Err(mismatch()),
         ColumnType::Array(elem) => match k {
             Some(Kind::ListValue(l)) => {
                 let mut out = Vec::with_capacity(l.values.len());
@@ -204,6 +210,7 @@ fn zeta_type(ty: &ColumnType) -> String {
         ColumnType::Float32 => "FLOAT".into(),
         ColumnType::Float64 => "DOUBLE".into(),
         ColumnType::Array(e) => format!("ARRAY<{}>", zeta_type(e)),
+        ColumnType::Enum(name) => format!("ENUM<{name}>"),
         other => type_name(other),
     }
 }

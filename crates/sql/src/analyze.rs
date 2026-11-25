@@ -45,7 +45,7 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
         if cat.emulator_compat {
             e
         } else {
-            prod_syntax_error(e)
+            prod_syntax_error(prod_proto_names(e))
         }
     })?;
     googlesql_sys::with_stack_for(sql.len(), || {
@@ -53,6 +53,18 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     })?;
     AnyResolvedStatementProto::decode(bytes.as_slice())
         .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
+}
+
+/// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too
+/// (`No matching signature for function LENGTH ... Argument types: proto2.FileDescriptorSet`).
+fn prod_proto_names(mut e: Error) -> Error {
+    let name = crate::types::FILE_DESCRIPTOR_SET;
+    if e.message.contains(name) {
+        e.message = e
+            .message
+            .replace(name, &crate::types::production_proto_name(name));
+    }
+    e
 }
 
 /// Production Spanner C-escapes the quotes in a query's syntax error (`Unexpected identifier

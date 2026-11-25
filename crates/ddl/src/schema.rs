@@ -20,6 +20,9 @@ pub enum ColumnType {
     Array(Box<ColumnType>),
     /// Only appears inside queries and ARRAY<STRUCT<...>> columns' expressions.
     Struct(Vec<(Option<String>, ColumnType)>),
+    /// A PROTO by its GoogleSQL full name. Only `INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE`
+    /// (`google.protobuf.FileDescriptorSet`, always NULL) has one: DDL and SQL reject PROTO types.
+    Proto(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

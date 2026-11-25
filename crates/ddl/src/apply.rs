@@ -167,6 +167,7 @@ fn base_type(ty: &ColumnType) -> &'static str {
         ColumnType::TokenList => "TOKENLIST",
         ColumnType::Array(_) => "ARRAY",
         ColumnType::Struct(_) => "STRUCT",
+        ColumnType::Proto(_) => "PROTO",
     }
 }
 

@@ -160,10 +160,17 @@ pub(crate) fn info_tables(emulator_compat: bool) -> &'static [Arc<InfoTable>] {
     if emulator_compat { &EMULATOR } else { &SPANNER }
 }
 
-/// `STRING(MAX)`, `STRING(100)`, `ARRAY<STRING(MAX)>`, `BOOL`, `INT64`, `JSON`.
+/// `STRING(MAX)`, `STRING(100)`, `ARRAY<STRING(MAX)>`, `BOOL`, `INT64`, `JSON`, and
+/// `PROTO<proto2.FileDescriptorSet>` (GoogleSQL's `google.protobuf.FileDescriptorSet`).
 fn info_type(ty: &str) -> Type {
     if let Some(e) = ty.strip_prefix("ARRAY<").and_then(|t| t.strip_suffix('>')) {
         return Type::Array(Box::new(info_type(e)));
+    }
+    if let Some(m) = ty
+        .strip_prefix("PROTO<proto2.")
+        .and_then(|t| t.strip_suffix('>'))
+    {
+        return Type::Proto(format!("google.protobuf.{m}"));
     }
     match ty {
         "BOOL" => Type::Bool,

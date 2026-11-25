@@ -88,6 +88,8 @@ pub fn decode(v: &prost_types::Value, ty: &ColumnType) -> Result<Value> {
             let s = need_str()?;
             Value::Uuid(parse_uuid(s).ok_or_else(|| generic(s, ty))?)
         }
+        // Only INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE is a PROTO, and it is only ever NULL.
+        ColumnType::Proto(_) => return Err(mismatch()),
         ColumnType::Array(elem) => match k {
             Some(Kind::ListValue(l)) => {
                 let mut out = Vec::with_capacity(l.values.len());

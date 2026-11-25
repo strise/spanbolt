@@ -17,6 +17,7 @@
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
+#include "google/protobuf/descriptor.pb.h"
 #include "googlesql/public/analyzer.h"
 #include "googlesql/public/analyzer_options.h"
 #include "googlesql/public/analyzer_output.h"
@@ -239,6 +240,9 @@ absl::StatusOr<SharedBase*> BaseFor(const json& features) {
 // language features.
 absl::StatusOr<SharedBase*> DefaultBase() { return BaseFor(json()); }
 
+constexpr char kFileDescriptorSetType[] =
+    "PROTO<google.protobuf.FileDescriptorSet>";
+
 // Parses each distinct type string once per process: AnalyzeType copies the
 // analyser and language options and runs the parser per call, and a schema of
 // hundreds of tables has only a few dozen distinct column types.
@@ -250,14 +254,25 @@ absl::StatusOr<const googlesql::Type*> ColumnType(const std::string& name) {
     std::lock_guard<std::mutex> lock(mu);
     if (auto it = types->find(name); it != types->end()) return it->second;
   }
-  auto base = DefaultBase();
-  if (!base.ok()) return base.status();
-  auto parsed = ParseType(name, (*base)->options, &(*base)->builtins,
-                          GlobalTypes());
-  if (!parsed.ok()) return parsed.status();
+  const googlesql::Type* type = nullptr;
+  if (name == kFileDescriptorSetType) {
+    // INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE, the one PROTO column. Made
+    // directly: Spanner's language options name no proto types, so the
+    // analyser can't parse it, and user SQL still can't name it.
+    absl::Status made = GlobalTypes()->MakeProtoType(
+        google::protobuf::FileDescriptorSet::descriptor(), &type);
+    if (!made.ok()) return made;
+  } else {
+    auto base = DefaultBase();
+    if (!base.ok()) return base.status();
+    auto parsed = ParseType(name, (*base)->options, &(*base)->builtins,
+                            GlobalTypes());
+    if (!parsed.ok()) return parsed.status();
+    type = *parsed;
+  }
   std::lock_guard<std::mutex> lock(mu);
-  types->emplace(name, *parsed);
-  return *parsed;
+  types->emplace(name, type);
+  return type;
 }
 
 // {"name":"schema.T","columns":[{"name":"c","type":"INT64","hidden":false,

@@ -755,6 +755,55 @@ expect@spanner:
   ["","SPANNER_SYS",null,null,"spanner_system"]
   ["","app","0",null,"spanner_admin"]
 
+# PROTO_BUNDLE alone: NULL when the database has no proto bundle.
+case schemata_proto_bundle_column
+schema:
+  CREATE SCHEMA app;
+query:
+  SELECT SCHEMA_NAME, PROTO_BUNDLE FROM INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME
+expect:
+  columns: SCHEMA_NAME STRING, PROTO_BUNDLE PROTO<google.protobuf.FileDescriptorSet>
+  ["",null]
+  ["INFORMATION_SCHEMA",null]
+  ["SPANNER_SYS",null]
+  ["app",null]
+expect@spanner:
+  columns: SCHEMA_NAME STRING, PROTO_BUNDLE PROTO<proto2.FileDescriptorSet>
+  ["",null]
+  ["INFORMATION_SCHEMA",null]
+  ["SPANNER_SYS",null]
+  ["app",null]
+
+# How INFORMATION_SCHEMA.COLUMNS lists SCHEMATA's columns, PROTO_BUNDLE among them.
+case schemata_columns_listing
+query:
+  SELECT COLUMN_NAME, ORDINAL_POSITION, SPANNER_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'INFORMATION_SCHEMA' AND TABLE_NAME = 'SCHEMATA' ORDER BY ORDINAL_POSITION
+expect:
+  columns: COLUMN_NAME STRING, ORDINAL_POSITION INT64, SPANNER_TYPE STRING, IS_NULLABLE STRING
+  ["CATALOG_NAME","1","STRING(MAX)","NO"]
+  ["SCHEMA_NAME","2","STRING(MAX)","NO"]
+  ["EFFECTIVE_TIMESTAMP","3","INT64","YES"]
+  ["SCHEMA_OWNER","4","STRING(MAX)","YES"]
+  ["PROTO_BUNDLE","5","PROTO<proto2.FileDescriptorSet>","YES"]
+expect@spanner:
+  columns: COLUMN_NAME STRING, ORDINAL_POSITION INT64, SPANNER_TYPE STRING, IS_NULLABLE STRING
+  ["CATALOG_NAME","1","STRING(MAX)","NO"]
+  ["SCHEMA_NAME","2","STRING(MAX)","NO"]
+  ["EFFECTIVE_TIMESTAMP","3","INT64","YES"]
+  ["PROTO_BUNDLE","4","PROTO<proto2.FileDescriptorSet>","YES"]
+  ["SCHEMA_OWNER","5","STRING(MAX)","YES"]
+
+# PROTO_BUNDLE is a PROTO, not BYTES: no LENGTH.
+case schemata_proto_bundle_length
+query:
+  SELECT LENGTH(PROTO_BUNDLE) FROM INFORMATION_SCHEMA.SCHEMATA
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function LENGTH Argument types: google.protobuf.FileDescriptorSet Signature: LENGTH(STRING) Argument 1: Unable to coerce type google.protobuf.FileDescriptorSet to expected type STRING Signature: LENGTH(BYTES) Argument 1: Unable to coerce type google.protobuf.FileDescriptorSet to expected type BYTES [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function LENGTH\n Argument types: proto2.FileDescriptorSet\n Signature: LENGTH(STRING)\n Argument 1: Unable to coerce type proto2.FileDescriptorSet to expected type STRING\n Signature: LENGTH(BYTES)\n Argument 1: Unable to coerce type proto2.FileDescriptorSet to expected type BYTES [at 1:8]
+
 # Production's EFFECTIVE_TIMESTAMP is the commit time, in microseconds, of the database's latest
 # schema change, the same for every schema; 0 before the first UpdateDatabaseDdl.
 case schemata_effective_timestamp

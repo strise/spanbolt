@@ -24,11 +24,15 @@ expect:
   ["3","b","5"]
   ["2","a","20"]
   ["1","a","10"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (0 PERCENT)
 expect:
   columns: N INT64
   ["0"]
+expect@spanner:
+  same
 query:
   SELECT i.Id FROM Items AS i TABLESAMPLE BERNOULLI (100 PERCENT) WHERE i.Val > 6
 expect:
@@ -36,21 +40,30 @@ expect:
   ["2"]
   ["4"]
   ["1"]
+expect@spanner:
+  same
 query:
   SELECT Id FROM Items TABLESAMPLE BERNOULLI (100.0 PERCENT) i WHERE i.Val > 6
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Expected end of input but got identifier "i" [at 1:60]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got identifier \"i\" [at 1:60]
 query:
   SELECT COUNT(*) BETWEEN 0 AND 4 AS InRange FROM Items TABLESAMPLE BERNOULLI (50 PERCENT)
 expect:
   columns: InRange BOOL
   [true]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) BETWEEN 0 AND 4 AS InRange FROM Items TABLESAMPLE BERNOULLI (0.5 PERCENT)
 expect:
   columns: InRange BOOL
   [true]
+expect@spanner:
+  same
 
 case bernoulli_params
 query:
@@ -60,6 +73,8 @@ params:
 expect:
   columns: N INT64
   ["4"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -67,6 +82,8 @@ params:
 expect:
   columns: N INT64
   ["0"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -74,6 +91,9 @@ params:
 expect:
   error: OUT_OF_RANGE
   message: SampleScan requires non-null size
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Sample size as percent must be in range [0,100].
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -81,6 +101,9 @@ params:
 expect:
   error: OUT_OF_RANGE
   message: PERCENT value must be in the range [0, 100]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Sample size as percent must be in range [0,100].
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -88,6 +111,9 @@ params:
 expect:
   error: OUT_OF_RANGE
   message: PERCENT value must be in the range [0, 100]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Sample size as percent must be in range [0,100].
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -95,6 +121,8 @@ params:
 expect:
   error: INVALID_ARGUMENT
   message: PERCENT expects either a double or an integer literal or parameter [at 1:56]
+expect@spanner:
+  same
 
 case bernoulli_bad_arguments
 query:
@@ -102,36 +130,55 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: PERCENT value must be in the range [0, 100] [at 1:56]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (-1 PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected "-" [at 1:56]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected \"-\" [at 1:56]
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (NULL PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected keyword NULL [at 1:56]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (2 ROWS)
 expect:
   error: INVALID_ARGUMENT
   message: BERNOULLI/ROWS is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The specified sampling algorithm (bernoulli/ROWS) is not supported (check the spelling).
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI ('a' PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected string literal 'a' [at 1:56]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected string literal \'a\' [at 1:56]
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (1 + 1 PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Expected keyword PERCENT or keyword ROWS but got "+" [at 1:58]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected keyword PERCENT or keyword ROWS but got \"+\" [at 1:58]
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE SYSTEM (10 PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: SYSTEM sampling is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The specified sampling algorithm (system/PERCENT) is not supported (check the spelling).
 
 case reservoir_rows
 query:
@@ -142,6 +189,8 @@ expect:
   ["2","a","20"]
   ["3","b","5"]
   ["4",null,"7"]
+expect@spanner:
+  same
 query:
   SELECT Id FROM Items TABLESAMPLE RESERVOIR (4 ROWS)
 expect:
@@ -150,21 +199,29 @@ expect:
   ["4"]
   ["1"]
   ["2"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (2 ROWS)
 expect:
   columns: N INT64
   ["2"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (0 ROWS)
 expect:
   columns: N INT64
   ["0"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(DISTINCT Id) AS N FROM Items TABLESAMPLE RESERVOIR (3 ROWS)
 expect:
   columns: N INT64
   ["3"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (@n ROWS)
 params:
@@ -172,16 +229,22 @@ params:
 expect:
   columns: N INT64
   ["1"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (2 ROWS) WHERE Val > 100
 expect:
   columns: N INT64
   ["0"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) <= 2 AS AtMost FROM Items TABLESAMPLE RESERVOIR (2 ROWS) WHERE Val > 6
 expect:
   columns: AtMost BOOL
   [true]
+expect@spanner:
+  same
 
 case reservoir_bad_arguments
 query:
@@ -189,21 +252,31 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected "-" [at 1:56]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected \"-\" [at 1:56]
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (NULL ROWS)
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected keyword NULL [at 1:56]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (50 PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: RESERVOIR/PERCENT is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The specified sampling algorithm (reservoir/PERCENT) is not supported (check the spelling).
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (1.5 ROWS)
 expect:
   error: INVALID_ARGUMENT
   message: ROWS expects an integer literal or parameter [at 1:56]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (@n ROWS)
 params:
@@ -211,6 +284,9 @@ params:
 expect:
   error: OUT_OF_RANGE
   message: SampleScan requires non-negative size
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: LIMIT value may not be negative.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (@n ROWS)
 params:
@@ -218,6 +294,9 @@ params:
 expect:
   error: OUT_OF_RANGE
   message: SampleScan requires non-null size
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: LIMIT value may not be null.
 
 case unsupported_clauses
 query:
@@ -225,26 +304,41 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: REPEATABLE is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: REPEATABLE TABLESAMPLE is not supported.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (2 ROWS) REPEATABLE (7)
 expect:
   error: INVALID_ARGUMENT
   message: REPEATABLE is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: REPEATABLE TABLESAMPLE is not supported.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (2 ROWS) REPEATABLE (1)
 expect:
   error: INVALID_ARGUMENT
   message: REPEATABLE is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: REPEATABLE TABLESAMPLE is not supported.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE SYSTEM (2 ROWS) REPEATABLE (1)
 expect:
   error: INVALID_ARGUMENT
   message: REPEATABLE is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: REPEATABLE TABLESAMPLE is not supported.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE FOO (2 ROWS)
 expect:
   error: INVALID_ARGUMENT
   message: Unknown scan method foo
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The specified sampling algorithm (foo/ROWS) is not supported (check the spelling).
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (2 ROWS) REPEATABLE (@seed)
 params:
@@ -252,6 +346,9 @@ params:
 expect:
   error: INVALID_ARGUMENT
   message: REPEATABLE is not supported
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: REPEATABLE TABLESAMPLE is not supported.
 query:
   SELECT Id, w FROM Items TABLESAMPLE RESERVOIR (10 ROWS) WITH WEIGHT w
 expect:
@@ -260,11 +357,16 @@ expect:
   ["2",1.0]
   ["4",1.0]
   ["1",1.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (1 ROWS PARTITION BY Grp)
 expect:
   error: INVALID_ARGUMENT
   message: TABLESAMPLE does not support the PARTITION BY clause [at 1:63]
+expect@spanner:
+  same
 
 case sample_shapes
 query:
@@ -272,16 +374,22 @@ query:
 expect:
   columns: N INT64
   ["3"]
+expect@spanner:
+  same
 query:
   SELECT x FROM UNNEST([1, 2, 3]) AS x TABLESAMPLE BERNOULLI (100 PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: TABLESAMPLE is not allowed with array scans [at 1:38]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items@{FORCE_INDEX=ItemsByGrp} TABLESAMPLE RESERVOIR (10 ROWS) WHERE Grp = 'a'
 expect:
   columns: N INT64
   ["2"]
+expect@spanner:
+  same
 query:
   SELECT a.Id, b.Id AS Other FROM Items a TABLESAMPLE BERNOULLI (100 PERCENT) JOIN Items b TABLESAMPLE RESERVOIR (5 ROWS) ON a.Id = b.Id ORDER BY a.Id
 expect:
@@ -290,11 +398,15 @@ expect:
   ["2","2"]
   ["3","3"]
   ["4","4"]
+expect@spanner:
+  same
 query:
   WITH t AS (SELECT Id FROM Items) SELECT COUNT(*) AS N FROM t TABLESAMPLE RESERVOIR (3 ROWS)
 expect:
   columns: N INT64
   ["3"]
+expect@spanner:
+  same
 query:
   SELECT Grp, COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (100 PERCENT) GROUP BY Grp ORDER BY Grp
 expect:
@@ -302,6 +414,8 @@ expect:
   [null,"1"]
   ["a","2"]
   ["b","1"]
+expect@spanner:
+  same
 query:
   SELECT o.Id, (SELECT COUNT(*) FROM Items TABLESAMPLE RESERVOIR (2 ROWS) WHERE Items.Id > o.Id - 10) AS N FROM Items o ORDER BY o.Id
 expect:
@@ -310,26 +424,37 @@ expect:
   ["2","2"]
   ["3","2"]
   ["4","2"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE reservoir (10 ROWS)
 expect:
   columns: N INT64
   ["4"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE Bernoulli (100 PERCENT)
 expect:
   columns: N INT64
   ["4"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE FOO (10 PERCENT)
 expect:
   error: INVALID_ARGUMENT
   message: Unknown scan method foo
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: The specified sampling algorithm (foo/PERCENT) is not supported (check the spelling).
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (9223372036854775807 ROWS)
 expect:
   columns: N INT64
   ["4"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -337,6 +462,9 @@ params:
 expect:
   columns: N INT64
   ["0"]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Sample size as percent must be in range [0,100].
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE BERNOULLI (@p PERCENT)
 params:
@@ -344,6 +472,8 @@ params:
 expect:
   columns: N INT64
   ["4"]
+expect@spanner:
+  same
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (@n ROWS)
 params:
@@ -351,6 +481,8 @@ params:
 expect:
   error: INVALID_ARGUMENT
   message: ROWS expects an integer literal or parameter [at 1:56]
+expect@spanner:
+  same
 
 case with_weight
 query:
@@ -359,11 +491,17 @@ expect:
   columns: w FLOAT64
   [2.0]
   [2.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT COUNT(*) AS N, MIN(w) AS Lo, MAX(w) AS Hi FROM Items TABLESAMPLE RESERVOIR (3 ROWS) WITH WEIGHT AS w
 expect:
   columns: N INT64, Lo FLOAT64, Hi FLOAT64
   ["3",1.3333333333333333,1.3333333333333333]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT Id, weight FROM Items TABLESAMPLE BERNOULLI (100 PERCENT) WITH WEIGHT
 expect:
@@ -372,11 +510,17 @@ expect:
   ["3",1.0]
   ["2",1.0]
   ["1",1.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT COUNTIF(w != 4.0) AS Off FROM Items TABLESAMPLE BERNOULLI (25 PERCENT) WITH WEIGHT w
 expect:
   columns: Off INT64
   ["0"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT COUNTIF(w != 2.0) AS Off FROM Items TABLESAMPLE BERNOULLI (@p PERCENT) WITH WEIGHT w
 params:
@@ -384,11 +528,17 @@ params:
 expect:
   columns: Off INT64
   ["0"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT COUNT(*) AS N FROM Items TABLESAMPLE RESERVOIR (0 ROWS) WITH WEIGHT w
 expect:
   columns: N INT64
   ["0"]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT Id, w FROM (SELECT Id FROM Items WHERE Id > 1) TABLESAMPLE RESERVOIR (5 ROWS) WITH WEIGHT w
 expect:
@@ -396,11 +546,16 @@ expect:
   ["2",1.0]
   ["4",1.0]
   ["3",1.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT Id, Items.w FROM Items TABLESAMPLE RESERVOIR (5 ROWS) WITH WEIGHT w
 expect:
   error: INVALID_ARGUMENT
   message: Name w not found inside Items [at 1:18]
+expect@spanner:
+  same
 query:
   SELECT * FROM Items TABLESAMPLE RESERVOIR (5 ROWS) WITH WEIGHT w
 expect:
@@ -409,6 +564,9 @@ expect:
   ["4",null,"7",1.0]
   ["3","b","5",1.0]
   ["1","a","10",1.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.
 query:
   SELECT Id, Val FROM Items TABLESAMPLE RESERVOIR (5 ROWS) WITH WEIGHT Val
 expect:
@@ -417,3 +575,6 @@ expect:
   ["3",1.0]
   ["1",1.0]
   ["2",1.0]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: TABLESAMPLE WITH WEIGHT is not supported.

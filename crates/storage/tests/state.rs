@@ -507,6 +507,46 @@ fn snapshot_round_trip() {
     assert!(snapshot::read_from(&b"SPANBOLTgarbage"[..]).is_err());
 }
 
+/// A snapshot keeps what `--emulator-compat` prints and production's form loses: change streams
+/// in creation order with their options as set, and CHECK constraints in the order added.
+#[test]
+fn snapshot_keeps_emulator_order() {
+    let schema = ddl(&[
+        "CREATE TABLE T (K INT64 NOT NULL, A INT64, CONSTRAINT zz CHECK (A > 0), \
+         CONSTRAINT aa CHECK (A < 100)) PRIMARY KEY (K)",
+        "ALTER TABLE T ADD CONSTRAINT mm CHECK (A <> 5)",
+        "CREATE CHANGE STREAM bLower FOR T OPTIONS ( retention_period = '1d', exclude_insert = true )",
+        "CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( exclude_delete = true )",
+        "ALTER CHANGE STREAM Alpha SET OPTIONS ( retention_period = NULL, exclude_update = true )",
+    ]);
+    let st = DbState::new(schema).unwrap_or_else(|e| panic!("{e}"));
+    let img = snapshot::InstanceImage {
+        name: "projects/p/instances/i".into(),
+        databases: vec![snapshot::DatabaseImage {
+            name: "db".into(),
+            commit_ts: Timestamp { secs: 1, nanos: 0 },
+            state: Arc::new(st.clone()),
+        }],
+        ..Default::default()
+    };
+    let mut buf = Vec::new();
+    snapshot::write_to(&mut buf, std::slice::from_ref(&img)).unwrap_or_else(|e| panic!("{e}"));
+    let loaded = snapshot::read_from(&buf[..]).unwrap_or_else(|e| panic!("{e}"));
+    let schema = &loaded[0].databases[0].state.schema;
+    let compat = schema.to_ddl_emulator_compat();
+    assert_eq!(compat, st.schema.to_ddl_emulator_compat());
+    assert_eq!(
+        compat,
+        [
+            "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  CONSTRAINT zz CHECK(A > 0),\n  \
+             CONSTRAINT aa CHECK(A < 100),\n  CONSTRAINT mm CHECK(A <> 5),\n) PRIMARY KEY(K)",
+            "CREATE CHANGE STREAM bLower FOR T OPTIONS ( retention_period = '1d', exclude_insert = true )",
+            "CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( retention_period = NULL, exclude_update = true )",
+        ]
+    );
+    assert_eq!(schema.to_ddl(), st.schema.to_ddl());
+}
+
 #[test]
 fn schema_migration_keeps_rows_and_backfills_indexes() {
     let st = seeded();

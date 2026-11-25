@@ -5125,6 +5125,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Syntax error: Expected ")" or keyword AT but got "," [at 1:60]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \")\" or keyword AT but got \",\" [at 1:60]
 
 case time_200
 query:

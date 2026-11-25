@@ -1,0 +1,86 @@
+# SNIPPET highlights next to symbols, recorded from Cloud Spanner. SNIPPET reads the text its own
+# way: a match glued to `&`, or to `+` not followed by a letter or `&`, isn't highlighted (`xy+`,
+# `xy&z`, `a&xy`), while `xy+z`, `xy#`, `#xy` and `xy-` are; a query `xy+` or `c++` highlights the
+# symbols too. spanbolt follows it (`snippet_matches` in crates/sql/src/search/eval.rs).
+tags: sql search
+schema:
+  CREATE TABLE W (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX WSearch ON W(Body_Tokens)
+
+case sym_xy
+query:
+  SELECT
+    SNIPPET("xy+ z", "xy") AS c0,
+    SNIPPET("xy& z", "xy") AS c1,
+    SNIPPET("xy&z", "xy") AS c2,
+    SNIPPET("xy++ z", "xy") AS c3,
+    SNIPPET("xy# z", "xy") AS c4,
+    SNIPPET("x# z", "xy") AS c5,
+    SNIPPET("c++ z", "xy") AS c6,
+    SNIPPET("c# z", "xy") AS c7,
+    SNIPPET("xy+z", "xy") AS c8,
+    SNIPPET("z xy+", "xy") AS c9,
+    SNIPPET("z xy&", "xy") AS c10,
+    SNIPPET("xy+. z", "xy") AS c11,
+    SNIPPET("xy+, z", "xy") AS c12,
+    SNIPPET("(xy+) z", "xy") AS c13,
+    SNIPPET("#xy z", "xy") AS c14,
+    SNIPPET("@xy z", "xy") AS c15,
+    SNIPPET("$xy z", "xy") AS c16
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy+ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy& z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy&z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy++ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy# z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x# z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"c++ z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"c# z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy+z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":3}],\"snippet\":\"z xy+\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":3}],\"snippet\":\"z xy&\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy+. z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy+, z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"(xy+) z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"#xy z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"@xy z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"$xy z\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy+ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy& z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy&z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy++ z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy# z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x# z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"c++ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"c# z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy+z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"z xy+\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"z xy&\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy+. z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy+, z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"(xy+) z\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"#xy z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"@xy z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"$xy z\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case sym_xy2
+query:
+  SELECT
+    SNIPPET("xy@z.com q", "xy") AS c0,
+    SNIPPET("a&xy q", "xy") AS c1,
+    SNIPPET("&xy q", "xy") AS c2,
+    SNIPPET("xy&& z", "xy") AS c3,
+    SNIPPET("xy+& z", "xy") AS c4,
+    SNIPPET("z&xy", "xy") AS c5,
+    SNIPPET("xy- z", "xy") AS c6,
+    SNIPPET("xy* z", "xy") AS c7,
+    SNIPPET("xy% z", "xy") AS c8,
+    SNIPPET("xy= z", "xy") AS c9,
+    SNIPPET("xy~ z", "xy") AS c10,
+    SNIPPET("xy^ z", "xy") AS c11,
+    SNIPPET("xy$ z", "xy") AS c12,
+    SNIPPET("xy| z", "xy") AS c13,
+    SNIPPET("xy< z", "xy") AS c14,
+    SNIPPET("xy> z", "xy") AS c15,
+    SNIPPET("xy! z", "xy") AS c16
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy@z.com q\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":3}],\"snippet\":\"a&xy q\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"&xy q\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy&& z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy+& z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":5,\"start_position\":3}],\"snippet\":\"z&xy\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy- z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy* z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy% z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy= z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy~ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy^ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy$ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy| z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy< z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy> z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy! z\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy@z.com q\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"a&xy q\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"&xy q\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy&& z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy+& z\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"z&xy\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy- z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy* z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy% z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy= z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy~ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy^ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy$ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy| z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy< z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy> z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy! z\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case sym_query
+query:
+  SELECT
+    SNIPPET("xy+ z", "xy+") AS c0,
+    SNIPPET("xy z", "xy+") AS c1,
+    SNIPPET("xy& z", "xy&") AS c2,
+    SNIPPET("xy z", "xy&") AS c3,
+    SNIPPET("c++ z", "c++") AS c4,
+    SNIPPET("c z", "c++") AS c5,
+    SNIPPET("xy# z", "xy#") AS c6,
+    SNIPPET("x# z", "x#") AS c7,
+    SNIPPET("xy+ xy z", "xy") AS c8,
+    SNIPPET("xy xy+ z", "xy") AS c9
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy+ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy& z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"c++ z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"c z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy# z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1}],\"snippet\":\"x# z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1},{\"end_position\":7,\"start_position\":5}],\"snippet\":\"xy+ xy z\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1},{\"end_position\":6,\"start_position\":4}],\"snippet\":\"xy xy+ z\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"xy+ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"xy& z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"c++ z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"cz\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy# z\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"x# z\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":5,\"end\":7}],\"snippet\":\"xy+ xy z\",\"source_begin\":1,\"source_end\":9}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy xy+ z\",\"source_begin\":1,\"source_end\":9}]}"]

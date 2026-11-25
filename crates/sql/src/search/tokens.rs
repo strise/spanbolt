@@ -341,6 +341,17 @@ fn unicode_break(c: char) -> bool {
             | '\u{ff1a}'..='\u{ff20}' | '\u{ff3b}'..='\u{ff40}' | '\u{ff5b}'..='\u{ff65}')
 }
 
+/// Whether `fulltext_tokens` keeps `c` in the run of words and ASCII symbols it is reading, so
+/// that a run of these characters is tokenized on its own (anything else ends the run).
+pub fn fulltext_chunk_char(c: char) -> bool {
+    if matches!(c, '\u{ad}' | '\u{2019}') {
+        return true;
+    }
+    let word = (c == '_' || c.is_ascii_alphanumeric() || (!c.is_ascii() && !unicode_break(c)))
+        && !symbol_token(c);
+    word || (c.is_ascii_punctuation() && c != '_')
+}
+
 enum Part {
     /// A word and the token prod stores at its position too.
     Word(String, Option<String>),

@@ -926,6 +926,8 @@ pub struct Writer {
     mutations: usize,
     /// `(table, column)`s written with the commit timestamp.
     pending: Vec<(TableId, usize)>,
+    /// Writes from DML: the emulator checks their NULLs in the table's column order.
+    dml: bool,
 }
 
 impl Writer {
@@ -939,6 +941,7 @@ impl Writer {
             deferred: Vec::new(),
             buf: Vec::with_capacity(64),
             mutations: 0,
+            dml: false,
             pending: Vec::new(),
         }
     }
@@ -992,6 +995,12 @@ impl Writer {
     /// after `with_max_ts`.
     pub fn with_now(mut self, now: Timestamp) -> Writer {
         self.now = now.min(self.max_ts);
+        self
+    }
+
+    /// The writes come from DML rather than mutations.
+    pub fn with_dml(mut self) -> Writer {
+        self.dml = true;
         self
     }
 
@@ -1183,10 +1192,45 @@ impl Writer {
         key_pos: &[Option<usize>],
         values: &[Value],
     ) -> Result<()> {
-        // The emulator checks an InsertOrUpdate as an insert, even when the row exists: it must
-        // name every NOT NULL column, and that is checked before its values.
-        if kind == WriteKind::InsertOrUpdate && !self.state.prod_messages {
-            check_not_null_named(tm, columns)?;
+        // A write that may add a row must name every NOT NULL column, also an InsertOrUpdate of
+        // a row that exists. The emulator checks that before NULLs, which it finds in the
+        // mutation's column order (in the table's for DML). Spanner takes a key column the write
+        // leaves out as NULL, names the first column by name and checks an InsertOrUpdate's
+        // NULLs first (`conformance/cases/mutations/not_null_wording*.case`, `constraints.case`).
+        if self.state.prod_messages {
+            let key_missing = tm
+                .pk
+                .iter()
+                .filter(|&&c| must_name(&tm.columns[c]) && !columns.contains(&c))
+                .map(|&c| tm.columns[c].name.as_str());
+            if let Some(name) = first_by_name(key_missing) {
+                return Err(null_in_not_null_prod(tm, name));
+            }
+            match kind {
+                WriteKind::Update => check_no_nulls_prod(tm, columns, values)?,
+                WriteKind::InsertOrUpdate => {
+                    check_no_nulls_prod(tm, columns, values)?;
+                    check_not_null_named_prod(tm, columns, kind)?;
+                }
+                WriteKind::Insert | WriteKind::Replace => {
+                    check_not_null_named_prod(tm, columns, kind)?;
+                    check_no_nulls_prod(tm, columns, values)?;
+                }
+            }
+        } else {
+            if kind != WriteKind::Update {
+                check_not_null_named(tm, columns)?;
+            }
+            if self.dml
+                && let Some(c) = columns
+                    .iter()
+                    .zip(values)
+                    .filter(|&(&c, v)| v.is_null() && tm.columns[c].not_null)
+                    .map(|(&c, _)| c)
+                    .min()
+            {
+                self.check_value(tm, c, &Value::Null)?;
+            }
         }
         for (v, &c) in values.iter().zip(columns) {
             self.check_value(tm, c, v)?;
@@ -1324,7 +1368,6 @@ impl Writer {
                     }
                     row
                 });
-                check_not_null_named(tm, columns)?;
                 if tm.computed {
                     let missing = |c: usize| !columns.contains(&c);
                     if !precomputed {
@@ -1351,6 +1394,9 @@ impl Writer {
     fn check_value(&self, tm: &TableMeta, c: usize, v: &Value) -> Result<()> {
         let cm = &tm.columns[c];
         match v {
+            Value::Null if cm.not_null && self.state.prod_messages => {
+                Err(null_in_not_null_prod(tm, &cm.name))
+            }
             Value::Null if cm.not_null => Err(Error::constraint(
                 Code::FailedPrecondition,
                 format!(
@@ -1621,10 +1667,69 @@ fn row_key_debug(tm: &TableMeta, key_pos: &[Option<usize>], values: &[Value]) ->
     key_debug(&vals, &types)
 }
 
+/// A NOT NULL column without a DEFAULT that isn't generated: every new row must name it.
+fn must_name(cm: &crate::catalog::ColumnMeta) -> bool {
+    cm.not_null && !cm.generated && cm.default.is_none()
+}
+
+/// Spanner names one column when several break a NOT NULL check: the first by name, ignoring case.
+fn first_by_name<'a>(names: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    names.min_by(|a, b| {
+        a.bytes()
+            .map(|c| c.to_ascii_lowercase())
+            .cmp(b.bytes().map(|c| c.to_ascii_lowercase()))
+    })
+}
+
+/// [`check_not_null_named`] worded as Spanner does.
+fn check_not_null_named_prod(tm: &TableMeta, columns: &[usize], kind: WriteKind) -> Result<()> {
+    let missing = tm
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|&(c, cm)| must_name(cm) && !columns.contains(&c))
+        .map(|(_, cm)| cm.name.as_str());
+    match first_by_name(missing) {
+        Some(name) => Err(Error::constraint(
+            Code::FailedPrecondition,
+            format!(
+                "A {}new row in table {} does not specify a non-null value for these NOT NULL columns: {name}.",
+                if kind == WriteKind::InsertOrUpdate {
+                    "potentially-"
+                } else {
+                    ""
+                },
+                tm.name
+            ),
+        )),
+        None => Ok(()),
+    }
+}
+
+/// A NULL written to a NOT NULL column, checked before the other values as Spanner does.
+fn check_no_nulls_prod(tm: &TableMeta, columns: &[usize], values: &[Value]) -> Result<()> {
+    let nulls = columns
+        .iter()
+        .zip(values)
+        .filter(|&(&c, v)| v.is_null() && tm.columns[c].not_null)
+        .map(|(&c, _)| tm.columns[c].name.as_str());
+    match first_by_name(nulls) {
+        Some(name) => Err(null_in_not_null_prod(tm, name)),
+        None => Ok(()),
+    }
+}
+
+fn null_in_not_null_prod(tm: &TableMeta, column: &str) -> Error {
+    Error::constraint(
+        Code::FailedPrecondition,
+        format!("{column} must not be NULL in table {}.", tm.name),
+    )
+}
+
 /// A new row must name every NOT NULL column that has no DEFAULT and isn't generated.
 fn check_not_null_named(tm: &TableMeta, columns: &[usize]) -> Result<()> {
     for (c, cm) in tm.columns.iter().enumerate() {
-        if cm.not_null && !cm.generated && cm.default.is_none() && !columns.contains(&c) {
+        if must_name(cm) && !columns.contains(&c) {
             return Err(Error::constraint(
                 Code::FailedPrecondition,
                 format!(

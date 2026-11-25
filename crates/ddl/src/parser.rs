@@ -1567,6 +1567,7 @@ fn opaque(kind: &str, name: &str, ddl: String, drop: bool) -> Statement {
             kind: kind.to_string(),
             name: name.to_string(),
             ddl,
+            printed: None,
         },
         drop,
     }
@@ -1675,34 +1676,38 @@ impl ChangeStream {
         p.change_stream_body(ChangeStream::new(name))
     }
 
-    /// Applies an `ALTER CHANGE STREAM name ...` statement.
-    pub(crate) fn alter(&mut self, ddl: &str) -> R<()> {
+    /// Applies an `ALTER CHANGE STREAM name ...` statement, returning the option list of a
+    /// `SET OPTIONS` as written. Options merge into the stream's and NULL removes one, except
+    /// that the emulator (`compat`) keeps `retention_period` and `value_capture_type` on NULL.
+    pub(crate) fn alter(&mut self, ddl: &str, compat: bool) -> R<Option<Vec<(String, String)>>> {
         let mut p = Parser::new(ddl)?;
         p.expect_kw("ALTER")?;
         p.expect_kw("CHANGE")?;
         p.expect_kw("STREAM")?;
         p.path()?;
-        if p.eat_kw("SET") {
-            if p.eat_kw("FOR") {
-                self.target = p.change_stream_target()?;
-            } else {
-                // Options merge into the stream's; NULL removes one.
-                for (k, v) in p.options()? {
-                    let at = self.options.iter().position(|(o, _)| *o == k);
-                    match (at, v.as_str()) {
-                        (Some(i), "NULL") => {
-                            self.options.remove(i);
-                        }
-                        (Some(i), _) => self.options[i].1 = v,
-                        (None, "NULL") => {}
-                        (None, _) => self.options.push((k, v)),
-                    }
-                }
-            }
-        } else {
+        if !p.eat_kw("SET") {
             self.target = CsTarget::None;
+            return Ok(None);
         }
-        Ok(())
+        if p.eat_kw("FOR") {
+            self.target = p.change_stream_target()?;
+            return Ok(None);
+        }
+        let written = p.options()?;
+        for (k, v) in &written {
+            let at = self.options.iter().position(|(o, _)| o == k);
+            let sticky = compat && matches!(k.as_str(), "retention_period" | "value_capture_type");
+            match (at, v.as_str()) {
+                (_, "NULL") if sticky => {}
+                (Some(i), "NULL") => {
+                    self.options.remove(i);
+                }
+                (Some(i), _) => self.options[i].1 = v.clone(),
+                (None, "NULL") => {}
+                (None, _) => self.options.push((k.clone(), v.clone())),
+            }
+        }
+        Ok(Some(written))
     }
 }
 

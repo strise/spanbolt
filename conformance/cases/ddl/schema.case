@@ -39,6 +39,11 @@ expect:
   statements:
   "CREATE TABLE P (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
   "CREATE TABLE F (\n  K INT64 NOT NULL,\n  R INT64,\n  CONSTRAINT FkP FOREIGN KEY(R) REFERENCES P(K),\n  CONSTRAINT Pos CHECK(K > 0),\n) PRIMARY KEY(K)"
+expect@spanner:
+  statements:
+  "CREATE TABLE F (\n  K INT64 NOT NULL,\n  R INT64,\n  CONSTRAINT Pos CHECK(K > 0),\n) PRIMARY KEY(K)"
+  "CREATE TABLE P (\n  K INT64 NOT NULL,\n) PRIMARY KEY(K)"
+  "ALTER TABLE F ADD CONSTRAINT FkP FOREIGN KEY(R) REFERENCES P(K)"
 
 case schema_print_search_index
 schema:
@@ -67,6 +72,11 @@ get_ddl
 expect:
   statements:
   "CREATE SEQUENCE Seq OPTIONS (\n  sequence_kind = 'bit_reversed_positive')"
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE VIEW TV SQL SECURITY INVOKER AS SELECT T.K, T.V FROM T"
+expect@spanner:
+  statements:
+  "CREATE SEQUENCE Seq OPTIONS (\n  sequence_kind = 'bit_reversed_positive'\n)"
   "CREATE TABLE T (\n  K INT64 NOT NULL,\n  V STRING(MAX),\n) PRIMARY KEY(K)"
   "CREATE VIEW TV SQL SECURITY INVOKER AS SELECT T.K, T.V FROM T"
 

@@ -194,6 +194,10 @@ absl::StatusOr<const googlesql::Type*> ParseType(
   return type;
 }
 
+// Not a language feature: in `extra_features` it picks Cloud Spanner's
+// function signatures where they differ from the emulator's.
+constexpr char kProductionMarker[] = "SPANBOLT_PRODUCTION";
+
 // The shared base for a feature set (the catalog JSON's `extra_features`).
 absl::StatusOr<SharedBase*> BaseFor(const json& features) {
   static std::mutex mu;
@@ -203,8 +207,13 @@ absl::StatusOr<SharedBase*> BaseFor(const json& features) {
   if (auto it = bases->find(key); it != bases->end()) return it->second;
 
   googlesql::LanguageOptions language = SpannerLanguageOptions();
+  bool production = false;
   if (!features.is_null()) {
     for (const auto& f : features) {
+      if (f == kProductionMarker) {
+        production = true;
+        continue;
+      }
       googlesql::LanguageFeature feature;
       if (!f.is_string() ||
           !googlesql::LanguageFeature_Parse(f.get<std::string>(), &feature)) {
@@ -233,7 +242,8 @@ absl::StatusOr<SharedBase*> BaseFor(const json& features) {
   absl::Status status = base->builtins.AddBuiltinFunctionsAndTypes(
       SpannerBuiltinFunctionOptions(language));
   if (!status.ok()) return status;
-  spanbolt::AddSpannerFunctions(&base->builtins, GlobalTypes());
+  if (production) spanbolt::UseSpannerFormatCheck(&base->builtins);
+  spanbolt::AddSpannerFunctions(&base->builtins, GlobalTypes(), production);
   SharedBase* out = base.release();
   bases->emplace(key, out);
   return out;

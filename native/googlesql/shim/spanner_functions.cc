@@ -4,11 +4,20 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "absl/status/status.h"
+#include "absl/strings/cord.h"
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_replace.h"
 #include "googlesql/public/function.h"
 #include "googlesql/public/function_signature.h"
+#include "googlesql/public/input_argument_type.h"
+#include "googlesql/public/language_options.h"
 #include "googlesql/public/types/type_factory.h"
+#include "googlesql/public/value.h"
+#include "re2/re2.h"
 
 namespace spanbolt {
 namespace {
@@ -52,10 +61,64 @@ std::unique_ptr<Function> Scalar(const std::string& name,
                                     options);
 }
 
+// Runs GoogleSQL's FORMAT check on the literal pattern with every `%` escape
+// written as `%%` (conformance/cases/sql/format_percent_escapes.case), and
+// names the pattern as written in its errors.
+absl::Status CheckSpannerFormat(
+    const googlesql::PostResolutionArgumentConstraintsCallback& check,
+    const FunctionSignature& signature,
+    const std::vector<googlesql::InputArgumentType>& args,
+    const googlesql::LanguageOptions& language) {
+  if (args.empty() || !args[0].is_literal() || args[0].is_literal_null() ||
+      !args[0].type()->IsString()) {
+    return check(signature, args, language);
+  }
+  const std::string& pattern = args[0].literal_value()->string_value();
+  // GoogleSQL's "%[flags][width][.precision]specifier" with specifier `%`.
+  static const LazyRE2 kEscape = {
+      R"(%[-+ #'0]*(?:\*|[0-9]*)(?:\.(?:\*|[0-9]*))?%)"};
+  std::string escapes = pattern;
+  RE2::GlobalReplace(&escapes, *kEscape, "%%");
+  if (escapes == pattern) return check(signature, args, language);
+  const googlesql::Value value = googlesql::Value::String(escapes);
+  std::vector<googlesql::InputArgumentType> rewritten = args;
+  rewritten[0] = googlesql::InputArgumentType(value, /*annotation_map=*/nullptr);
+  absl::Status status = check(signature, rewritten, language);
+  if (status.ok()) return status;
+  std::string message = absl::StrReplaceAll(
+      status.message(), {{absl::StrCat("\"", escapes, "\""),
+                          absl::StrCat("\"", pattern, "\"")}});
+  absl::Status out(status.code(), message);
+  status.ForEachPayload([&out](absl::string_view url, const absl::Cord& payload) {
+    out.SetPayload(url, payload);
+  });
+  return out;
+}
+
 }  // namespace
 
+void UseSpannerFormatCheck(googlesql::SimpleCatalog* catalog) {
+  const Function* format = nullptr;
+  if (!catalog->GetFunction("format", &format).ok() || format == nullptr) return;
+  googlesql::PostResolutionArgumentConstraintsCallback check =
+      format->PostResolutionConstraints();
+  if (!check) return;
+  googlesql::FunctionOptions options = format->function_options();
+  options.set_post_resolution_argument_constraint(
+      [check](const FunctionSignature& signature,
+              const std::vector<googlesql::InputArgumentType>& args,
+              const googlesql::LanguageOptions& language) {
+        return CheckSpannerFormat(check, signature, args, language);
+      });
+  auto replacement = std::make_unique<Function>(
+      format->Name(), format->GetGroup(), format->mode(), format->signatures(),
+      std::move(options));
+  catalog->RemoveFunctions([format](const Function* f) { return f == format; });
+  catalog->AddOwnedFunction(std::move(replacement));
+}
+
 void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
-                         googlesql::TypeFactory* types) {
+                         googlesql::TypeFactory* types, bool production) {
   const Type* str = types->get_string();
   const Type* bytes = types->get_bytes();
   const Type* b = types->get_bool();
@@ -149,15 +212,18 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
       "tokenlist_concat",
       {FunctionSignature{tok, {{tok_arr, Req("tokens", false)}}, nullptr}}));
 
-  catalog->AddOwnedFunction(Scalar(
-      "search", {FunctionSignature{b,
-                                   {{tok, Req("tokens", false)},
-                                    {str, Req("query")},
-                                    {b, Opt("enhance_query")},
-                                    {str, Opt("language_tag")},
-                                    {str, Opt("dialect")},
-                                    {str, Opt("dictionary")}},
-                                   nullptr}}));
+  // Cloud Spanner's SEARCH and SCORE take `enhance_query_options => JSON`
+  // before `dictionary`, and SCORE only a STRING query
+  // (conformance/cases/sql/search_signatures.case). The emulator's SCORE also
+  // takes BYTES and fails while running.
+  FunctionArgumentTypeList search_args = {
+      {tok, Req("tokens", false)}, {str, Req("query")},
+      {b, Opt("enhance_query")},   {str, Opt("language_tag")},
+      {str, Opt("dialect")}};
+  if (production) search_args.push_back({js, Opt("enhance_query_options")});
+  search_args.push_back({str, Opt("dictionary")});
+  catalog->AddOwnedFunction(
+      Scalar("search", {FunctionSignature{b, search_args, nullptr}}));
   catalog->AddOwnedFunction(Scalar(
       "search_substring", {FunctionSignature{b,
                                              {{tok, Req("tokens", false)},
@@ -165,19 +231,22 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
                                               {str, Opt("relative_search_type")},
                                               {str, Opt("language_tag")}},
                                              nullptr}}));
-  FunctionArgumentTypeList score_tail = {
-      {b, Opt("enhance_query")}, {str, Opt("language_tag")},
-      {str, Opt("dialect")},     {js, Opt("options", false)},
-      {str, Opt("dictionary")}};
-  catalog->AddOwnedFunction(Scalar(
-      "score",
-      {FunctionSignature{
-           f64, with({{tok, Req("tokens", false)}, {str, Req("query")}}, score_tail),
-           nullptr},
-       FunctionSignature{
-           f64,
-           with({{tok, Req("tokens", false)}, {bytes, Req("query")}}, score_tail),
-           nullptr}}));
+  FunctionArgumentTypeList score_tail = {{b, Opt("enhance_query")},
+                                         {str, Opt("language_tag")},
+                                         {str, Opt("dialect")}};
+  if (production) score_tail.push_back({js, Opt("enhance_query_options")});
+  score_tail.push_back({js, Opt("options", false)});
+  score_tail.push_back({str, Opt("dictionary")});
+  std::vector<FunctionSignature> score_sigs = {FunctionSignature{
+      f64, with({{tok, Req("tokens", false)}, {str, Req("query")}}, score_tail),
+      nullptr}};
+  if (!production) {
+    score_sigs.push_back(FunctionSignature{
+        f64,
+        with({{tok, Req("tokens", false)}, {bytes, Req("query")}}, score_tail),
+        nullptr});
+  }
+  catalog->AddOwnedFunction(Scalar("score", score_sigs));
   catalog->AddOwnedFunction(Scalar(
       "snippet", {FunctionSignature{js,
                                     {{str, Req("value", false)},

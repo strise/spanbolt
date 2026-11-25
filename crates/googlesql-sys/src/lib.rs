@@ -177,7 +177,8 @@ impl Catalog {
     }
 
     /// A catalog over shared `tables` plus the builtin and Spanner functions, which the shim
-    /// builds once per process for each `extra_features` set (language feature names). Cheap: it
+    /// builds once per process for each `extra_features` set (language feature names, and
+    /// `SPANBOLT_PRODUCTION` for Cloud Spanner's function signatures). Cheap: it
     /// builds no table and no function. Tables in named schemas (`schema.T`) go in nested
     /// catalogs. Names must be unique.
     pub fn from_tables(
@@ -344,85 +345,128 @@ pub fn with_stack_for<R: Send>(sql_len: usize, f: impl FnOnce() -> R + Send) -> 
     })
 }
 
-/// Decodes a serialized resolved AST. Expressions and scans nest past prost's limit of 100
-/// messages (build.rs), and a level of them takes tens of KiB of stack to decode: an AST deeper
-/// than [`deep::INLINE_LEVELS`] decodes again on a thread with a stack for [`deep::MAX_LEVELS`].
+/// Decodes a serialized resolved AST. Expressions, scans and STRUCT types nest past prost's limit of
+/// 100 messages (build.rs), and a level of them takes up to tens of KiB of stack to decode: an AST
+/// deeper than [`deep::INLINE`] decodes again on a thread with a stack for [`deep::MAX`].
 pub fn decode_statement(bytes: &[u8]) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
-    let (mut r, mut too_deep) = deep::decode(bytes, deep::INLINE_LEVELS);
-    if too_deep {
+    let (mut r, mut too_deep) = deep::decode(bytes, deep::INLINE);
+    if too_deep.is_some() {
         (r, too_deep) = std::thread::scope(|s| {
             std::thread::Builder::new()
                 .name("googlesql-decode".into())
                 .stack_size(deep::STACK)
-                .spawn_scoped(s, || deep::decode(bytes, deep::MAX_LEVELS))
+                .spawn_scoped(s, || deep::decode(bytes, deep::MAX))
                 .expect("spawn a decoder thread")
                 .join()
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         });
     }
-    r.map_err(|e| AnalyzeError {
-        code: 13,
+    r.map_err(|e| match too_deep {
+        // What the emulator's analyser answers when it runs out of stack on a deep type.
+        Some(deep::TYPES) => AnalyzeError {
+            code: 8,
+            message: "Out of stack space due to deeply nested query expression during query \
+                      resolution"
+                .into(),
+        },
         // The error names every message it is nested in: too long for a gRPC status.
-        message: if too_deep {
-            "decode AnyResolvedStatementProto: expressions nested too deep".into()
-        } else {
-            format!("decode AnyResolvedStatementProto: {e}")
+        Some(what) => AnalyzeError {
+            code: 13,
+            message: format!("decode AnyResolvedStatementProto: {what} nested too deep"),
+        },
+        None => AnalyzeError {
+            code: 13,
+            message: format!("decode AnyResolvedStatementProto: {e}"),
         },
     })
 }
 
-/// Depth of the expression and scan nodes being decoded on this thread, for the wrappers build.rs
-/// generates.
+/// Depth of the expression and scan nodes, and of the STRUCT types, being decoded on this thread,
+/// for the wrappers build.rs generates.
 #[doc(hidden)]
 pub mod deep {
     use std::cell::Cell;
 
-    /// Nested expression and scan nodes decoded on the caller's stack: ordinary statements.
-    pub const INLINE_LEVELS: u32 = 16;
-    /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
-    /// subqueries and 15 nested structs before this.
-    pub const MAX_LEVELS: u32 = 256;
-    /// Stack for [`MAX_LEVELS`] (address space, used only as deep as the AST goes).
-    pub const STACK: usize = 64 << 20;
-
-    thread_local! {
-        static DEPTH: Cell<u32> = const { Cell::new(0) };
-        static LIMIT: Cell<u32> = const { Cell::new(INLINE_LEVELS) };
-        static TOO_DEEP: Cell<bool> = const { Cell::new(false) };
+    /// How deep a decode goes: nested expression and scan nodes, and nested STRUCT types.
+    #[derive(Clone, Copy)]
+    pub struct Limits {
+        pub nodes: u32,
+        pub types: u32,
     }
 
-    /// One nested expression or scan node, for as long as it decodes.
-    pub struct Level(());
+    /// Decoded on the caller's stack: ordinary statements.
+    pub const INLINE: Limits = Limits {
+        nodes: 16,
+        types: 32,
+    };
+    /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
+    /// subqueries and 15 nested STRUCT parameters before 256 nodes. A type has no limit of its own
+    /// in the emulator (`CAST(NULL AS STRUCT<f STRUCT<...>>)` answers 5000 levels, until its
+    /// analyser runs out of stack), but the engine converts and drops types recursively, on 2 MiB
+    /// handler threads: about 6500 nested STRUCT and ARRAY types overflow one. Deeper than
+    /// `types`, a statement fails the way the emulator's does when it runs out of stack.
+    pub const MAX: Limits = Limits {
+        nodes: 256,
+        types: 2000,
+    };
+    /// Stack for [`MAX`] (address space, used only as deep as the AST goes).
+    pub const STACK: usize = 64 << 20;
+    /// What [`Level::enter_type`] counts, as [`decode`] reports it.
+    pub const TYPES: &str = "types";
+
+    thread_local! {
+        static NODES: Cell<u32> = const { Cell::new(0) };
+        static TYPE_LEVELS: Cell<u32> = const { Cell::new(0) };
+        static LIMITS: Cell<Limits> = const { Cell::new(INLINE) };
+        static TOO_DEEP: Cell<Option<&'static str>> = const { Cell::new(None) };
+    }
+
+    /// One nested expression or scan node, or STRUCT field type, for as long as it decodes.
+    pub struct Level(&'static std::thread::LocalKey<Cell<u32>>);
 
     impl Level {
+        /// An expression or scan node.
         pub fn enter() -> Result<Level, prost::DecodeError> {
-            let depth = DEPTH.get() + 1;
-            if depth > LIMIT.get() {
-                TOO_DEEP.set(true);
+            Self::enter_in(&NODES, LIMITS.get().nodes, "expressions")
+        }
+
+        /// The type of a STRUCT field or ARRAY element, or a STRUCT value's fields.
+        pub fn enter_type() -> Result<Level, prost::DecodeError> {
+            Self::enter_in(&TYPE_LEVELS, LIMITS.get().types, TYPES)
+        }
+
+        fn enter_in(
+            counter: &'static std::thread::LocalKey<Cell<u32>>,
+            limit: u32,
+            what: &'static str,
+        ) -> Result<Level, prost::DecodeError> {
+            let depth = counter.get() + 1;
+            if depth > limit {
+                TOO_DEEP.set(Some(what));
                 #[allow(deprecated)]
-                return Err(prost::DecodeError::new("expressions nested too deep"));
+                return Err(prost::DecodeError::new("nested too deep"));
             }
-            DEPTH.set(depth);
-            Ok(Level(()))
+            counter.set(depth);
+            Ok(Level(counter))
         }
     }
 
     impl Drop for Level {
         fn drop(&mut self) {
-            DEPTH.set(DEPTH.get() - 1);
+            self.0.set(self.0.get() - 1);
         }
     }
 
-    /// Decodes `bytes` with at most `limit` nested levels, and whether it went past them.
+    /// Decodes `bytes` within `limits`, and what went past them.
     pub(crate) fn decode<M: prost::Message + Default>(
         bytes: &[u8],
-        limit: u32,
-    ) -> (Result<M, prost::DecodeError>, bool) {
-        LIMIT.set(limit);
-        TOO_DEEP.set(false);
+        limits: Limits,
+    ) -> (Result<M, prost::DecodeError>, Option<&'static str>) {
+        LIMITS.set(limits);
+        TOO_DEEP.set(None);
         let r = M::decode(bytes);
-        LIMIT.set(INLINE_LEVELS);
-        (r, TOO_DEEP.replace(false))
+        LIMITS.set(INLINE);
+        (r, TOO_DEEP.replace(None))
     }
 }
 

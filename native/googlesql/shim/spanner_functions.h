@@ -7,8 +7,16 @@
 namespace spanbolt {
 
 // Registers Spanner-only scalar functions (signatures only; Rust evaluates).
+// `production` picks Cloud Spanner's signatures where they differ from the
+// emulator's.
 void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
-                         googlesql::TypeFactory* types);
+                         googlesql::TypeFactory* types, bool production);
+
+// Gives the builtin FORMAT Cloud Spanner's analysis of a literal pattern: a
+// `%` escape with flags, a width or a precision (`%5%`, `%*%`) takes no
+// argument, where GoogleSQL rejects the pattern. Spanner rejects it only when
+// FORMAT runs (Rust).
+void UseSpannerFormatCheck(googlesql::SimpleCatalog* catalog);
 
 }  // namespace spanbolt
 

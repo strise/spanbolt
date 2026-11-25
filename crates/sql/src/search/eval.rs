@@ -36,6 +36,20 @@ fn invalid_query_type(v: &Value) -> Option<Error> {
     }
 }
 
+/// Cloud Spanner's SEARCH and SCORE take `enhance_query_options` (argument 5, production
+/// signatures only) only when `enhance_query` (argument 2) is TRUE; a NULL options value is fine
+/// (`conformance/cases/sql/search_signatures.case`).
+fn invalid_enhance_query_options(args: &[Value], emulator: bool) -> Option<Error> {
+    args.get(5)
+        .filter(|v| !emulator && !matches!(v, Value::Null))?;
+    (!matches!(args.get(2), Some(Value::Bool(true)))).then(|| {
+        Error::invalid_argument(
+            "Invalid usage of enhance_query_options. The argument can only be used when \
+             enhance_query is true.",
+        )
+    })
+}
+
 type TokenMap<'a> = HashMap<&'a [u8], Vec<i64>>;
 
 /// `SearchHelper::BuildTokenMap`: token positions, and whether the tokenized source was NULL.
@@ -570,7 +584,9 @@ fn null_search(c: &Compiled) -> Value {
 }
 
 pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
-    if let Some(e) = invalid_query_type(&args[1]) {
+    if let Some(e) =
+        invalid_query_type(&args[1]).or_else(|| invalid_enhance_query_options(args, emulator))
+    {
         return Err(e);
     }
     if let (Value::TokenList(b), Value::String(q)) = (&args[0], &args[1])
@@ -649,7 +665,9 @@ pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
 }
 
 pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
-    if let Some(e) = invalid_query_type(&args[1]) {
+    if let Some(e) =
+        invalid_query_type(&args[1]).or_else(|| invalid_enhance_query_options(args, emulator))
+    {
         return Err(e);
     }
     if !emulator {

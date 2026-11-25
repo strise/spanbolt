@@ -11,6 +11,7 @@ pub(crate) fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
     let code = match e.code {
         5 => Code::NotFound,
         6 => Code::AlreadyExists,
+        8 => Code::ResourceExhausted,
         9 => Code::FailedPrecondition,
         11 => Code::OutOfRange,
         12 => Code::Unimplemented,
@@ -50,7 +51,7 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     googlesql_sys::with_stack_for(sql.len(), || {
         crate::limits::check(&bytes, cat.emulator_compat)
     })?;
-    googlesql_sys::decode_statement(&bytes).map_err(|e| Error::internal(e.message))
+    googlesql_sys::decode_statement(&bytes).map_err(map_error)
 }
 
 /// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too

@@ -242,32 +242,18 @@ fn apply_schema(
     } else {
         schema.apply(&stmt).map_err(ddl)?;
     }
-    validate_exprs(schema, &stmt).map_err(|e| proto_sql_unimplemented(schema, e))?;
+    validate_exprs(schema, &stmt)?;
     if let Statement::CreateView { view, .. } = &stmt
         && let Some(ev) = expr_evaluator()
     {
         ev.validate_view(&Arc::new(schema.clone()), &view.name, replacing)
-            .map_err(to_status)
-            .map_err(|e| proto_sql_unimplemented(schema, e))?;
+            .map_err(to_status)?;
     }
     if let Some((ev, change, before)) = graph_change {
         ev.check_graph_dependents(&before, &Arc::new(schema.clone()), &change)
             .map_err(to_status)?;
     }
     Ok(checks)
-}
-
-/// The SQL engine doesn't know the proto bundle's types yet: an expression it rejects in a
-/// database whose bundle has types may be valid on Spanner, so it is UNIMPLEMENTED.
-fn proto_sql_unimplemented(schema: &Schema, e: Status) -> Status {
-    let has_types = schema
-        .proto_bundle
-        .as_ref()
-        .is_some_and(|b| !b.types.is_empty());
-    if has_types && e.code() == tonic::Code::InvalidArgument {
-        return unimplemented("SQL over PROTO and ENUM types");
-    }
-    e
 }
 
 /// What `stmt` drops or changes that a property graph of `schema` may use: only when a graph's

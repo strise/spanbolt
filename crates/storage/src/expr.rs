@@ -40,6 +40,27 @@ pub trait ExprEvaluator: Send + Sync {
     ) -> Result<()> {
         Ok(())
     }
+
+    /// Rejects `change`, which took `before` to `after`, when a property graph of `before` uses
+    /// what it drops or can no longer be defined after it, with Cloud Spanner's error.
+    fn check_graph_dependents(
+        &self,
+        _before: &Arc<spanbolt_ddl::Schema>,
+        _after: &Arc<spanbolt_ddl::Schema>,
+        _change: &SchemaChange,
+    ) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// A schema change property graphs may depend on, with the names the schema spells them with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SchemaChange {
+    DropTable(String),
+    DropView(String),
+    ReplaceView(String),
+    DropColumn { table: String, column: String },
+    AlterColumn { table: String, column: String },
 }
 
 /// Where a schema expression appears.

@@ -166,13 +166,14 @@ fn select<'a>(corpus: &'a Corpus, c: &Common) -> Vec<&'a Case> {
 async fn run_all(
     target: Arc<Target>,
     cases: &[&Case],
+    oracle: Oracle,
     jobs: usize,
     mut on_done: impl FnMut(&Case, &CaseRun),
 ) -> Vec<Option<CaseRun>> {
     let sem = Arc::new(tokio::sync::Semaphore::new(jobs.max(1)));
     let mut set = tokio::task::JoinSet::new();
     for (i, case) in cases.iter().enumerate() {
-        if case.skip.is_some() {
+        if case.skip_for(oracle).is_some() {
             continue;
         }
         let case = (*case).clone();
@@ -263,7 +264,10 @@ async fn record(r: RecordArgs) -> Result<ExitCode, String> {
     let (corpus, target) = prepare(&c).await?;
     let cases = select(&corpus, &c);
     let mut rec = Recorder::new(&corpus, Oracle::Emulator, unix_now());
-    run_all(target, &cases, c.jobs, |case, run| rec.finish(case, run)).await;
+    run_all(target, &cases, Oracle::Emulator, c.jobs, |case, run| {
+        rec.finish(case, run)
+    })
+    .await;
     let (recorded, problems) = (rec.recorded, rec.problems);
     eprintln!("recorded {recorded} cases, {problems} with setup or harness problems");
     Ok(if problems == 0 {
@@ -276,14 +280,15 @@ async fn record(r: RecordArgs) -> Result<ExitCode, String> {
 async fn check(a: CheckArgs) -> Result<ExitCode, String> {
     let (corpus, target) = prepare(&a.common).await?;
     let cases = select(&corpus, &a.common);
-    let runs = run_all(target, &cases, a.common.jobs, |_, _| {}).await;
+    let oracle = a.oracle.oracle();
+    let runs = run_all(target, &cases, oracle, a.common.jobs, |_, _| {}).await;
     let results = cases
         .iter()
         .zip(&runs)
         .map(|(case, run)| {
-            let status = match (run, &case.skip) {
-                (_, Some(reason)) => Status::Skipped(reason.clone()),
-                (Some(run), None) => report::judge(case, run, a.oracle.oracle()),
+            let status = match (run, case.skip_for(oracle)) {
+                (_, Some(reason)) => Status::Skipped(reason.to_string()),
+                (Some(run), None) => report::judge(case, run, oracle),
                 (None, None) => Status::Error("case task panicked".into()),
             };
             (*case, status)
@@ -343,11 +348,17 @@ async fn record_spanner(r: RecordArgs) -> Result<ExitCode, String> {
     let cases = select(&corpus, c);
     eprintln!(
         "recording {} cases from Cloud Spanner; databases logged to {}",
-        cases.iter().filter(|c| c.skip.is_none()).count(),
+        cases
+            .iter()
+            .filter(|c| c.skip_for(Oracle::Spanner).is_none())
+            .count(),
         r.db_log.display()
     );
     let mut rec = Recorder::new(&corpus, Oracle::Spanner, unix_now());
-    run_all(target, &cases, c.jobs, |case, run| rec.finish(case, run)).await;
+    run_all(target, &cases, Oracle::Spanner, c.jobs, |case, run| {
+        rec.finish(case, run)
+    })
+    .await;
     let (recorded, problems, disagreements) = (rec.recorded, rec.problems, rec.disagreements);
     for d in &disagreements {
         eprintln!("DIFFERS {} line {}", d.case, d.line);

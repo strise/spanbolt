@@ -191,6 +191,10 @@ pub struct OpaqueObject {
     pub kind: String,
     pub name: String,
     pub ddl: String,
+    /// What `--emulator-compat` prints instead of `ddl`, when the emulator prints something other
+    /// than the object's definition: after `ALTER CHANGE STREAM ... SET OPTIONS`, the option list
+    /// as last written.
+    pub printed: Option<String>,
 }
 
 /// A locality group. Stored and printed; storage ignores it.

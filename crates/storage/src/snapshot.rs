@@ -1,7 +1,7 @@
 //! Snapshot files: every instance and database (schema + rows), compact binary, zstd compressed.
 //!
 //! Layout: `MAGIC`, then a zstd stream of: format version, instances, and per database its schema
-//! (GetDatabaseDdl statements) and each table's rows keyed by column name (so column order changes stay loadable).
+//! (GetDatabaseDdl statements, `Schema::to_ddl_snapshot`) and each table's rows keyed by column name (so column order changes stay loadable).
 //! Indexes are rebuilt on load.
 
 use std::io::{Read, Write};
@@ -80,7 +80,7 @@ pub fn write_to<W: Write>(mut w: W, instances: &[InstanceImage]) -> Result<()> {
             e.str(&db.name);
             e.i64(db.commit_ts.secs);
             e.u32(db.commit_ts.nanos);
-            e.strs(&db.state.schema.to_ddl());
+            e.strs(&db.state.schema.to_ddl_snapshot());
             let cat = &db.state.catalog;
             e.len(cat.tables.len());
             for (t, tm) in cat.tables.iter().enumerate() {

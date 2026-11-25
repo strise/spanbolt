@@ -26,10 +26,13 @@
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
+//! DEBUG_TOKENLIST, which only prod has, prints token lists in prod's format (`debug`). It is
+//! UNIMPLEMENTED until the analyser's catalog declares it (`engine.rs`).
+//!
 //! Not followed yet: SCORE with `enhance_query => true`; SNIPPET widths of scripts Arial doesn't
-//! cover (Georgian, Armenian, Indic, Thai); DEBUG_TOKENLIST (UNIMPLEMENTED: prod's token lists keep values and positions that
-//! spanbolt's don't).
+//! cover (Georgian, Armenian, Indic, Thai) and of texts with no letters or digits.
 
+mod debug;
 mod eval;
 mod index;
 mod rquery;
@@ -87,6 +90,7 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
     };
     let emu = sig.emulator_compat;
     Some(match sig.name {
+        "debug_tokenlist" => f(|_, a| debug::debug_tokenlist(a)),
         "token" => f(|_, a| tokens::token(a)),
         "tokenize_fulltext" => f(move |_, a| tokens::tokenize_fulltext(a, emu)),
         "tokenize_substring" => f(|_, a| tokens::tokenize_substring(a)),

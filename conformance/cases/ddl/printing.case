@@ -121,6 +121,11 @@ expect:
   "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
   "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
   "CREATE CHANGE STREAM Cs FOR T OPTIONS ( value_capture_type = 'NEW_ROW' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs\n  FOR T OPTIONS (\n  value_capture_type = 'NEW_ROW',\n  retention_period = '2d',\n  exclude_delete = true\n)"
 
 case change_stream_option_set_to_null
 tags: change_stream
@@ -134,6 +139,11 @@ expect:
   "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
   "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
   "CREATE CHANGE STREAM Cs FOR T OPTIONS ( retention_period = NULL )"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs\n  FOR T OPTIONS (\n  exclude_delete = true\n)"
 
 case change_stream_set_for_keeps_options
 tags: change_stream
@@ -147,6 +157,11 @@ expect:
   "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
   "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
   "CREATE CHANGE STREAM Cs FOR ALL OPTIONS ( retention_period = '2d' )"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs\n  FOR ALL OPTIONS (\n  retention_period = '2d'\n)"
 
 # What the emulator prints after SET OPTIONS isn't what it applies: NULL doesn't clear its
 # retention_period or value_capture_type.
@@ -162,9 +177,18 @@ expect:
   columns: OPTION_NAME STRING, OPTION_VALUE STRING
   ["retention_period","2d"]
   ["value_capture_type","NEW_ROW"]
+expect@spanner:
+  columns: OPTION_NAME STRING, OPTION_VALUE STRING
+  ["exclude_delete","TRUE"]
+  ["exclude_update","TRUE"]
 get_ddl
 expect:
   statements:
   "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
   "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
   "CREATE CHANGE STREAM Cs FOR T OPTIONS ( retention_period = NULL, value_capture_type = NULL, exclude_update = true )"
+expect@spanner:
+  statements:
+  "CREATE TABLE T (\n  K INT64 NOT NULL,\n  A INT64,\n  B STRING(MAX),\n) PRIMARY KEY(K)"
+  "CREATE TABLE U (\n  K INT64 NOT NULL,\n  C INT64,\n) PRIMARY KEY(K)"
+  "CREATE CHANGE STREAM Cs\n  FOR T OPTIONS (\n  exclude_update = true,\n  exclude_delete = true\n)"

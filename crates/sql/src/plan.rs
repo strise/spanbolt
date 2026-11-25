@@ -2598,6 +2598,14 @@ impl<'c> Planner<'c> {
                 .and_then(|p| p.r#type.as_ref())
                 .ok_or_else(|| Error::internal("call without type"))?,
         )?;
+        // The emulator rewrites ARRAY_SLICE with a NULL array literal, which its validator
+        // rejects for ARRAY<STRUCT> (`struct_returned_twice.case`).
+        if self.opts.emulator_compat
+            && name == "array_slice"
+            && matches!(&ret, Type::Array(e) if matches!(**e, Type::Struct(_)))
+        {
+            return Err(Error::new(Code::Unimplemented, EMULATOR_NULL_STRUCT_ARRAY));
+        }
         if !b.generic_argument_list.is_empty() {
             let ev = self.lambda_call(&name, b, scope)?;
             return Ok(if safe { safe_call(ev) } else { ev });

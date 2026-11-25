@@ -198,18 +198,19 @@ pub(crate) fn rdp_sql(r: &RowDeletionPolicy) -> String {
 }
 
 pub(crate) fn table_sql(t: &Table) -> String {
-    table_sql_ordered(t, false)
+    let fks: Vec<&ForeignKey> = t.foreign_keys.iter().collect();
+    table_sql_ordered(t, &fks, false)
 }
 
-/// `CREATE TABLE`; with `checks_by_name`, the CHECK constraints in name order (case-insensitive,
-/// generated names included) as production's GetDatabaseDdl lists them, rather than in the order
-/// they were added, as the emulator does.
-fn table_sql_ordered(t: &Table, checks_by_name: bool) -> String {
+/// `CREATE TABLE` with the foreign keys `fks`; with `checks_by_name`, the CHECK constraints in
+/// name order (case-insensitive, generated names included) as production's GetDatabaseDdl lists
+/// them, rather than in the order they were added, as the emulator does.
+fn table_sql_ordered(t: &Table, fks: &[&ForeignKey], checks_by_name: bool) -> String {
     let mut s = format!("CREATE TABLE {} (\n", quote_path(&t.name));
     for c in &t.columns {
         s.push_str(&format!("  {},\n", column_sql(c)));
     }
-    for fk in &t.foreign_keys {
+    for fk in fks {
         s.push_str(&format!("  {},\n", fk_sql(fk)));
     }
     let mut checks: Vec<&CheckConstraint> = t.checks.iter().collect();
@@ -316,6 +317,12 @@ const SEQUENCE_OPTION_ORDER: &[&str] = &[
 ];
 
 pub(crate) fn sequence_sql(seq: &Sequence) -> String {
+    sequence_sql_ordered(seq, false)
+}
+
+/// `CREATE SEQUENCE`; with `production`, the option list closed on a line of its own, as
+/// production's GetDatabaseDdl prints it.
+fn sequence_sql_ordered(seq: &Sequence, production: bool) -> String {
     let mut s = format!("CREATE SEQUENCE {}", quote_path(&seq.name));
     if seq.options.is_empty() {
         return s;
@@ -328,7 +335,8 @@ pub(crate) fn sequence_sql(seq: &Sequence) -> String {
             .unwrap_or(usize::MAX)
     });
     let body: Vec<String> = opts.iter().map(|(k, v)| format!("  {k} = {v}")).collect();
-    s.push_str(&format!(" OPTIONS (\n{})", body.join(",\n")));
+    let close = if production { "\n)" } else { ")" };
+    s.push_str(&format!(" OPTIONS (\n{}{close}", body.join(",\n")));
     s
 }
 
@@ -364,13 +372,15 @@ impl Schema {
         let mut out = Vec::new();
         self.database_options_ddl(&mut out);
         out.extend(
-            self.opaque
-                .iter()
-                .filter(|o| o.kind == "ROLE")
+            self.opaque_ordered("ROLE", production)
                 .map(|o| o.ddl.clone()),
         );
         out.extend(self.role_grants());
-        out.extend(self.locality_groups.iter().map(locality_group_sql));
+        let mut groups: Vec<&LocalityGroup> = self.locality_groups.iter().collect();
+        if production {
+            groups.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        out.extend(groups.into_iter().map(locality_group_sql));
         self.objects_ddl(&mut out, true, production);
         out
     }
@@ -407,14 +417,21 @@ impl Schema {
     }
 
     /// Schemas, sequences, tables, change streams, models, views and graphs; with `access`, each
-    /// followed by its grants. With `production`, change streams and CHECK constraints in
-    /// production's order and form, else the emulator's.
+    /// followed by its grants. With `production`, in production's order (see
+    /// [`Schema::production_order`] and [`Schema::tables_ddl_production`]) and with change
+    /// streams and CHECK constraints in production's form, else in creation order and the
+    /// emulator's form.
     fn objects_ddl(&self, out: &mut Vec<String>, access: bool, production: bool) {
-        let ordered = |kind: ObjectKind| {
-            self.creation_order
-                .iter()
-                .filter(move |(k, _)| *k == kind)
-                .map(|(_, n)| n.as_str())
+        let ordered = |kind: ObjectKind| -> Vec<&str> {
+            if production {
+                self.production_order(kind)
+            } else {
+                self.creation_order
+                    .iter()
+                    .filter(|(k, _)| *k == kind)
+                    .map(|(_, n)| n.as_str())
+                    .collect()
+            }
         };
         for key in ordered(ObjectKind::Schema) {
             if let Some(name) = self.schemas.get(key) {
@@ -426,30 +443,18 @@ impl Schema {
         }
         for key in ordered(ObjectKind::Sequence) {
             if let Some(seq) = self.sequences.get(key) {
-                out.push(sequence_sql(seq));
+                out.push(sequence_sql_ordered(seq, production));
             }
         }
-        for key in ordered(ObjectKind::Table) {
-            let Some(t) = self.tables.get(key) else {
-                continue;
-            };
-            out.push(table_sql_ordered(t, production));
-            let mut idx: Vec<(&str, String)> = self
-                .indexes
-                .values()
-                .filter(|i| i.table.eq_ignore_ascii_case(&t.name))
-                .map(|i| (i.name.as_str(), index_sql(i)))
-                .chain(
-                    self.search_indexes
-                        .values()
-                        .filter(|i| i.table.eq_ignore_ascii_case(&t.name))
-                        .map(|i| (i.name.as_str(), search_index_sql(i))),
-                )
-                .collect();
-            idx.sort_by(|a, b| a.0.cmp(b.0));
-            out.extend(idx.into_iter().map(|(_, s)| s));
-            if access {
-                out.extend(self.table_grants(t));
+        if production {
+            self.tables_ddl_production(out, access);
+        } else {
+            for key in ordered(ObjectKind::Table) {
+                if let Some(t) = self.tables.get(key) {
+                    let fks: Vec<&ForeignKey> = t.foreign_keys.iter().collect();
+                    out.push(table_sql_ordered(t, &fks, false));
+                    self.table_tail_ddl(t, out, access);
+                }
             }
         }
         let mut streams: Vec<&OpaqueObject> = self
@@ -501,9 +506,7 @@ impl Schema {
             }
         }
         out.extend(
-            self.opaque
-                .iter()
-                .filter(|o| o.kind == "MODEL")
+            self.opaque_ordered("MODEL", production)
                 .map(|o| o.ddl.clone()),
         );
         for key in ordered(ObjectKind::View) {
@@ -518,11 +521,164 @@ impl Schema {
             }
         }
         out.extend(
-            self.opaque
-                .iter()
-                .filter(|o| o.kind == "PROPERTY GRAPH")
+            self.opaque_ordered("PROPERTY GRAPH", production)
                 .map(|o| o.ddl.clone()),
         );
+    }
+
+    /// The opaque objects of `kind`: by name in production, else in creation order.
+    fn opaque_ordered<'a>(
+        &'a self,
+        kind: &'a str,
+        production: bool,
+    ) -> impl Iterator<Item = &'a OpaqueObject> + 'a {
+        let mut v: Vec<&OpaqueObject> = self.opaque.iter().filter(|o| o.kind == kind).collect();
+        if production {
+            v.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        v.into_iter()
+    }
+
+    /// The keys of the schemas, sequences or views in the order production's GetDatabaseDdl
+    /// lists them: by name, byte order (`Zeta` before `alpha`), and views after the views they
+    /// select from (a depth-first walk in name order).
+    fn production_order(&self, kind: ObjectKind) -> Vec<&str> {
+        let mut named: Vec<(&str, &str)> = match kind {
+            ObjectKind::Schema => self
+                .schemas
+                .iter()
+                .map(|(k, n)| (k.as_str(), n.as_str()))
+                .collect(),
+            ObjectKind::Sequence => self
+                .sequences
+                .iter()
+                .map(|(k, s)| (k.as_str(), s.name.as_str()))
+                .collect(),
+            ObjectKind::Table => self
+                .tables
+                .iter()
+                .map(|(k, t)| (k.as_str(), t.name.as_str()))
+                .collect(),
+            ObjectKind::View => self
+                .views
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.name.as_str()))
+                .collect(),
+        };
+        named.sort_by(|a, b| a.1.cmp(b.1));
+        if kind != ObjectKind::View {
+            return named.into_iter().map(|(k, _)| k).collect();
+        }
+        let deps: std::collections::HashMap<&str, Vec<&str>> = named
+            .iter()
+            .map(|&(k, _)| {
+                let v = &self.views[k];
+                let uses = crate::apply::sql_mentions_any(
+                    &v.sql,
+                    named.iter().filter(|&&(o, _)| o != k).copied(),
+                );
+                (k, uses)
+            })
+            .collect();
+        fn visit<'a>(
+            k: &'a str,
+            deps: &std::collections::HashMap<&'a str, Vec<&'a str>>,
+            seen: &mut std::collections::HashSet<&'a str>,
+            out: &mut Vec<&'a str>,
+        ) {
+            if !seen.insert(k) {
+                return;
+            }
+            for &d in deps.get(k).into_iter().flatten() {
+                visit(d, deps, seen, out);
+            }
+            out.push(k);
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::with_capacity(named.len());
+        for &(k, _) in &named {
+            visit(k, &deps, &mut seen, &mut out);
+        }
+        out
+    }
+
+    /// Tables as production's GetDatabaseDdl lists them: top-level tables by name, each followed
+    /// by its indexes and then its interleaved children, by name, depth first. A table's foreign
+    /// keys to tables listed before it (or to itself) stay in its `CREATE TABLE`, by name; the
+    /// others become `ALTER TABLE ... ADD` right after the referenced table's `CREATE TABLE`, by
+    /// constraint name (`conformance/cases/ddl/object_order.case`).
+    fn tables_ddl_production(&self, out: &mut Vec<String>, access: bool) {
+        let mut children: std::collections::HashMap<String, Vec<&Table>> =
+            std::collections::HashMap::new();
+        let mut roots = Vec::new();
+        for t in self.tables.values() {
+            match &t.interleave {
+                Some(il) if self.table(&il.parent).is_some() => children
+                    .entry(il.parent.to_ascii_lowercase())
+                    .or_default()
+                    .push(t),
+                _ => roots.push(t),
+            }
+        }
+        roots.sort_by(|a, b| a.name.cmp(&b.name));
+        for c in children.values_mut() {
+            c.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        let mut printed = std::collections::HashSet::new();
+        // Foreign keys waiting for the table they reference, by its lowercase name.
+        let mut deferred: std::collections::HashMap<String, Vec<(&Table, &ForeignKey)>> =
+            std::collections::HashMap::new();
+        let mut stack: Vec<&Table> = roots.into_iter().rev().collect();
+        while let Some(t) = stack.pop() {
+            let lower = t.name.to_ascii_lowercase();
+            printed.insert(lower.clone());
+            let mut inline = Vec::new();
+            for fk in &t.foreign_keys {
+                let r = fk.ref_table.to_ascii_lowercase();
+                if printed.contains(&r) {
+                    inline.push(fk);
+                } else {
+                    deferred.entry(r).or_default().push((t, fk));
+                }
+            }
+            inline.sort_by(|a, b| a.name.cmp(&b.name));
+            out.push(table_sql_ordered(t, &inline, true));
+            if let Some(mut waiting) = deferred.remove(&lower) {
+                waiting.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+                for (owner, fk) in waiting {
+                    out.push(format!(
+                        "ALTER TABLE {} ADD {}",
+                        quote_path(&owner.name),
+                        fk_sql(fk)
+                    ));
+                }
+            }
+            self.table_tail_ddl(t, out, access);
+            if let Some(c) = children.get(&lower) {
+                stack.extend(c.iter().rev());
+            }
+        }
+    }
+
+    /// A table's indexes and search indexes, by name, then (with `access`) its grants.
+    fn table_tail_ddl(&self, t: &Table, out: &mut Vec<String>, access: bool) {
+        let mut idx: Vec<(&str, String)> = self
+            .indexes
+            .values()
+            .filter(|i| i.table.eq_ignore_ascii_case(&t.name))
+            .map(|i| (i.name.as_str(), index_sql(i)))
+            .chain(
+                self.search_indexes
+                    .values()
+                    .filter(|i| i.table.eq_ignore_ascii_case(&t.name))
+                    .map(|i| (i.name.as_str(), search_index_sql(i))),
+            )
+            .collect();
+        idx.sort_by(|a, b| a.0.cmp(b.0));
+        out.extend(idx.into_iter().map(|(_, s)| s));
+        if access {
+            out.extend(self.table_grants(t));
+        }
     }
 
     /// Grantees of the grants matching `on`, in name order.

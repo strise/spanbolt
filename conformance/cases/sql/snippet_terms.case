@@ -1,8 +1,7 @@
 # SNIPPET with several terms, swept over max_snippet_width 6..40 (#87). When the terms don't fit
 # in one snippet, Cloud Spanner returns one snippet per term, up to max_snippets; terms next to
-# each other stay together and a repeated term never gets a second snippet. spanbolt approximates
-# the cut and the split (`snippet_spans` in crates/sql/src/search/eval.rs, 332 of these 560
-# widths), so these fail in default mode: they are the target for an exact port.
+# each other stay together and a repeated term never gets a second snippet. spanbolt follows the
+# cut and the split (`Snippets` in crates/sql/src/search/eval.rs).
 tags: sql search
 schema:
   CREATE TABLE W (

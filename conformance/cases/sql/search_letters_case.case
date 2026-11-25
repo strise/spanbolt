@@ -157,7 +157,7 @@ expect@spanner:
   ["58","X y Z","x(boundary), y, z(end_boundary)"]
   ["59","xy Z w","xy(boundary), z, w(end_boundary)"]
 
-# Rows 20 and 21 fail in default mode: prod keeps a closing `)` or `"` at the end of a snippet.
+# Rows 20 and 21: prod keeps a closing `)` or `"` at the end of a snippet.
 case snip
 query:
   SELECT Id, SNIPPET(Body, 'x y') AS a, SNIPPET(Body, 'x') AS c FROM T ORDER BY Id
@@ -476,7 +476,7 @@ expect:
 expect@spanner:
   columns: Id INT64
   ["4"]
-# Column c8 fails in default mode: prod doesn't highlight the stopword `i`.
+# Column c8: prod doesn't highlight the stopword `i` in a query with other words.
 case snipq
 query:
   SELECT SNIPPET('xy x y xyz yx i ix', "x y") AS c0, SNIPPET('xy x y xyz yx i ix', "y x") AS c1, SNIPPET('xy x y xyz yx i ix', "x y z") AS c2, SNIPPET('xy x y xyz yx i ix', "x-y") AS c3, SNIPPET('xy x y xyz yx i ix', "\"x y\"") AS c4, SNIPPET('xy x y xyz yx i ix', "x OR y") AS c5, SNIPPET('xy x y xyz yx i ix', "-x y") AS c6, SNIPPET('xy x y xyz yx i ix', "x AROUND y") AS c7, SNIPPET('xy x y xyz yx i ix', "I x") AS c8, SNIPPET('xy x y xyz yx i ix', "x AROUND(2) y z") AS c9, SNIPPET('xy x y xyz yx i ix', "x y -z") AS c10

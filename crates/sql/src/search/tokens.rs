@@ -86,6 +86,20 @@ const MAX_JOINED_LETTERS: usize = 21;
 /// A token is a run of characters between delimiters (`is_delimiter`), so `é` or `x1` is no single
 /// letter.
 pub fn joined_letters(chars: &[char]) -> Vec<bool> {
+    joined_letters_across(chars, |gap| gap.iter().all(|&c| c == ' '))
+}
+
+/// The letters SNIPPET shows joined: as `joined_letters`, but same-case letters also join across
+/// any run of ASCII whitespace that starts with a space (`x \n y` is `xy`, `x\n y` stays
+/// `x y`). Recorded from Cloud Spanner (`snippet_display.case`).
+pub fn snippet_joined_letters(chars: &[char]) -> Vec<bool> {
+    joined_letters_across(chars, |gap| {
+        gap.first() == Some(&' ') && gap.iter().all(char::is_ascii_whitespace)
+    })
+}
+
+/// `joined_letters`, with `spaces` deciding which gaps between single letters are spaces.
+fn joined_letters_across(chars: &[char], spaces: impl Fn(&[char]) -> bool) -> Vec<bool> {
     let delim = |c: char| c.is_ascii() && is_delimiter(c as u8);
     let mut toks: Vec<(usize, usize)> = Vec::new();
     let mut start = None;
@@ -145,11 +159,7 @@ pub fn joined_letters(chars: &[char]) -> Vec<bool> {
             continue;
         }
         let mut j = i;
-        while j + 1 < n
-            && eligible(j + 1, &used)
-            && upper(j) == upper(j + 1)
-            && gap(j).iter().all(|&c| c == ' ')
-        {
+        while j + 1 < n && eligible(j + 1, &used) && upper(j) == upper(j + 1) && spaces(gap(j)) {
             j += 1;
         }
         if j > i {
@@ -685,16 +695,90 @@ pub fn tokenize_substring(args: &[Value]) -> Result<Value> {
     Ok(encode(&toks.into_inner()))
 }
 
-pub fn token(_args: &[Value]) -> Result<Value> {
-    Ok(encode(&[b"exact_match"]))
+pub const TOKEN: &str = "exact_match";
+pub const BOOL: &str = "bool";
+pub const NUMBER: &str = "numeric";
+pub const JSON: &str = "json";
+
+/// Prefix of the token after the signature that keeps the value behind a TOKEN, TOKENIZE_BOOL,
+/// TOKENIZE_NUMBER or TOKENIZE_JSON list, for DEBUG_TOKENLIST (`super::debug`). Absent for NULL.
+/// Nothing else reads it: search functions reject these lists.
+pub const VALUE: u8 = 0x03;
+
+/// `value` starts with VALUE.
+fn with_value(sig: &str, value: Option<&[u8]>) -> Value {
+    match value {
+        Some(v) => encode(&[sig.as_bytes(), v]),
+        None => encode(&[sig.as_bytes()]),
+    }
 }
 
-pub fn tokenize_bool(_args: &[Value]) -> Result<Value> {
-    Ok(encode(&[b"bool"]))
+/// Appends a LEB128 length and the bytes.
+pub fn put_len_prefixed(out: &mut Vec<u8>, b: &[u8]) {
+    put_varint(out, b.len() as u64);
+    out.extend_from_slice(b);
 }
 
-pub fn tokenize_json(_args: &[Value]) -> Result<Value> {
-    Ok(encode(&[b"json"]))
+pub fn put_varint(out: &mut Vec<u8>, mut n: u64) {
+    loop {
+        let b = (n & 0x7f) as u8;
+        n >>= 7;
+        if n == 0 {
+            out.push(b);
+            return;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+/// The value is its elements' bytes, each length-prefixed (NULL elements left out).
+pub fn token(args: &[Value]) -> Result<Value> {
+    fn bytes(v: &Value) -> Option<&[u8]> {
+        match v {
+            Value::String(s) => Some(s.as_bytes()),
+            Value::Bytes(b) => Some(b),
+            _ => None,
+        }
+    }
+    let value = match &args[0] {
+        Value::Array(a) => {
+            let mut out = vec![VALUE];
+            for b in a.iter().filter_map(bytes) {
+                put_len_prefixed(&mut out, b);
+            }
+            Some(out)
+        }
+        v => bytes(v).map(|b| {
+            let mut out = Vec::with_capacity(b.len() + 4);
+            out.push(VALUE);
+            put_len_prefixed(&mut out, b);
+            out
+        }),
+    };
+    Ok(with_value(TOKEN, value.as_deref()))
+}
+
+pub fn tokenize_bool(args: &[Value]) -> Result<Value> {
+    let value: Option<&[u8]> = match &args[0] {
+        Value::Bool(true) => Some(&[VALUE, b'y']),
+        Value::Bool(false) => Some(&[VALUE, b'n']),
+        _ => None,
+    };
+    Ok(with_value(BOOL, value))
+}
+
+/// The value is the JSON text.
+pub fn tokenize_json(args: &[Value]) -> Result<Value> {
+    let value = match &args[0] {
+        Value::Json(s) => {
+            let mut out = Vec::with_capacity(s.len() + 1);
+            out.push(VALUE);
+            out.extend_from_slice(s.as_bytes());
+            Some(out)
+        }
+        _ => None,
+    };
+    Ok(with_value(JSON, value.as_deref()))
 }
 
 /// `std::to_string(double)`.
@@ -771,7 +855,51 @@ pub fn tokenize_number(args: &[Value], float_bounds: bool, float_value: bool) ->
             )?;
         }
     }
-    Ok(encode(&[b"numeric"]))
+    Ok(with_value(
+        NUMBER,
+        number_value(args, float_value || float_bounds).as_deref(),
+    ))
+}
+
+/// What DEBUG_TOKENLIST needs to print a TOKENIZE_NUMBER list, after VALUE: `E` and the values
+/// (equality), `L` and base, min, max, granularity and the value (logtree over INT64), each
+/// little-endian i64, or `U` for lists it can't print yet (DOUBLE values, prefixtree, arrays
+/// without equality). None for NULL.
+fn number_value(args: &[Value], float: bool) -> Option<Vec<u8>> {
+    let v = arg(args, 0)?;
+    let equality = str_arg(args, 1).is_some_and(|c| c.eq_ignore_ascii_case("equality"));
+    let logtree = str_arg(args, 2)
+        .is_none_or(|a| a.eq_ignore_ascii_case("auto") || a.eq_ignore_ascii_case("logtree"));
+    let mut out = Vec::with_capacity(42);
+    out.push(VALUE);
+    match (float, equality, v) {
+        (false, true, Value::Int64(i)) => {
+            out.push(b'E');
+            out.extend_from_slice(&i.to_le_bytes());
+        }
+        (false, true, Value::Array(a)) => {
+            out.push(b'E');
+            for e in a.iter() {
+                if let Value::Int64(i) = e {
+                    out.extend_from_slice(&i.to_le_bytes());
+                }
+            }
+        }
+        (false, false, Value::Int64(i)) if logtree => {
+            out.push(b'L');
+            for n in [
+                int_arg(args, 6, 2),
+                int_arg(args, 3, i64::MIN),
+                int_arg(args, 4, i64::MAX),
+                int_arg(args, 5, 1),
+                *i,
+            ] {
+                out.extend_from_slice(&n.to_le_bytes());
+            }
+        }
+        _ => out.push(b'U'),
+    }
+    Some(out)
 }
 
 fn validate_bounds(

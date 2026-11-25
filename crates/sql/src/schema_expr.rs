@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use spanbolt_ddl::ColumnType;
-use spanbolt_storage::expr::{ExprEvaluator, ExprKind};
+use spanbolt_storage::expr::{ExprEvaluator, ExprKind, SchemaChange};
 use spanbolt_storage::{DbState, Error, Result, TableMeta, Value};
 
 use crate::catalog::SqlCatalog;
@@ -154,6 +154,15 @@ impl ExprEvaluator for SchemaExprs {
         name: &str,
     ) -> Result<()> {
         self.engine.validate_property_graph(schema, name)
+    }
+
+    fn check_graph_dependents(
+        &self,
+        before: &Arc<spanbolt_ddl::Schema>,
+        after: &Arc<spanbolt_ddl::Schema>,
+        change: &SchemaChange,
+    ) -> Result<()> {
+        self.engine.check_graph_dependents(before, after, change)
     }
 
     fn validate(&self, expr: &str, table: &TableMeta, kind: &ExprKind) -> Result<()> {

@@ -906,3 +906,121 @@ impl Op for Generated {
         line(out, d, &format!("Generated({}){by}", self.name));
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SampleMethod {
+    Bernoulli,
+    Reservoir,
+}
+
+/// TABLESAMPLE. BERNOULLI keeps each row with probability `size / 100`; RESERVOIR keeps `size`
+/// rows chosen uniformly (Algorithm R), or every row when there are no more than that. `size` is a
+/// literal or a parameter, checked when the scan opens as the emulator does. With `WITH WEIGHT`,
+/// each row gets its scaling weight appended: `100 / percent` for BERNOULLI, `rows / size` for
+/// RESERVOIR (1 when every row was kept).
+pub struct Sample {
+    pub input: BoxOp,
+    pub method: SampleMethod,
+    pub size: Eval,
+    pub weight: bool,
+}
+
+/// SplitMix64, seeded from the OS once per scan. Sampling needs no cryptographic quality.
+struct SampleRng(u64);
+
+impl SampleRng {
+    fn new() -> Result<Self> {
+        let mut buf = [0u8; 8];
+        getrandom::fill(&mut buf).map_err(|e| Error::internal(format!("random: {e}")))?;
+        Ok(SampleRng(u64::from_le_bytes(buf)))
+    }
+
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
+
+    /// Uniform in [0, 1).
+    fn unit(&mut self) -> f64 {
+        (self.next() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    /// Uniform in [0, n).
+    fn below(&mut self, n: u64) -> u64 {
+        ((self.next() as u128 * n as u128) >> 64) as u64
+    }
+}
+
+impl Op for Sample {
+    fn open<'a>(&'a self, cx: &'a Cx<'a>, env: &'a Env<'a>) -> Result<RowIter<'a>> {
+        let size = match (self.size)(cx, env)? {
+            Value::Null => return Err(out_of_range("SampleScan requires non-null size")),
+            v => v,
+        };
+        let mut rng = SampleRng::new()?;
+        match self.method {
+            SampleMethod::Bernoulli => {
+                let percent = match size {
+                    Value::Int64(n) => n as f64,
+                    Value::Float64(f) => f,
+                    v => return Err(Error::internal(format!("TABLESAMPLE PERCENT {v:?}"))),
+                };
+                // NaN passes the range check and keeps no rows, as in the emulator.
+                if !percent.is_nan() && !(0.0..=100.0).contains(&percent) {
+                    return Err(out_of_range("PERCENT value must be in the range [0, 100]"));
+                }
+                let weight = self.weight.then(|| Value::Float64(100.0 / percent));
+                let it = self.input.open(cx, env)?;
+                Ok(Box::new(it.filter_map(move |r| match r {
+                    Ok(mut row) => (rng.unit() * 100.0 < percent).then(|| {
+                        row.extend(weight.clone());
+                        Ok(row)
+                    }),
+                    Err(e) => Some(Err(e)),
+                })))
+            }
+            SampleMethod::Reservoir => {
+                let k = match size {
+                    Value::Int64(n) if n >= 0 => n as u64,
+                    Value::Int64(_) => {
+                        return Err(out_of_range("SampleScan requires non-negative size"));
+                    }
+                    v => return Err(Error::internal(format!("TABLESAMPLE ROWS {v:?}"))),
+                };
+                // No capacity up front: `k` can be far larger than the input.
+                let mut kept: Vec<Row> = Vec::new();
+                let mut seen = 0u64;
+                for r in self.input.open(cx, env)? {
+                    let r = r?;
+                    seen += 1;
+                    if (kept.len() as u64) < k {
+                        kept.push(r);
+                    } else {
+                        let j = rng.below(seen);
+                        if j < k {
+                            kept[j as usize] = r;
+                        }
+                    }
+                }
+                if self.weight {
+                    let w = if seen > k {
+                        seen as f64 / k as f64
+                    } else {
+                        1.0
+                    };
+                    for row in &mut kept {
+                        row.push(Value::Float64(w));
+                    }
+                }
+                Ok(Box::new(kept.into_iter().map(Ok)))
+            }
+        }
+    }
+    fn describe(&self, out: &mut String, d: usize) {
+        line(out, d, &format!("Sample {:?}", self.method));
+        self.input.describe(out, d + 1);
+    }
+}

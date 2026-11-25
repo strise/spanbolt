@@ -5,6 +5,7 @@ use spanbolt_proto::database_admin as da;
 use spanbolt_proto::database_admin::database_admin_server::DatabaseAdmin;
 use spanbolt_proto::google::iam::v1 as iam;
 use spanbolt_proto::longrunning::Operation;
+use spanbolt_storage::expr::{SchemaChange, expr_evaluator};
 use spanbolt_storage::{DbState, Timestamp};
 use tonic::{Request, Response, Status};
 
@@ -104,7 +105,7 @@ pub fn apply_ddl(
 /// Validates the DEFAULT, generated-column and CHECK expressions a statement declares through
 /// the registered SQL evaluator (none without the `googlesql` feature).
 fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
-    use spanbolt_storage::expr::{ExprKind, expr_evaluator};
+    use spanbolt_storage::expr::ExprKind;
     let (table, only): (&str, Option<&str>) = match stmt {
         Statement::Opaque {
             object,
@@ -216,6 +217,8 @@ fn apply_schema(
         } => schema.views.contains_key(&view.name.to_ascii_lowercase()),
         _ => false,
     };
+    let graph_change = expr_evaluator()
+        .and_then(|ev| Some((ev, graph_change(schema, &stmt)?, Arc::new(schema.clone()))));
     if emulator_compat {
         schema.apply_emulator_compat(&stmt).map_err(ddl)?;
     } else {
@@ -223,12 +226,73 @@ fn apply_schema(
     }
     validate_exprs(schema, &stmt)?;
     if let Statement::CreateView { view, .. } = &stmt
-        && let Some(ev) = spanbolt_storage::expr::expr_evaluator()
+        && let Some(ev) = expr_evaluator()
     {
-        ev.validate_view(&std::sync::Arc::new(schema.clone()), &view.name, replacing)
+        ev.validate_view(&Arc::new(schema.clone()), &view.name, replacing)
+            .map_err(to_status)?;
+    }
+    if let Some((ev, change, before)) = graph_change {
+        ev.check_graph_dependents(&before, &Arc::new(schema.clone()), &change)
             .map_err(to_status)?;
     }
     Ok(checks)
+}
+
+/// What `stmt` drops or changes that a property graph of `schema` may use: only when a graph's
+/// definition names the table or view, so other statements skip the check.
+fn graph_change(schema: &Schema, stmt: &Statement) -> Option<SchemaChange> {
+    let graphs: Vec<&str> = schema
+        .opaque
+        .iter()
+        .filter(|o| o.kind == "PROPERTY GRAPH")
+        .map(|o| o.ddl.as_str())
+        .collect();
+    if graphs.is_empty() {
+        return None;
+    }
+    let table = |name: &str| schema.table(name).map(|t| t.name.clone());
+    let view = |name: &str| {
+        schema
+            .views
+            .values()
+            .find(|v| v.name.eq_ignore_ascii_case(name))
+            .map(|v| v.name.clone())
+    };
+    let column = |t: &str, c: &str| {
+        let t = schema.table(t)?;
+        let c = t.columns.iter().find(|x| x.name.eq_ignore_ascii_case(c))?;
+        Some((t.name.clone(), c.name.clone()))
+    };
+    let change = match stmt {
+        Statement::DropTable { name, .. } => SchemaChange::DropTable(table(name)?),
+        Statement::DropView { name, .. } => SchemaChange::DropView(view(name)?),
+        Statement::CreateView {
+            view: v,
+            or_replace: true,
+        } => SchemaChange::ReplaceView(view(&v.name)?),
+        Statement::AlterTable {
+            table: t, action, ..
+        } => match action {
+            AlterTable::DropColumn { name } => {
+                let (table, column) = column(t, name)?;
+                SchemaChange::DropColumn { table, column }
+            }
+            AlterTable::AlterColumn { column: c } => {
+                let (table, column) = column(t, &c.name)?;
+                SchemaChange::AlterColumn { table, column }
+            }
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let object = match &change {
+        SchemaChange::DropTable(n) | SchemaChange::DropView(n) | SchemaChange::ReplaceView(n) => n,
+        SchemaChange::DropColumn { table, .. } | SchemaChange::AlterColumn { table, .. } => table,
+    };
+    graphs
+        .iter()
+        .any(|g| spanbolt_storage::expr::mentions(g, object))
+        .then_some(change)
 }
 
 #[tonic::async_trait]

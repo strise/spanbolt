@@ -1,10 +1,13 @@
-//! Cloud Spanner's rule that a query cannot read a field of a struct it also returns.
+//! Cloud Spanner's rules for the nested tables a query returns.
 //!
 //! Spanner returns an `ARRAY(SELECT AS STRUCT ...)` as a nested table unless the subquery yields
-//! exactly one row whatever the data. A query that returns such a nested table and also reads a
-//! field of one of its structs fails with UNIMPLEMENTED. The rule is mapped from probes against
-//! Cloud Spanner; where the probes leave a shape open, the query is accepted.
+//! exactly one row whatever the data. A query fails with UNIMPLEMENTED when its result includes
+//! the same nested table more than once (`conformance/cases/sql/struct_returned_twice.case`), or
+//! when it returns a nested table and also reads a field of one of its structs. The rules are
+//! mapped from probes against Cloud Spanner; where the probes leave a shape open, the
+//! query is accepted.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use googlesql_sys::proto::any_resolved_aggregate_scan_base_proto::Node as AggNode;
@@ -24,6 +27,11 @@ const MAX_DEPTH: usize = 64;
 
 /// A nested table: the address of its array subquery node.
 type Origin = usize;
+
+/// The [`Origin`] of the nested table subquery `s`: the address of its node.
+fn origin_of(s: &ResolvedSubqueryExprProto) -> Origin {
+    s as *const ResolvedSubqueryExprProto as Origin
+}
 
 /// How a column gets its value, for the columns the rule follows.
 enum Def<'a> {
@@ -52,28 +60,31 @@ struct Shape<'a> {
     with_refs: HashMap<usize, &'a AnyResolvedScanProto>,
     /// The struct operand of every field access.
     accessed: Vec<&'a AnyResolvedExprProto>,
+    /// Every subquery expression, by the address of its subquery node (an [`Origin`]).
+    subqueries: HashMap<Origin, &'a AnyResolvedExprProto>,
+    /// While set, values that only pass through `ARRAY_FILTER` contain no nested table.
+    skip_filters: Cell<bool>,
 }
 
 pub fn check(q: &ResolvedQueryStmtProto) -> Result<()> {
     let Some(scan) = q.query.as_ref() else {
         return Ok(());
     };
-    let mut shape = Shape::default();
-    shape.scan(scan);
-    if shape.accessed.is_empty() {
+    if !q.output_column_list.iter().any(|oc| {
+        oc.column
+            .as_ref()
+            .and_then(|c| c.r#type.as_ref())
+            .is_some_and(has_struct)
+    }) {
         return Ok(());
     }
-    let mut returned = Vec::new();
-    for oc in &q.output_column_list {
-        if let Some(c) = &oc.column
-            && c.r#type.as_ref().is_some_and(has_struct)
-        {
-            shape.column(Flow::Contained, c.column_id.unwrap_or(-1), 0, &mut returned);
-        }
-    }
+    let mut shape = Shape::default();
+    shape.scan(scan);
+    let returned = shape.returned(q);
     if returned.is_empty() {
         return Ok(());
     }
+    shape.returned_twice(q, &returned)?;
     for base in &shape.accessed {
         let mut read = Vec::new();
         shape.element_of(base, 0, &mut read);
@@ -86,6 +97,57 @@ pub fn check(q: &ResolvedQueryStmtProto) -> Result<()> {
         }
     }
     Ok(())
+}
+
+impl Shape<'_> {
+    /// The nested tables the result includes, once per time it includes them.
+    fn returned(&self, q: &ResolvedQueryStmtProto) -> Vec<Origin> {
+        let mut out = Vec::new();
+        for oc in &q.output_column_list {
+            if let Some(c) = &oc.column
+                && c.r#type.as_ref().is_some_and(has_struct)
+            {
+                self.column(Flow::Contained, c.column_id.unwrap_or(-1), 0, &mut out);
+            }
+        }
+        out
+    }
+
+    /// A nested table the result includes more than once. Two `ARRAY_FILTER` calls over one
+    /// nested table are accepted; the table next to a filter of it is not.
+    fn returned_twice(&self, q: &ResolvedQueryStmtProto, returned: &[Origin]) -> Result<()> {
+        let twice: Vec<Origin> = returned
+            .iter()
+            .enumerate()
+            .filter(|(i, o)| returned[..*i].contains(o))
+            .map(|(_, o)| *o)
+            .collect();
+        if twice.is_empty() {
+            return Ok(());
+        }
+        self.skip_filters.set(true);
+        let unfiltered = self.returned(q);
+        self.skip_filters.set(false);
+        let Some(origin) = twice.into_iter().find(|o| unfiltered.contains(o)) else {
+            return Ok(());
+        };
+        let element = self
+            .subqueries
+            .get(&origin)
+            .and_then(|e| expr_type(e))
+            .and_then(element_type)
+            .and_then(|t| crate::types::from_proto(t).ok())
+            .map(|t| spanbolt_storage::value::type_name(&t))
+            .unwrap_or_else(|| "STRUCT".into());
+        Err(Error::new(
+            Code::Unimplemented,
+            format!(
+                "Unsupported query shape: A nested table defined in a sub-query may not be \
+                 included in the query result more than once. Rewrite your query using the \
+                 nested table with sub-select. {element} is the type included more than once."
+            ),
+        ))
+    }
 }
 
 fn kind(t: &TypeProto) -> Option<TypeKind> {
@@ -317,6 +379,7 @@ impl<'a> Shape<'a> {
             }
             Some(E::ResolvedGetJsonFieldNode(g)) => self.opt_expr(&g.expr),
             Some(E::ResolvedSubqueryExprNode(s)) => {
+                self.subqueries.insert(origin_of(s), e);
                 self.opt_expr(&s.in_expr);
                 self.input(&s.subquery);
             }
@@ -345,7 +408,7 @@ impl<'a> Shape<'a> {
             .map(|p| column_id(&p.column))
             .collect();
         let scan = s.subquery.as_deref()?;
-        (!self.single_row(scan, &outer, 0)).then_some(s as *const _ as Origin)
+        (!self.single_row(scan, &outer, 0)).then_some(origin_of(s))
     }
 
     /// Whether Spanner takes `s` to yield exactly one row. `outer` holds the columns of the
@@ -500,6 +563,9 @@ impl<'a> Shape<'a> {
             // ARRAY_TRANSFORM holds what its lambda returns.
             Some(E::ResolvedFunctionCallBaseNode(_)) => {
                 if let Some(b) = call_base(e) {
+                    if self.skip_filters.get() && fn_name(b) == "array_filter" {
+                        return;
+                    }
                     match transform_body(b) {
                         Some(body) => self.contained_in(body, depth + 1, out),
                         None => {

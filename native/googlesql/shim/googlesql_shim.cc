@@ -318,7 +318,8 @@ absl::StatusOr<const googlesql::Type*> BundleColumnType(
     const gsql_protos* protos, const std::string& name) {
   static const LazyRE2 kBundle = {R"((ARRAY<)?(PROTO|ENUM)<([^<>]+)>(>?))"};
   std::string array, kind, type_name, close;
-  if (!RE2::FullMatch(name, *kBundle, &array, &kind, &type_name, &close)) {
+  if (name == kFileDescriptorSetType ||
+      !RE2::FullMatch(name, *kBundle, &array, &kind, &type_name, &close)) {
     return nullptr;
   }
   if (array.empty() != close.empty()) return nullptr;

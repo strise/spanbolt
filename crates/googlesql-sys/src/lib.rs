@@ -302,10 +302,7 @@ impl Catalog {
         params_json: &str,
     ) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
         let bytes = self.analyze_raw(sql, params_json)?;
-        prost::Message::decode(bytes.as_slice()).map_err(|e| AnalyzeError {
-            code: 13,
-            message: format!("decode AnyResolvedStatementProto: {e}"),
-        })
+        decode_statement(&bytes)
     }
 }
 
@@ -348,6 +345,88 @@ pub fn with_stack_for<R: Send>(sql_len: usize, f: impl FnOnce() -> R + Send) -> 
     })
 }
 
+/// Decodes a serialized resolved AST. Expressions and scans nest past prost's limit of 100
+/// messages (build.rs), and a level of them takes tens of KiB of stack to decode: an AST deeper
+/// than [`deep::INLINE_LEVELS`] decodes again on a thread with a stack for [`deep::MAX_LEVELS`].
+pub fn decode_statement(bytes: &[u8]) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+    let (mut r, mut too_deep) = deep::decode(bytes, deep::INLINE_LEVELS);
+    if too_deep {
+        (r, too_deep) = std::thread::scope(|s| {
+            std::thread::Builder::new()
+                .name("googlesql-decode".into())
+                .stack_size(deep::STACK)
+                .spawn_scoped(s, || deep::decode(bytes, deep::MAX_LEVELS))
+                .expect("spawn a decoder thread")
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        });
+    }
+    r.map_err(|e| AnalyzeError {
+        code: 13,
+        // The error names every message it is nested in: too long for a gRPC status.
+        message: if too_deep {
+            "decode AnyResolvedStatementProto: expressions nested too deep".into()
+        } else {
+            format!("decode AnyResolvedStatementProto: {e}")
+        },
+    })
+}
+
+/// Depth of the expression and scan nodes being decoded on this thread, for the wrappers build.rs
+/// generates.
+#[doc(hidden)]
+pub mod deep {
+    use std::cell::Cell;
+
+    /// Nested expression and scan nodes decoded on the caller's stack: ordinary statements.
+    pub const INLINE_LEVELS: u32 = 16;
+    /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
+    /// subqueries and 15 nested structs before this.
+    pub const MAX_LEVELS: u32 = 256;
+    /// Stack for [`MAX_LEVELS`] (address space, used only as deep as the AST goes).
+    pub const STACK: usize = 64 << 20;
+
+    thread_local! {
+        static DEPTH: Cell<u32> = const { Cell::new(0) };
+        static LIMIT: Cell<u32> = const { Cell::new(INLINE_LEVELS) };
+        static TOO_DEEP: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// One nested expression or scan node, for as long as it decodes.
+    pub struct Level(());
+
+    impl Level {
+        pub fn enter() -> Result<Level, prost::DecodeError> {
+            let depth = DEPTH.get() + 1;
+            if depth > LIMIT.get() {
+                TOO_DEEP.set(true);
+                #[allow(deprecated)]
+                return Err(prost::DecodeError::new("expressions nested too deep"));
+            }
+            DEPTH.set(depth);
+            Ok(Level(()))
+        }
+    }
+
+    impl Drop for Level {
+        fn drop(&mut self) {
+            DEPTH.set(DEPTH.get() - 1);
+        }
+    }
+
+    /// Decodes `bytes` with at most `limit` nested levels, and whether it went past them.
+    pub(crate) fn decode<M: prost::Message + Default>(
+        bytes: &[u8],
+        limit: u32,
+    ) -> (Result<M, prost::DecodeError>, bool) {
+        LIMIT.set(limit);
+        TOO_DEEP.set(false);
+        let r = M::decode(bytes);
+        LIMIT.set(INLINE_LEVELS);
+        (r, TOO_DEEP.replace(false))
+    }
+}
+
 fn decode_result(r: RawResult) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
     let bytes = take(r.proto);
     let error = take(r.error);
@@ -357,10 +436,7 @@ fn decode_result(r: RawResult) -> Result<proto::AnyResolvedStatementProto, Analy
             message: String::from_utf8_lossy(&error).into_owned(),
         });
     }
-    prost::Message::decode(bytes.as_slice()).map_err(|e| AnalyzeError {
-        code: 13,
-        message: format!("decode AnyResolvedStatementProto: {e}"),
-    })
+    decode_statement(&bytes)
 }
 
 impl Drop for Catalog {

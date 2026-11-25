@@ -1,0 +1,196 @@
+# A nested table returned more than once (spanbolt #117). Cloud Spanner rejects a query whose
+# result includes the same nested table (an `ARRAY(SELECT AS STRUCT ...)` defined in a
+# subquery) twice. `expect:` is recorded from the emulator; `expect@spanner:` from Cloud Spanner.
+tags: sql struct oracle
+schema:
+  CREATE TABLE Items (
+    Id INT64 NOT NULL,
+    Grp STRING(16),
+    Val INT64,
+  ) PRIMARY KEY (Id)
+insert Items cols=Id,Grp,Val:
+  [1, "a", 10]
+  [2, "a", 20]
+  [3, "b", 5]
+
+# The same column twice, through WITH and through a FROM subquery.
+case same_column
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, a AS b FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  SELECT s.a, s.a AS b FROM (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) AS s
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT t.a FROM t UNION ALL SELECT t.a FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]]]
+  [[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT x.a, y.a AS b FROM t AS x, t AS y
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a, ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS b
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  same
+
+# Array functions over the nested table, next to the table itself.
+case array_functions
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_FILTER(a, e -> TRUE) AS f FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_TRANSFORM(a, e -> e) AS f FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_REVERSE(a) AS r FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, r ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["3","5"],["2","20"],["1","10"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_CONCAT(a, a) AS c FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, c ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"],["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY_CONCAT(a, a) AS c FROM t
+expect:
+  columns: c ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"],["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_SLICE(a, 0, 1) AS s FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY(SELECT AS STRUCT e.Id, e.Val FROM UNNEST(a) AS e) AS b FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Accessing fields of a struct value also present in the final result is not supported.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY(SELECT e FROM UNNEST(a) AS e) AS b FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, b ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT a, ARRAY_LENGTH(a) AS n FROM t
+expect:
+  columns: a ARRAY<STRUCT<Id INT64, Val INT64>>, n INT64
+  [[["1","10"],["2","20"],["3","5"]],"3"]
+expect@spanner:
+  same
+
+# Two calls over one nested table, without the table itself.
+case two_calls
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY_FILTER(a, e -> TRUE) AS f, ARRAY_FILTER(a, e -> FALSE) AS g FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: f ARRAY<STRUCT<Id INT64, Val INT64>>, g ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]],[]]
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY_TRANSFORM(a, e -> e) AS f, ARRAY_TRANSFORM(a, e -> e) AS g FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY_REVERSE(a) AS f, ARRAY_TRANSFORM(a, e -> e) AS g FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY_TRANSFORM(a, e -> e) AS f FROM t
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: f ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"],["3","5"]]]
+
+# Inside a nested table: the same nested table twice in one struct.
+case nested
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY(SELECT AS STRUCT x.a AS p, x.a AS q FROM t AS x) AS n
+expect:
+  columns: n ARRAY<STRUCT<p ARRAY<STRUCT<Id INT64, Val INT64>>, q ARRAY<STRUCT<Id INT64, Val INT64>>>>
+  [[[[["1","10"],["2","20"],["3","5"]],[["1","10"],["2","20"],["3","5"]]]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+query:
+  WITH t AS (SELECT ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id) AS a) SELECT ARRAY(SELECT AS STRUCT x.a AS p FROM t AS x) AS n, t.a FROM t
+expect:
+  columns: n ARRAY<STRUCT<p ARRAY<STRUCT<Id INT64, Val INT64>>>>, a ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[[[["1","10"],["2","20"],["3","5"]]]],[["1","10"],["2","20"],["3","5"]]]
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A nested table defined in a sub-query may not be included in the query result more than once. Rewrite your query using the nested table with sub-select. STRUCT<Id INT64, Val INT64> is the type included more than once.
+
+# The emulator rejects ARRAY_SLICE over any ARRAY<STRUCT>, not only a nested table returned twice.
+case array_slice_alone
+query:
+  SELECT ARRAY_SLICE(ARRAY(SELECT AS STRUCT Id, Val FROM Items ORDER BY Id), 0, 1) AS s
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Spanner does not support array constructor syntax for a null-valued array of struct.
+expect@spanner:
+  columns: s ARRAY<STRUCT<Id INT64, Val INT64>>
+  [[["1","10"],["2","20"]]]

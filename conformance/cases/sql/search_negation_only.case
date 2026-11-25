@@ -1,0 +1,544 @@
+# Search queries made only of negations (#120): which rows they match, with NULL and empty text,
+# stopwords, phrases and OR.
+tags: sql search
+schema:
+  CREATE TABLE D (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX DIdx ON D(Tok)
+insert D cols=Id,Body:
+  [1, "apple"]
+  [2, "banana"]
+  [3, "apple banana"]
+  [4, "cherry"]
+  [5, ""]
+  [6, null]
+  [7, "the"]
+  [8, "banana apple"]
+  [9, "!!!"]
+  [10, "-- apple"]
+  [11, "--apple"]
+  [12, "cherry banana"]
+
+# Prod matches `-a`, `-a -b` and `-a | -b` like the emulator. `---a` and negated or negating
+# parenthesised groups match nothing.
+case negations
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple -banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-zzz') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '---apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple | -banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple OR -banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-"apple banana"') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple-banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-(apple banana)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-(apple banana)`, has error(s): -Encountered error on column 2 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-(apple | banana)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-(apple | banana)`, has error(s): -Encountered error on column 2 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-the') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-the -apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the -apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple | banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple | cherry') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '(-apple) (-banana)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `(-apple) (-banana)`, has error(s): -Encountered error on column 1 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple or') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE NOT SEARCH(Tok, 'apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple') AND Id > 3 ORDER BY Id
+expect:
+  columns: Id INT64
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+
+case negation_score
+query:
+  SELECT Id, SCORE(Tok, '-apple') AS s FROM D WHERE SEARCH(Tok, '-apple') ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["2",0.0]
+  ["4",0.0]
+  ["5",0.0]
+  ["7",0.0]
+  ["9",0.0]
+  ["12",0.0]
+expect@spanner:
+  same
+
+# With another term in the query, a stopword matches every document: `the -apple` is `-apple`,
+# `the | -apple` matches all. A top-level AND of negations that had a stopword (or `or`) dropped
+# also matches the NULL row; `-apple` alone does not. `"the"` stays a literal term.
+case stopwords_and_null
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the -apple -banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["9"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple the') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the | -apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the cherry -banana') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["4"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'of the -apple') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the of') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'or') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple OR the') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"the" -apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["7"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'the-apple') ORDER BY Id
+expect:
+  columns: Id INT64
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple -') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-apple -`, has error(s): -Encountered error on column 8 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple .') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-apple .`, has error(s): -Encountered error on column 8 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-apple -the') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["9"]
+  ["12"]
+expect@spanner:
+  same
+
+# Cloud Spanner reads `--` as a token (#119): `--apple`, `-- apple` and `"--apple"` match the
+# rows with a `--`; default mode fails on those three.
+case double_hyphen
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '--apple') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["3"]
+  ["8"]
+  ["10"]
+  ["11"]
+expect@spanner:
+  columns: Id INT64
+  ["10"]
+  ["11"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-- apple') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-- apple`, has error(s): -Encountered error on column 3 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["10"]
+  ["11"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '"--apple"') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `"--apple"`, has error(s): -Encountered error on column 2 while parsing: term.
+expect@spanner:
+  columns: Id INT64
+  ["10"]
+  ["11"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '--banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["2"]
+  ["3"]
+  ["8"]
+  ["12"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '- -apple') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `- -apple`, has error(s): -Encountered error on column 2 while parsing: sub_expression.
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["4"]
+  ["5"]
+  ["7"]
+  ["9"]
+  ["12"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'cherry --banana') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["12"]
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '-(apple)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `-(apple)`, has error(s): -Encountered error on column 2 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, '(-apple)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `(-apple)`, has error(s): -Encountered error on column 1 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'cherry (-banana)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `cherry (-banana)`, has error(s): -Encountered error on column 8 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'cherry -(banana)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `cherry -(banana)`, has error(s): -Encountered error on column 9 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'cherry -(banana | apple)') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `cherry -(banana | apple)`, has error(s): -Encountered error on column 9 while parsing: sub_expression. Using parentheses to group query terms is not supported in rquery parser.
+expect@spanner:
+  columns: Id INT64

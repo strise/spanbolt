@@ -51,8 +51,17 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     googlesql_sys::with_stack_for(sql.len(), || {
         crate::limits::check(&bytes, cat.emulator_compat)
     })?;
-    googlesql_sys::decode_statement(&bytes).map_err(map_error)
+    let types = if cat.emulator_compat {
+        googlesql_sys::deep::MAX.types
+    } else {
+        SPANNER_TYPE_LEVELS
+    };
+    googlesql_sys::decode_statement_within(&bytes, types).map_err(map_error)
 }
+
+/// Cloud Spanner's analyser answers `CAST(NULL AS STRUCT<f STRUCT<...>>)` 1100 levels deep and runs
+/// out of stack before 1300 (`struct_depth.case`); the emulator's goes on to about 5000.
+const SPANNER_TYPE_LEVELS: u32 = 1200;
 
 /// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too
 /// (`No matching signature for function LENGTH ... Argument types: proto2.FileDescriptorSet`).

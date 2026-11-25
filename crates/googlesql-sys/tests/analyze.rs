@@ -413,10 +413,12 @@ fn deep_expressions_decode() {
             }
             let chain = format!("SELECT {}", vec!["1"; 250].join(" + "));
             assert!(cat.analyze(&chain, "{}").is_ok());
-            // Deeper than that is an error, not a stack overflow.
+            // Deeper than that is the emulator's and Spanner's out-of-stack error, not a stack
+            // overflow.
             let nested = format!("SELECT {}1{}", "ABS(".repeat(5000), ")".repeat(5000));
             let e = cat.analyze(&nested, "{}").expect_err("too deep");
-            assert!(e.message.contains("nested too deep"), "{}", e.message);
+            assert_eq!(e.code, 8);
+            assert!(e.message.starts_with("Out of stack space"), "{}", e.message);
         })
         .expect("spawn")
         .join()

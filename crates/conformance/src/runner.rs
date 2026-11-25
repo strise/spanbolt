@@ -90,7 +90,7 @@ fn yyyymmdd(secs: i64) -> String {
     let y = yoe + era * 400 + i64::from(m <= 2);
     format!("{y:04}{m:02}{d:02}")
 }
-const MAX_MSG: usize = 256 << 20;
+pub(crate) const MAX_MSG: usize = 256 << 20;
 
 type TemplateCell = Arc<OnceCell<Result<String, SetupError>>>;
 
@@ -846,7 +846,7 @@ impl<'a> Ctx<'a> {
                 let (session, sel, seqno) = self.read_selector(step)?;
                 let req = self.sql_request(step, session, sel, seqno)?;
                 Self::wait(step).await?;
-                Ok(self.t.spanner().execute_sql(req).await.map(|r| {
+                Ok(crate::deep::execute_sql(self.t.chan(), req).await.map(|r| {
                     let rs = r.into_inner();
                     self.save_read_ts(step, &rs);
                     obs_of(&rs, true)
@@ -1402,10 +1402,7 @@ impl<'a> Ctx<'a> {
             txn.seqno += 1;
             let (session, id, seqno) = (txn.session.clone(), txn.id.clone(), txn.seqno);
             let req = self.sql_request(step, session, Selector::Id(id), seqno)?;
-            return Ok(self
-                .t
-                .spanner()
-                .execute_sql(req)
+            return Ok(crate::deep::execute_sql(self.t.chan(), req)
                 .await
                 .map(|r| obs_of(&r.into_inner(), false)));
         }
@@ -1415,7 +1412,7 @@ impl<'a> Ctx<'a> {
             Err(s) => return Ok(Err(s)),
         };
         let req = self.sql_request(step, session.clone(), Selector::Id(id.clone()), 1)?;
-        let obs = match self.t.spanner().execute_sql(req).await {
+        let obs = match crate::deep::execute_sql(self.t.chan(), req).await {
             Ok(r) => obs_of(&r.into_inner(), false),
             Err(s) => {
                 self.rollback_id(&session, id).await;

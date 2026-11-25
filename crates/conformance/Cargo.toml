@@ -19,8 +19,10 @@ base64.workspace = true
 clap.workspace = true
 prost.workspace = true
 prost-types.workspace = true
+tonic-prost.workspace = true
 protoc-bin-vendored.workspace = true
 regex = "1"
-serde_json = { workspace = true, features = ["float_roundtrip"] }
+serde.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip", "unbounded_depth"] }
 tokio.workspace = true
 tonic = { workspace = true, features = ["tls-ring", "tls-native-roots"] }

@@ -11,6 +11,18 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+/// `remove_diacritics => true`: `s` without combining marks (`Héllo` is `Hello`), recomposed.
+pub fn remove_diacritics(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.is_ascii() {
+        return s.into();
+    }
+    s.nfd()
+        .filter(|&c| unicode_normalization::char::canonical_combining_class(c) == 0)
+        .nfc()
+        .collect::<String>()
+        .into()
+}
+
 /// `s` normalised as Cloud Spanner's fulltext and substring tokenizers normalise it.
 pub fn normalize(s: &str) -> String {
     if s.is_ascii() {

@@ -583,7 +583,22 @@ fn null_search(c: &Compiled) -> Value {
     }
 }
 
+/// The arguments with the query's diacritics removed when the token list was made with
+/// `remove_diacritics => true` (`tokens::removes_diacritics`).
+fn query_without_diacritics(args: &[Value]) -> std::borrow::Cow<'_, [Value]> {
+    if let (Some(Value::TokenList(b)), Some(Value::String(q))) = (args.first(), args.get(1))
+        && tokens::removes_diacritics(b)
+        && let std::borrow::Cow::Owned(stripped) = super::fold::remove_diacritics(q)
+    {
+        let mut a = args.to_vec();
+        a[1] = Value::String(stripped.into());
+        return a.into();
+    }
+    args.into()
+}
+
 pub fn search(args: &[Value], emulator: bool) -> Result<Value> {
+    let args = &*query_without_diacritics(args);
     if let Some(e) =
         invalid_query_type(&args[1]).or_else(|| invalid_enhance_query_options(args, emulator))
     {
@@ -718,6 +733,7 @@ pub fn score(args: &[Value], emulator: bool) -> Result<Value> {
 /// Cloud Spanner's SCORE (see `score`): the same for every dialect, which only changes how the
 /// query is read.
 fn score_prod(args: &[Value]) -> Result<Value> {
+    let args = &*query_without_diacritics(args);
     let words_query = |phrase: bool| -> Option<ScoreQuery> {
         let Value::String(q) = &args[1] else {
             return None;
@@ -808,7 +824,7 @@ pub fn search_substring(args: &[Value], emulator: bool) -> Result<Value> {
         } else if i == 0 {
             return Err(not_match("SEARCH_SUBSTRING", "TOKENIZE_SUBSTRING"));
         } else {
-            words.extend(split(t));
+            words.extend(tokens::substring_words(tokens::unescape(t), emulator));
         }
     }
     let mut requested = 0;
@@ -837,7 +853,7 @@ pub fn search_substring(args: &[Value], emulator: bool) -> Result<Value> {
         return Ok(Value::Null);
     }
     let lq = tokens::fold(q, emulator);
-    let subs: Vec<&[u8]> = split(lq.as_bytes()).collect();
+    let subs: Vec<&[u8]> = tokens::substring_words(lq.as_bytes(), emulator);
     if subs.is_empty() {
         return Ok(Value::Bool(false));
     }
@@ -941,7 +957,7 @@ pub fn search_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
         } else if i == 0 {
             return Err(not_match("SEARCH_NGRAMS", NGRAM_FUNCS));
         } else if substring {
-            words.extend(split(t));
+            words.extend(tokens::substring_words(tokens::unescape(t), emulator));
         } else {
             tl.push(t.to_vec());
         }
@@ -1022,7 +1038,7 @@ fn trigrams(pre: &str, text: &str, post: &str, out: &mut HashSet<[char; 3]>) {
 fn ngrams_text(grams: &[&[u8]], min: usize) -> String {
     let mut text = String::new();
     for g in grams {
-        let g = String::from_utf8_lossy(g);
+        let g = String::from_utf8_lossy(tokens::unescape(g));
         if g.chars().count() != min {
             break;
         }
@@ -1069,7 +1085,7 @@ fn score_ngrams_prod(args: &[Value]) -> Result<Value> {
         if substring {
             for t in value {
                 // Prod scores the words of the value joined by single spaces.
-                let words: Vec<&[u8]> = split(t).collect();
+                let words = tokens::substring_words(tokens::unescape(t), false);
                 trigrams(
                     "  ",
                     &String::from_utf8_lossy(&words.join(&b' ')),
@@ -1083,7 +1099,7 @@ fn score_ngrams_prod(args: &[Value]) -> Result<Value> {
     }
     if substring {
         let lq = tokens::fold(q, false);
-        let words: Vec<&[u8]> = split(lq.as_bytes()).collect();
+        let words = tokens::substring_words(lq.as_bytes(), false);
         trigrams(
             "  ",
             &String::from_utf8_lossy(&words.join(&b' ')),

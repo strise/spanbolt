@@ -13,6 +13,26 @@ pub const FULLTEXT: &str = "fulltext";
 pub const SUBSTRING: &str = "substring";
 pub const NGRAMS: &str = "ngrams";
 pub const GAP: &[u8] = b"\x01";
+/// Prefixes a text token that would read as `GAP` (a `\x01` n-gram or substring value) or that
+/// starts with `ESC` itself (`escape_text`, `unescape`).
+pub const ESC: u8 = 0x04;
+
+/// `t` as stored in a TOKENIZE_NGRAMS or TOKENIZE_SUBSTRING list.
+pub fn escape_text(t: Vec<u8>) -> Vec<u8> {
+    if t == GAP || t.first() == Some(&ESC) {
+        let mut out = Vec::with_capacity(t.len() + 1);
+        out.push(ESC);
+        out.extend(t);
+        out
+    } else {
+        t
+    }
+}
+
+/// The text of a TOKENIZE_NGRAMS or TOKENIZE_SUBSTRING token (`escape_text`).
+pub fn unescape(t: &[u8]) -> &[u8] {
+    t.strip_prefix(&[ESC]).unwrap_or(t)
+}
 
 /// Characters that split text into tokens (`kDelimiter`).
 pub fn is_delimiter(b: u8) -> bool {
@@ -56,6 +76,32 @@ pub fn is_delimiter(b: u8) -> bool {
             | 0x0c
             | b' '
     )
+}
+
+/// The words TOKENIZE_SUBSTRING reads from its text. The emulator splits at every delimiter
+/// (`split`); Cloud Spanner keeps `_` in a word and `&` between two word characters
+/// (`foo_bar`, `x&y`).
+pub fn substring_words(s: &[u8], emulator: bool) -> Vec<&[u8]> {
+    if emulator {
+        return split(s).collect();
+    }
+    let word = |i: usize| s.get(i).is_some_and(|&b| !is_delimiter(b));
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (i, &b) in s.iter().enumerate() {
+        let keep = b == b'_' || (b == b'&' && i > 0 && word(i - 1) && word(i + 1));
+        if is_delimiter(b) && !keep {
+            if i > start {
+                out.push(&s[start..i]);
+            }
+            start = i + 1;
+        }
+    }
+    if s.len() > start {
+        out.push(&s[start..]);
+    }
+    out.retain(|p| !p.iter().all(|b| b.is_ascii_whitespace() || *b == 0x0b));
+    out
 }
 
 /// `absl::StrSplit(s, ByAnyChar(kDelimiter), SkipWhitespace())`.
@@ -292,6 +338,15 @@ impl<'a> Iterator for Tokens<'a> {
 /// Decodes a TOKENLIST value into borrowed tokens.
 pub fn decode(bytes: &[u8]) -> Result<Vec<&[u8]>> {
     iter(bytes).collect()
+}
+
+/// Whether a TOKENIZE_FULLTEXT list was made with `remove_diacritics => true` (its signature is
+/// `fulltext-<null>-rd`). Cloud Spanner then strips diacritics from SEARCH and SCORE queries over
+/// it too, and only then.
+pub fn removes_diacritics(bytes: &[u8]) -> bool {
+    iter(bytes).next().and_then(|t| t.ok()).is_some_and(|t| {
+        t.starts_with(FULLTEXT.as_bytes()) && t.split(|&c| c == b'-').skip(2).any(|p| p == b"rd")
+    })
 }
 
 /// `IsTokenizerSignature`.
@@ -665,8 +720,22 @@ fn chunk_tokens(mut parts: Vec<Part>, out: &mut Vec<(String, bool)>) {
 /// (`joined_letters`).
 pub fn tokenize_fulltext(args: &[Value], emulator: bool) -> Result<Value> {
     let text = &args[0];
+    // Cloud Spanner reads HTML (tags dropped, a font size on every token, larger in `<b>` and
+    // `<i>`); not followed yet.
+    if !emulator && str_arg(args, 2).is_some_and(|c| c.eq_ignore_ascii_case("text/html")) {
+        return Err(crate::types::unimplemented(
+            "TOKENIZE_FULLTEXT with content_type 'text/html'",
+        ));
+    }
+    // Only Cloud Spanner's TOKENIZE_FULLTEXT takes remove_diacritics (the shim declares it).
+    let remove_diacritics = !emulator && matches!(arg(args, 4), Some(Value::Bool(true)));
     let toks = std::cell::RefCell::new(vec![
-        format!("{FULLTEXT}-{}", bool_digit(text.is_null())).into_bytes(),
+        format!(
+            "{FULLTEXT}-{}{}",
+            bool_digit(text.is_null()),
+            if remove_diacritics { "-rd" } else { "" }
+        )
+        .into_bytes(),
     ]);
     each_text(
         text,
@@ -675,7 +744,12 @@ pub fn tokenize_fulltext(args: &[Value], emulator: bool) -> Result<Value> {
             if emulator {
                 t.extend(split(lower(s).as_bytes()).map(<[u8]>::to_vec));
             } else {
-                t.extend(fulltext_tokens(s).into_iter().map(|(t, alt)| {
+                let s = if remove_diacritics {
+                    super::fold::remove_diacritics(s)
+                } else {
+                    s.into()
+                };
+                t.extend(fulltext_tokens(&s).into_iter().map(|(t, alt)| {
                     let mut b = Vec::with_capacity(t.len() + 1);
                     if alt {
                         b.push(ALT);
@@ -716,7 +790,7 @@ pub fn ngrams_of(s: &[u8], min: i64, max: i64, out: &mut Vec<Vec<u8>>) {
             break;
         }
         for i in 0..=s.len() - n {
-            out.push(s[i..i + n].to_vec());
+            out.push(escape_text(s[i..i + n].to_vec()));
         }
     }
 }
@@ -731,7 +805,7 @@ pub fn char_ngrams_of(s: &str, min: i64, max: i64, out: &mut Vec<Vec<u8>>) {
             break;
         }
         for i in 0..=chars - n {
-            out.push(s.as_bytes()[bounds[i]..bounds[i + n]].to_vec());
+            out.push(escape_text(s.as_bytes()[bounds[i]..bounds[i + n]].to_vec()));
         }
     }
 }
@@ -747,6 +821,7 @@ pub fn tokenize_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
     let max = as_int(int_arg(args, 1, 4));
     let min = as_int(int_arg(args, 2, 1));
     validate_ngram_size(min, max)?;
+    let remove_diacritics = matches!(arg(args, 3), Some(Value::Bool(true)));
     let text = &args[0];
     let toks = std::cell::RefCell::new(vec![
         format!("{NGRAMS}-{max}-{min}-{}", bool_digit(text.is_null())).into_bytes(),
@@ -756,6 +831,13 @@ pub fn tokenize_ngrams(args: &[Value], emulator: bool) -> Result<Value> {
         |s| {
             if emulator {
                 ngrams_of(lower(s).as_bytes(), min, max, &mut toks.borrow_mut());
+            } else if remove_diacritics {
+                char_ngrams_of(
+                    &super::fold::remove_diacritics(s),
+                    min,
+                    max,
+                    &mut toks.borrow_mut(),
+                );
             } else {
                 char_ngrams_of(s, min, max, &mut toks.borrow_mut());
             }
@@ -818,6 +900,7 @@ pub fn tokenize_substring(args: &[Value], emulator: bool) -> Result<Value> {
     if let Some(Value::Bool(true)) = support {
         supported = ALL;
     }
+    let remove_diacritics = !emulator && matches!(arg(args, 6), Some(Value::Bool(true)));
     let text = &args[0];
     let toks = std::cell::RefCell::new(vec![
         format!(
@@ -829,7 +912,11 @@ pub fn tokenize_substring(args: &[Value], emulator: bool) -> Result<Value> {
     each_text(
         text,
         |s| {
-            toks.borrow_mut().push(fold(s, emulator).into_bytes());
+            let mut t = fold(s, emulator);
+            if remove_diacritics {
+                t = super::fold::remove_diacritics(&t).into_owned();
+            }
+            toks.borrow_mut().push(escape_text(t.into_bytes()));
             Ok(())
         },
         &mut || toks.borrow_mut().push(GAP.to_vec()),
@@ -926,6 +1013,28 @@ pub fn tokenize_json(args: &[Value]) -> Result<Value> {
 /// `std::to_string(double)`.
 fn fmt_double(v: f64) -> String {
     format!("{v:.6}")
+}
+
+/// Cloud Spanner's checks of TOKENIZE_NUMBER's options, before the emulator's: no `range`
+/// comparison type, and in `equality` mode none of the options that would not change the list.
+pub fn prod_number_options(args: &[Value]) -> Result<()> {
+    let Some(ct) = str_arg(args, 1) else {
+        return Ok(());
+    };
+    if !["all", "equality"]
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case(ct))
+    {
+        return Err(Error::invalid_argument(format!(
+            "unsupported comparison type: '{ct}', supported comparison types are 'all' or 'equality'"
+        )));
+    }
+    if ct.eq_ignore_ascii_case("equality") && (2..=7).any(|i| arg(args, i).is_some()) {
+        return Err(Error::invalid_argument(
+            "min, max, granularity, tree_base, precision, and algorithm arguments are not allowed in equality comparison mode (because they would not affect the generated tokenlist).",
+        ));
+    }
+    Ok(())
 }
 
 pub fn tokenize_number(args: &[Value], float_bounds: bool, float_value: bool) -> Result<Value> {
@@ -1070,7 +1179,9 @@ fn validate_bounds(
     Err(Error::invalid_argument(msg))
 }
 
-pub fn tokenlist_concat(args: &[Value]) -> Result<Value> {
+/// TOKENLIST_CONCAT. Cloud Spanner (not `emulator`) concatenates only TOKENIZE_FULLTEXT and
+/// TOKENIZE_SUBSTRING lists.
+pub fn tokenlist_concat(args: &[Value], emulator: bool) -> Result<Value> {
     let Value::Array(a) = &args[0] else {
         return Ok(Value::Null);
     };
@@ -1083,6 +1194,11 @@ pub fn tokenlist_concat(args: &[Value]) -> Result<Value> {
             .first()
             .map(|t| t.split(|&c| c == b'-').collect())
             .unwrap_or_else(|| vec![&b""[..]]);
+        if !emulator && sig[0] != FULLTEXT.as_bytes() && sig[0] != SUBSTRING.as_bytes() {
+            return Err(Error::invalid_argument(
+                "TOKENLIST_CONCAT can only be used with TOKENLIST values generated by TOKENIZE_FULLTEXT or TOKENIZE_SUBSTRING.",
+            ));
+        }
         match &first {
             None => first = Some(sig),
             Some(f) => {
@@ -1271,5 +1387,107 @@ mod tests {
         assert_eq!(join_letters("\"x y\" OR z"), "\"xy\" OR z");
         assert_eq!(join_letters("no letters here"), "no letters here");
         assert_eq!(join_letters("a@b.c x.y"), "a@b.c xy");
+    }
+
+    #[test]
+    fn substring_words_keep_underscores_and_ampersands_like_spanner() {
+        let words = |s: &str, emu| -> Vec<String> {
+            substring_words(s.as_bytes(), emu)
+                .into_iter()
+                .map(|w| String::from_utf8_lossy(w).into_owned())
+                .collect()
+        };
+        assert_eq!(
+            words("foo_bar foo@bar x&y é-f", false),
+            ["foo_bar", "foo", "bar", "x&y", "é", "f"]
+        );
+        assert_eq!(words("x & y &z", false), ["x", "y", "z"]);
+        assert_eq!(words("foo_bar x&y", true), ["foo", "bar", "x", "y"]);
+    }
+
+    #[test]
+    fn text_tokens_never_read_as_gaps() {
+        assert_eq!(escape_text(b"\x01".to_vec()), b"\x04\x01");
+        assert_eq!(escape_text(b"\x04a".to_vec()), b"\x04\x04a");
+        assert_eq!(escape_text(b"\x01a".to_vec()), b"\x01a");
+        for t in [&b"\x01"[..], b"\x04a", b"ab"] {
+            assert_eq!(unescape(&escape_text(t.to_vec())), t);
+        }
+        let mut grams = Vec::new();
+        char_ngrams_of("d\x01e", 1, 1, &mut grams);
+        assert!(!grams.iter().any(|g| g == GAP));
+    }
+
+    #[test]
+    fn number_options_checked_like_spanner() {
+        let n = |extra: Vec<Value>| {
+            let mut a = vec![Value::Int64(42)];
+            a.extend(extra);
+            prod_number_options(&a)
+        };
+        let s = |v: &str| Value::String(v.into());
+        assert!(n(vec![]).is_ok());
+        assert!(n(vec![s("all"), Value::Null, Value::Int64(0)]).is_ok());
+        assert!(n(vec![s("EQUALITY")]).is_ok());
+        let e = n(vec![s("range")]).unwrap_err();
+        assert!(
+            e.message
+                .starts_with("unsupported comparison type: 'range'")
+        );
+        let e = n(vec![s("equality"), Value::Null, Value::Int64(0)]).unwrap_err();
+        assert!(
+            e.message
+                .contains("not allowed in equality comparison mode")
+        );
+    }
+
+    #[test]
+    fn remove_diacritics_like_spanner() {
+        let s = |v: &str| Value::String(v.into());
+        let rd = |f: fn(&[Value], bool) -> Result<Value>, args: Vec<Value>| {
+            let Value::TokenList(b) = f(&args, false).unwrap() else {
+                panic!()
+            };
+            decode(&b)
+                .unwrap()
+                .iter()
+                .skip(1)
+                .map(|t| String::from_utf8_lossy(t).into_owned())
+                .collect::<Vec<_>>()
+        };
+        let t = Value::Bool(true);
+        let n = Value::Null;
+        assert_eq!(
+            rd(
+                tokenize_fulltext,
+                vec![s("Héllo Wörld"), n.clone(), n.clone(), n.clone(), t.clone()]
+            ),
+            ["hello", "world"]
+        );
+        assert_eq!(
+            rd(
+                tokenize_substring,
+                vec![
+                    s("Héllo"),
+                    n.clone(),
+                    n.clone(),
+                    n.clone(),
+                    n.clone(),
+                    n.clone(),
+                    t.clone()
+                ]
+            ),
+            ["hello"]
+        );
+        assert!(
+            rd(
+                tokenize_ngrams,
+                vec![s("Hé"), n.clone(), n.clone(), t.clone()]
+            )
+            .contains(&"He".to_string())
+        );
+        let e = tokenize_fulltext(&[s("<b>a</b>"), n.clone(), s("text/html")], false).unwrap_err();
+        assert_eq!(e.code, spanbolt_storage::Code::Unimplemented);
+        assert!(tokenize_fulltext(&[s("<b>a</b>"), n, s("text/html")], true).is_ok());
     }
 }

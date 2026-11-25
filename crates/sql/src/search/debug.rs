@@ -22,7 +22,7 @@
 use spanbolt_storage::{Error, Result, Value};
 
 use super::tokens::{
-    self, ALT, BOOL, FULLTEXT, GAP, JSON, NGRAMS, NUMBER, SUBSTRING, TOKEN, VALUE, split,
+    self, ALT, BOOL, FULLTEXT, GAP, JSON, NGRAMS, NUMBER, SUBSTRING, TOKEN, VALUE,
 };
 
 /// Gap between array elements and between TOKENLIST_CONCAT parts.
@@ -416,7 +416,7 @@ fn substring(body: &[&[u8]], max: i64, min: i64) -> Vec<Item> {
     for v in values(body) {
         let mut words_out: Vec<Vec<Vec<u8>>> = Vec::new();
         for t in v {
-            for w in split(t) {
+            for w in tokens::substring_words(tokens::unescape(t), false) {
                 let Ok(w) = std::str::from_utf8(w) else {
                     continue;
                 };
@@ -440,6 +440,18 @@ fn substring(body: &[&[u8]], max: i64, min: i64) -> Vec<Item> {
         }
         values_out.push(items);
     }
+    // Prod leaves out the short n-grams that are also tokens at a position (`foo` of `foo_bar`
+    // when the text has the word `foo`).
+    let long: std::collections::HashSet<&[u8]> = values_out
+        .iter()
+        .flatten()
+        .filter_map(|i| match i {
+            Item::Pos(ts, _) => Some(ts.iter().map(Vec::as_slice)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    short.retain(|g| !long.contains(g.as_slice()));
     let mut out = Vec::new();
     if !short.is_empty() {
         out.push(Item::Pos(short, &[]));
@@ -464,6 +476,7 @@ fn ngrams(body: &[&[u8]], max: i64) -> Vec<Item> {
             out.push(Item::Gap(VALUE_GAP));
         }
         for t in v {
+            let t = tokens::unescape(t);
             let n = std::str::from_utf8(t).map_or(t.len(), |s| s.chars().count());
             if n as i64 >= max {
                 out.push(pos(t.to_vec()));
@@ -570,7 +583,8 @@ mod tests {
     #[test]
     fn concat_leaves_gaps_like_spanner() {
         let ft = |v: Value| tokens::tokenize_fulltext(&[v], false).unwrap();
-        let cat = |vs: Vec<Value>| debug(tokens::tokenlist_concat(&[Value::Array(vs.into())]));
+        let cat =
+            |vs: Vec<Value>| debug(tokens::tokenlist_concat(&[Value::Array(vs.into())], false));
         assert_eq!(
             cat(vec![ft(s("ab")), ft(arr(&[]))]).unwrap(),
             "ab(boundary, end_boundary), <gap(25)>"

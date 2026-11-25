@@ -1,0 +1,51 @@
+# TOKEN with NULL arguments (#159). An untyped NULL matches no signature, in a query and in a
+# generated column; the error lists the signatures in the order the analyser declares them, which
+# Spanner and the emulator don't share. Typed NULLs give a NULL token list.
+tags: sql search
+
+case token_null_select
+query:
+  SELECT TOKEN(NULL) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKEN Argument types: NULL Signature: TOKEN(STRING) Argument 1: Unable to coerce type INT64 to expected type STRING Signature: TOKEN(BYTES) Argument 1: Unable to coerce type INT64 to expected type BYTES Signature: TOKEN(ARRAY<STRING>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> Signature: TOKEN(ARRAY<BYTES>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKEN\n Argument types: NULL\n Signature: TOKEN(BYTES)\n Argument 1: Unable to coerce type INT64 to expected type BYTES\n Signature: TOKEN(ARRAY<BYTES>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES>\n Signature: TOKEN(STRING)\n Argument 1: Unable to coerce type INT64 to expected type STRING\n Signature: TOKEN(ARRAY<STRING>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> [at 1:8]
+
+case token_int_error
+query:
+  SELECT TOKEN(42) AS t
+expect:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKEN Argument types: INT64 Signature: TOKEN(STRING) Argument 1: Unable to coerce type INT64 to expected type STRING Signature: TOKEN(BYTES) Argument 1: Unable to coerce type INT64 to expected type BYTES Signature: TOKEN(ARRAY<STRING>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> Signature: TOKEN(ARRAY<BYTES>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES> [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function SPANNER:TOKEN\n Argument types: INT64\n Signature: TOKEN(BYTES)\n Argument 1: Unable to coerce type INT64 to expected type BYTES\n Signature: TOKEN(ARRAY<BYTES>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES>\n Signature: TOKEN(STRING)\n Argument 1: Unable to coerce type INT64 to expected type STRING\n Signature: TOKEN(ARRAY<STRING>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> [at 1:8]
+
+case token_typed_null_debug
+query:
+  SELECT DEBUG_TOKENLIST(TOKEN(CAST(NULL AS STRING))) AS s,
+    DEBUG_TOKENLIST(TOKEN(CAST(NULL AS BYTES))) AS b,
+    DEBUG_TOKENLIST(TOKEN(CAST(NULL AS ARRAY<STRING>))) AS sa,
+    DEBUG_TOKENLIST(TOKEN(CAST(NULL AS ARRAY<BYTES>))) AS ba
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: s STRING, b STRING, sa STRING, ba STRING
+  [null,null,null,null]
+
+case token_null_generated_column
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+  ) PRIMARY KEY (Id)
+ddl:
+  ALTER TABLE T ADD COLUMN Tok TOKENLIST AS (TOKEN(NULL)) HIDDEN
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the definition of generated column `T`.`Tok`: No matching signature for function SPANNER:TOKEN Argument types: NULL Signature: TOKEN(STRING) Argument 1: Unable to coerce type INT64 to expected type STRING Signature: TOKEN(BYTES) Argument 1: Unable to coerce type INT64 to expected type BYTES Signature: TOKEN(ARRAY<STRING>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> Signature: TOKEN(ARRAY<BYTES>) Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES> [at 1:2]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing the definition of generated column `T`.`Tok`: No matching signature for function SPANNER:TOKEN\n Argument types: NULL\n Signature: TOKEN(BYTES)\n Argument 1: Unable to coerce type INT64 to expected type BYTES\n Signature: TOKEN(ARRAY<BYTES>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<BYTES>\n Signature: TOKEN(STRING)\n Argument 1: Unable to coerce type INT64 to expected type STRING\n Signature: TOKEN(ARRAY<STRING>)\n Argument 1: Unable to coerce type INT64 to expected type ARRAY<STRING> [at 1:2]

@@ -26,6 +26,8 @@
 //! - TOKENIZE_FULLTEXT and TOKENIZE_SUBSTRING, and SEARCH, SCORE and SEARCH_SUBSTRING queries,
 //!   normalise text (compatibility forms of letters, full case folding, NFC: `fold`) where the
 //!   emulator only lower-cases it;
+//! - the tokenizers take `remove_diacritics`, and SEARCH and SCORE over a TOKENIZE_FULLTEXT list
+//!   made with it strip diacritics from the query too (`tokens::removes_diacritics`);
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
@@ -113,11 +115,14 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
             let float_value = float(sig.args.first());
             let float_bounds = sig.args.iter().skip(3).take(3).any(|t| float(Some(t)));
             f(move |_, a| {
+                if !emu {
+                    tokens::prod_number_options(a)?;
+                }
                 tokens::tokenize_number(a, float_bounds, float_value)
                     .map_err(|e| prod_message(emu, e, prod_tokenize_number))
             })
         }
-        "tokenlist_concat" => f(|_, a| tokens::tokenlist_concat(a)),
+        "tokenlist_concat" => f(move |_, a| tokens::tokenlist_concat(a, emu)),
         "search" => f(move |_, a| eval::search(a, emu)),
         "score" => f(move |_, a| eval::score(a, emu)),
         "search_substring" => f(move |_, a| eval::search_substring(a, emu)),

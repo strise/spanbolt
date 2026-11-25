@@ -16,6 +16,26 @@ type Set = imbl::OrdSet<Key>;
 struct Postings {
     rows: RowMap,
     map: imbl::HashMap<Vec<u8>, Set>,
+    /// Token lists made with and without `remove_diacritics => true`.
+    lists: Lists,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Lists {
+    without_diacritics: usize,
+    other: usize,
+}
+
+impl Lists {
+    fn count(&mut self, v: &Value, add: bool) {
+        let Value::TokenList(b) = v else { return };
+        let n = if super::tokens::removes_diacritics(b) {
+            &mut self.without_diacritics
+        } else {
+            &mut self.other
+        };
+        *n = if add { *n + 1 } else { n.saturating_sub(1) };
+    }
 }
 
 struct Entry {
@@ -98,21 +118,31 @@ fn postings(state: &DbState, table: TableId, column: usize) -> Arc<Postings> {
 
 fn build(base: Option<&Postings>, rows: &RowMap, column: usize) -> Postings {
     let empty = RowMap::new();
-    let (old_rows, mut map) = match base {
-        Some(b) => (&b.rows, b.map.clone()),
-        None => (&empty, imbl::HashMap::new()),
+    let (old_rows, mut map, mut lists) = match base {
+        Some(b) => (&b.rows, b.map.clone(), b.lists),
+        None => (&empty, imbl::HashMap::new(), Lists::default()),
     };
     let col = |r: &spanbolt_storage::Row| r.get(column).cloned().unwrap_or(Value::Null);
     for d in old_rows.diff(rows) {
         match d {
-            DiffItem::Add(k, r) => add(&mut map, &col(r), k),
-            DiffItem::Remove(k, r) => remove(&mut map, &col(r), k),
+            DiffItem::Add(k, r) => {
+                let v = col(r);
+                lists.count(&v, true);
+                add(&mut map, &v, k)
+            }
+            DiffItem::Remove(k, r) => {
+                let v = col(r);
+                lists.count(&v, false);
+                remove(&mut map, &v, k)
+            }
             DiffItem::Update {
                 old: (k, o),
                 new: (_, n),
             } => {
                 let (o, n) = (col(o), col(n));
                 if o != n {
+                    lists.count(&o, false);
+                    lists.count(&n, true);
                     remove(&mut map, &o, k);
                     add(&mut map, &n, k);
                 }
@@ -122,6 +152,7 @@ fn build(base: Option<&Postings>, rows: &RowMap, column: usize) -> Postings {
     Postings {
         rows: rows.clone(),
         map,
+        lists,
     }
 }
 
@@ -179,7 +210,18 @@ pub fn search_keys(
     if q.is_empty() {
         return Some(Vec::new());
     }
-    let c = compiled_for(q, emulator);
+    let p = postings(state, table, column);
+    // A column made with `remove_diacritics => true` is searched without the query's diacritics;
+    // a mix of both kinds of list (an altered column) has no single reading of the query.
+    let q = match p.lists {
+        Lists {
+            without_diacritics: 0,
+            ..
+        } => q.clone(),
+        Lists { other: 0, .. } => super::fold::remove_diacritics(q).into_owned().into(),
+        _ => return None,
+    };
+    let c = compiled_for(&q, emulator);
     let node = match &c.parse {
         Ok(Some(n)) => n,
         Ok(None) => return Some(Vec::new()),
@@ -189,6 +231,5 @@ pub fn search_keys(
     if not_in_around(node, false) {
         return None;
     }
-    let p = postings(state, table, column);
     candidates(&p, node).map(|s| s.into_iter().collect())
 }

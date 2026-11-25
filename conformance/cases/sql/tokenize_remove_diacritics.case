@@ -1,0 +1,153 @@
+# remove_diacritics on TOKENIZE_FULLTEXT (#159): Spanner takes it, the emulator doesn't know the
+# argument. Spanner also strips diacritics from SEARCH and SCORE queries over such a column, and
+# only over such a column.
+tags: sql search
+
+case fulltext_remove_diacritics_column
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+  ) PRIMARY KEY (Id)
+ddl:
+  ALTER TABLE T ADD COLUMN Tok TOKENLIST AS (TOKENIZE_FULLTEXT(Body, remove_diacritics => true)) HIDDEN;
+  CREATE SEARCH INDEX TIdx ON T(Tok)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the definition of generated column `T`.`Tok`: No matching signature for function SPANNER:TOKENIZE_FULLTEXT Argument types: STRING, remove_diacritics => BOOL Signature: TOKENIZE_FULLTEXT([value=>]STRING, [language_tag => STRING], [content_type => STRING], [token_category => STRING]) Named argument `remove_diacritics` does not exist in signature Signature: TOKENIZE_FULLTEXT([value=>]ARRAY<STRING>, [language_tag => STRING], [content_type => STRING], [token_category => STRING]) Named argument `remove_diacritics` does not exist in signature [at 1:2]
+expect@spanner:
+  ok
+insert T cols=Id,Body:
+  [1, "Héllo wörld"]
+  [2, "hello"]
+  [3, "other"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'hello')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Tok [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["1"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Tok, 'wörld')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Tok [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT DEBUG_TOKENLIST(Tok) AS d FROM T WHERE Id = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: d STRING
+  ["hello(boundary), world(end_boundary)"]
+
+case fulltext_remove_diacritics_query
+schema:
+  CREATE TABLE T (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+  ) PRIMARY KEY (Id)
+ddl:
+  ALTER TABLE T ADD COLUMN Plain TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN;
+  ALTER TABLE T ADD COLUMN Rd TOKENLIST AS (TOKENIZE_FULLTEXT(Body, remove_diacritics => true)) HIDDEN;
+  ALTER TABLE T ADD COLUMN RdOff TOKENLIST AS (TOKENIZE_FULLTEXT(Body, remove_diacritics => false)) HIDDEN;
+  CREATE SEARCH INDEX TIdx ON T(Plain, Rd, RdOff)
+expect:
+  error: INVALID_ARGUMENT
+  message: Error parsing the definition of generated column `T`.`Rd`: No matching signature for function SPANNER:TOKENIZE_FULLTEXT Argument types: STRING, remove_diacritics => BOOL Signature: TOKENIZE_FULLTEXT([value=>]STRING, [language_tag => STRING], [content_type => STRING], [token_category => STRING]) Named argument `remove_diacritics` does not exist in signature Signature: TOKENIZE_FULLTEXT([value=>]ARRAY<STRING>, [language_tag => STRING], [content_type => STRING], [token_category => STRING]) Named argument `remove_diacritics` does not exist in signature [at 1:2]
+expect@spanner:
+  ok
+insert T cols=Id,Body:
+  [1, "wörld"]
+  [2, "world"]
+  [3, "Ångström café"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Plain, 'wörld')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Plain [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Plain, 'world')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Plain [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Rd, 'wörld')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Rd [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["1"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Rd, 'world')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Rd [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["2"]
+  ["1"]
+query:
+  SELECT Id FROM T WHERE SEARCH(RdOff, 'wörld')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: RdOff [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Rd, 'angstrom')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Rd [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+query:
+  SELECT Id FROM T WHERE SEARCH(Rd, '"ångström cafe"')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Rd [at 1:31]
+expect@spanner:
+  columns: Id INT64
+  ["3"]
+query:
+  SELECT Id, SCORE(Rd, 'wörld') AS s FROM T WHERE SEARCH(Rd, 'wörld')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Rd [at 1:56]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["2",1.2588917016983032]
+  ["1",1.2588917016983032]
+query:
+  SELECT Id, SNIPPET(Body, 'wörld') AS s FROM T WHERE SEARCH(Rd, 'wörld')
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Rd [at 1:60]
+expect@spanner:
+  columns: Id INT64, s JSON
+  ["1","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":6}],\"snippet\":\"wörld\",\"source_begin\":1,\"source_end\":6}]}"]
+  ["2","{\"snippets\":[{\"highlights\":[],\"snippet\":\"world\",\"source_begin\":1,\"source_end\":6}]}"]
+query:
+  SELECT DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('Ångström', remove_diacritics => true)) AS a, DEBUG_TOKENLIST(TOKENIZE_FULLTEXT('Ångström')) AS b
+expect:
+  error: INVALID_ARGUMENT
+  message: Function not found: DEBUG_TOKENLIST [at 1:8]
+expect@spanner:
+  columns: a STRING, b STRING
+  ["angstrom(boundary, end_boundary)","ångström(boundary, end_boundary)"]

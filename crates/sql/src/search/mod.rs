@@ -4,8 +4,11 @@
 //! By default search follows Cloud Spanner (recorded in `conformance/spanner-vs-emulator-summary.md`);
 //! `--emulator-compat` keeps the emulator's behaviour. Prod differs in:
 //! - the rquery parser (`rquery`): Unicode letters in terms, runs of separators, parentheses,
-//!   lenient `AROUND`, lower-case `or` ignored, NOT inside AROUND rejected, and queries with only
-//!   negations matching nothing;
+//!   lenient `AROUND` (a bare `AROUND` is `AROUND(5)`, `"a AROUND b"` keeps the order), lower-case
+//!   `or` ignored, connectors that join nothing ignored, NOT inside AROUND rejected, and double
+//!   negations and negated groups matching nothing;
+//! - stopwords in a query with other terms match every document (`score::drop_stopwords`), and
+//!   a top-level AND of negations that had a stopword dropped also matches NULL documents;
 //! - placement (`plan.rs`, `SearchRules`): SEARCH, SEARCH_SUBSTRING and SEARCH_NGRAMS only as
 //!   predicates, SCORE only with a SEARCH over the same column, and every search function only
 //!   through a search index whose PARTITION BY columns the WHERE clause fixes and whose

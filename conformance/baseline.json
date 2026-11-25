@@ -58,10 +58,10 @@
     },
     "change_stream": {
       "error": 0,
-      "fail": 1,
-      "pass": 18,
+      "fail": 0,
+      "pass": 23,
       "skipped": 0,
-      "total": 19,
+      "total": 23,
       "unimplemented": 0
     },
     "date": {
@@ -82,10 +82,10 @@
     },
     "ddl": {
       "error": 0,
-      "fail": 6,
-      "pass": 368,
-      "skipped": 1,
-      "total": 387,
+      "fail": 5,
+      "pass": 400,
+      "skipped": 10,
+      "total": 427,
       "unimplemented": 12
     },
     "diverges-from-emulator": {
@@ -139,9 +139,9 @@
     "graph": {
       "error": 0,
       "fail": 1,
-      "pass": 19,
-      "skipped": 0,
-      "total": 20,
+      "pass": 23,
+      "skipped": 9,
+      "total": 33,
       "unimplemented": 0
     },
     "hints": {
@@ -162,10 +162,10 @@
     },
     "information_schema": {
       "error": 0,
-      "fail": 1,
-      "pass": 45,
+      "fail": 0,
+      "pass": 49,
       "skipped": 0,
-      "total": 46,
+      "total": 49,
       "unimplemented": 0
     },
     "int64": {
@@ -200,12 +200,20 @@
       "total": 223,
       "unimplemented": 0
     },
+    "limits": {
+      "error": 0,
+      "fail": 0,
+      "pass": 7,
+      "skipped": 0,
+      "total": 7,
+      "unimplemented": 0
+    },
     "mutations": {
       "error": 0,
       "fail": 0,
-      "pass": 123,
+      "pass": 127,
       "skipped": 0,
-      "total": 123,
+      "total": 127,
       "unimplemented": 0
     },
     "net": {
@@ -227,9 +235,9 @@
     "oracle": {
       "error": 0,
       "fail": 5,
-      "pass": 161,
-      "skipped": 0,
-      "total": 166,
+      "pass": 207,
+      "skipped": 9,
+      "total": 221,
       "unimplemented": 0
     },
     "oracle2": {
@@ -275,9 +283,9 @@
     "read": {
       "error": 0,
       "fail": 2,
-      "pass": 49,
+      "pass": 73,
       "skipped": 0,
-      "total": 51,
+      "total": 75,
       "unimplemented": 0
     },
     "retention": {
@@ -299,9 +307,9 @@
     "search": {
       "error": 0,
       "fail": 0,
-      "pass": 341,
+      "pass": 367,
       "skipped": 1,
-      "total": 342,
+      "total": 368,
       "unimplemented": 0
     },
     "select": {
@@ -314,10 +322,10 @@
     },
     "sql": {
       "error": 0,
-      "fail": 21,
-      "pass": 3802,
+      "fail": 20,
+      "pass": 3851,
       "skipped": 3,
-      "total": 3835,
+      "total": 3883,
       "unimplemented": 9
     },
     "string": {
@@ -331,9 +339,9 @@
     "struct": {
       "error": 0,
       "fail": 4,
-      "pass": 138,
+      "pass": 142,
       "skipped": 0,
-      "total": 142,
+      "total": 146,
       "unimplemented": 0
     },
     "subquery": {
@@ -353,11 +361,11 @@
       "unimplemented": 0
     },
     "txn": {
-      "error": 1,
-      "fail": 2,
-      "pass": 65,
+      "error": 0,
+      "fail": 0,
+      "pass": 81,
       "skipped": 6,
-      "total": 74,
+      "total": 87,
       "unimplemented": 0
     },
     "values": {
@@ -366,6 +374,14 @@
       "pass": 115,
       "skipped": 0,
       "total": 115,
+      "unimplemented": 0
+    },
+    "views": {
+      "error": 0,
+      "fail": 0,
+      "pass": 23,
+      "skipped": 0,
+      "total": 23,
       "unimplemented": 0
     }
   },
@@ -1091,6 +1107,136 @@
       "status": "pass",
       "tags": [
         "ddl"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/drop_edge_table",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/drop_node_table",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/drop_property_column",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/drop_all_columns_column",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/drop_edge_key_column",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/alter_property_column_type",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_dependencies/alter_edge_key_column_type",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_dependencies/drop_unused_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_dependencies/drop_graphs_then_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/drop_view",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/replace_view_without_a_property",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": "emulator 1.5.59 aborts (GOOGLESQL_RET_CHECK on the graph's columns)",
+      "name": "ddl/graph_dependencies/replace_view_changing_a_property_type",
+      "status": "skipped",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_dependencies/replace_view_keeping_the_properties",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
       ]
     },
     {
@@ -2072,9 +2218,45 @@
       ]
     },
     {
-      "detail": "line 94:\n  statements:\n    - CREATE TABLE T (\n    K INT64 NOT NULL,\n    A INT64,\n    B STRING(MAX),\n  ) PRIMARY KEY(K)\n      CREATE TABLE U (\n    K INT64 NOT NULL,\n    C INT64,\n  ) PRIMARY KEY(K)\n      CREATE CHANGE STREAM bLower FOR U, T(B, A) OPTIONS ( allow_txn_exclusion = true, exclude_delete = true, exclude_update = false, exclude_insert = true, exclude_ttl_deletes = false, retention_period = '1d', value_capture_type = 'OLD_AND_NEW_VALUES' )\n      CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( retention_period = NULL, exclude_update = true )\n      CREATE CHANGE STREAM cLast FOR T()\n    + CREATE TABLE T (\n    K INT64 NOT NULL,\n    A INT64,\n    B STRING(MAX),\n  ) PRIMARY KEY(K)\n      CREATE TABLE U (\n    K INT64 NOT NULL,\n    C INT64,\n  ) PRIMARY KEY(K)\n      CREATE CHANGE STREAM bLower FOR U, T(B, A) OPTIONS ( allow_txn_exclusion = true, exclude_delete = true, exclude_update = false, exclude_insert = true, exclude_ttl_deletes = false, retention_period = '1d', value_capture_type = 'OLD_AND_NEW_VALUES' )\n      CREATE CHANGE STREAM Alpha FOR ALL OPTIONS ( exclude_delete = true, exclude_update = true )\n      CREATE CHANGE STREAM cLast FOR T()",
+      "detail": null,
       "name": "ddl/printing/change_stream_option_order",
-      "status": "fail",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_options_replaced",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_option_set_to_null",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_set_for_keeps_options",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "change_stream"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/printing/change_stream_printed_and_applied_options",
+      "status": "pass",
       "tags": [
         "ddl",
         "change_stream"
@@ -3361,6 +3543,236 @@
     },
     {
       "detail": null,
+      "name": "ddl/view_definitions/missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/wrong_case_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/wrong_case_alias",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/missing_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/wrong_case_view_ref",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/wrong_case_second_line",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/query_wrong_case_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/unnamed_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/view_query_after_ok",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/or_replace_missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/or_replace_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/cte_wrong_case",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/two_errors",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/batch_after_view",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/or_replace_existing_missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/definer_missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/quoted_name_missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/multiline_emulator",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/leading_comment",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/nested_with",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/star_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/view_definitions/dup_column",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "views",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
       "name": "mutations/constraints/not_null_insert",
       "status": "pass",
       "tags": [
@@ -4100,6 +4512,38 @@
     },
     {
       "detail": null,
+      "name": "mutations/generated_function_names/evaluated_after_the_column_it_reads",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_function_names/evaluated_after_the_column_it_reads_dml",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_function_names/generated_key_needs_only_its_inputs",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "mutations/generated_function_names/generated_key_needs_only_its_inputs_dml",
+      "status": "pass",
+      "tags": [
+        "mutations"
+      ]
+    },
+    {
+      "detail": null,
       "name": "mutations/generated_key_inputs/generated_key_input_omitted_dml",
       "status": "pass",
       "tags": [
@@ -4469,6 +4913,198 @@
     {
       "detail": null,
       "name": "read/filtered_index/update_into_and_out_of_filter",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/int64_from_float",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/int64_overflow",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/int64_from_bool",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/string_from_number",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/bytes_bad_base64",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/timestamp_bad",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/date_bad",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/float64_from_string",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/bool_from_string",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/numeric_bad",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/second_key_part",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/range_start",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/range_end",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/range_prefix",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/index_key",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/delete_mutation",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/numeric_letters",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/numeric_scale",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/numeric_from_float",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/numeric_too_large",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/numeric_exponent",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/float64_from_bool",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/timestamp_from_float",
+      "status": "pass",
+      "tags": [
+        "read"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "read/keyset_wrong_type/bytes_from_float",
       "status": "pass",
       "tags": [
         "read"
@@ -5582,7 +6218,7 @@
       ]
     },
     {
-      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T23:06:10.086666Z\"]",
+      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T11:31:14.272358Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_on_update",
       "status": "fail",
       "tags": [
@@ -5792,7 +6428,7 @@
       ]
     },
     {
-      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-24T23:06:10.092569Z\"]",
+      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T11:31:14.284945Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_default_pending",
       "status": "fail",
       "tags": [
@@ -5812,7 +6448,7 @@
       ]
     },
     {
-      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T23:06:10.093771Z\"]",
+      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T11:31:14.289769Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert",
       "status": "fail",
       "tags": [
@@ -5821,7 +6457,7 @@
       ]
     },
     {
-      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-24T23:06:10.093746Z\"]",
+      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T11:31:14.289839Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert_or_update",
       "status": "fail",
       "tags": [
@@ -33915,9 +34551,36 @@
       ]
     },
     {
-      "detail": "line 743:\n  columns:\n    - CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, SCHEMA_OWNER STRING, PROTO_BUNDLE PROTO<google.protobuf.FileDescriptorSet>\n    + CATALOG_NAME STRING, SCHEMA_NAME STRING, EFFECTIVE_TIMESTAMP INT64, SCHEMA_OWNER STRING\n  rows (ordered): expected 4, got 4\n    - [\"\",\"\",\"0\",\"\",null]\n    + [\"\",\"\",\"0\",\"\"]\n    - [\"\",\"INFORMATION_SCHEMA\",\"0\",\"\",null]\n    + [\"\",\"INFORMATION_SCHEMA\",\"0\",\"\"]\n    - [\"\",\"SPANNER_SYS\",\"0\",\"\",null]\n    + [\"\",\"SPANNER_SYS\",\"0\",\"\"]\n    - [\"\",\"app\",\"0\",\"\",null]\n    + [\"\",\"app\",\"0\",\"\"]",
+      "detail": null,
       "name": "sql/information_schema_objects/schemata_proto_bundle",
-      "status": "fail",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/schemata_proto_bundle_column",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/schemata_columns_listing",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "information_schema"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/information_schema_objects/schemata_proto_bundle_length",
+      "status": "pass",
       "tags": [
         "sql",
         "information_schema"
@@ -36039,6 +36702,96 @@
     },
     {
       "detail": null,
+      "name": "sql/search_letters/tokens",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters/snip",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters/search",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_case/tokens",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_case/snip",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_case/search",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_case/snipq",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_separators/tokens",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_separators/search",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_letters_separators/score",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/search_media/matching_mentions",
       "status": "pass",
       "tags": [
@@ -37788,6 +38541,150 @@
     },
     {
       "detail": null,
+      "name": "sql/snippet_terms/seven_two",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/two_seven",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/two_three",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/two_five",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/one_eight",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/two_four_six",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/one_four_eight",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/two_four_six_max1",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/two_four_six_max2",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/alpha_k",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/c_hhh_ll",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/rep_two",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/rep_one",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/rep_blue",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/rep_red_blue",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/snippet_terms/rep_blue_max5",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/snippet_whitespace/literal_issue",
       "status": "pass",
       "tags": [
@@ -38117,6 +39014,76 @@
       "tags": [
         "sql",
         "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/abs_chain",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/lit_chain",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/nested_abs",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/ops",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/calls",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/other_calls",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/stack_depth/mixed",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
       ]
     },
     {
@@ -39645,6 +40612,46 @@
     },
     {
       "detail": null,
+      "name": "sql/struct_lambdas/constructor",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_lambdas/nullable",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_lambdas/field_read",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/struct_lambdas/field_read_twice",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "struct",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/subqueries/in_subquery",
       "status": "pass",
       "tags": [
@@ -39819,6 +40826,78 @@
       "status": "pass",
       "tags": [
         "sql"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/bernoulli_all_and_none",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/bernoulli_params",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/bernoulli_bad_arguments",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/reservoir_rows",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/reservoir_bad_arguments",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/unsupported_clauses",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/sample_shapes",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/tablesample/with_weight",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "oracle"
       ]
     },
     {
@@ -40129,6 +41208,70 @@
     },
     {
       "detail": null,
+      "name": "txn/read_timestamp/strong_ro_txn",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/strong_read",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/strong_query",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/exact_staleness_ro_txn",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/exact_staleness_read",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/read_timestamp_read",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/max_staleness_read",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/read_timestamp/strong_read_then_commit",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
       "name": "txn/stale_before_database/read_2h",
       "status": "pass",
       "tags": [
@@ -40168,9 +41311,9 @@
       ]
     },
     {
-      "detail": "line 61: no open transaction `ro`",
+      "detail": null,
       "name": "txn/stale_before_database/ro_txn_2h",
-      "status": "error",
+      "status": "pass",
       "tags": [
         "txn"
       ]
@@ -40184,9 +41327,9 @@
       ]
     },
     {
-      "detail": "line 88:\n  status: expected NOT_FOUND, got FAILED_PRECONDITION\nline 95:\n  status: expected INVALID_ARGUMENT, got FAILED_PRECONDITION",
+      "detail": null,
       "name": "txn/stale_before_database/table_added_later_2h",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "txn"
       ]
@@ -40200,9 +41343,9 @@
       ]
     },
     {
-      "detail": "line 115:\n  status: expected NOT_FOUND, got FAILED_PRECONDITION",
+      "detail": null,
       "name": "txn/stale_before_database/missing_table_2h",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "txn"
       ]
@@ -40210,6 +41353,46 @@
     {
       "detail": null,
       "name": "txn/stale_before_database/max_staleness_2h",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/ro_txn_2h_missing_table",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/ro_txn_2h_query_missing_table_then_read",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/query_2h_missing_column",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/read_2h_bad_key",
+      "status": "pass",
+      "tags": [
+        "txn"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "txn/stale_before_database/read_2h_unknown_column",
       "status": "pass",
       "tags": [
         "txn"
@@ -41312,13 +42495,13 @@
       ]
     }
   ],
-  "target": "127.0.0.1:28844",
+  "target": "127.0.0.1:58768",
   "totals": {
-    "error": 1,
-    "fail": 28,
-    "pass": 4440,
-    "skipped": 9,
-    "total": 4499,
+    "error": 0,
+    "fail": 24,
+    "pass": 4565,
+    "skipped": 18,
+    "total": 4628,
     "unimplemented": 21
   },
   "unimplemented": "skip"

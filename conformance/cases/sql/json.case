@@ -131,6 +131,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid JSON literal: number overflow parsing '1e400' [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid JSON literal: number overflow parsing \'1e400\' [at 1:8]
 
 case parse_json_and_to_json
 query:

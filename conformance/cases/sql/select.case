@@ -271,6 +271,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for operator = for argument types: INT64, STRING Signature: T1 = T1 Unable to find common supertype for templated argument <T1> Input types for <T1>: {INT64, STRING} Signature: JSON = JSON Argument 1: Unable to coerce type INT64 to expected type JSON Signature: JSON = JSON Argument 2: Unable to coerce type STRING to expected type JSON [at 1:37]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for operator = for argument types: INT64, STRING\n Signature: T1 = T1\n Unable to find common supertype for templated argument <T1>\n Input types for <T1>: {INT64, STRING}\n Signature: JSON = JSON\n Argument 1: Unable to coerce type INT64 to expected type JSON\n Signature: JSON = JSON\n Argument 2: Unable to coerce type STRING to expected type JSON [at 1:37]
 
 case division_by_zero
 query:
@@ -295,4 +298,152 @@ expect:
 expect@spanner:
   error: INVALID_ARGUMENT
   message: Syntax error: Unexpected identifier \"SELEC\" [at 1:1]
+
+case syntax_error_backslash_in_single_quoted_string
+query:
+  SELECT 1 'a\\b'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal 'a\\b' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal \'a\\\\b\' [at 1:10]
+
+case syntax_error_escaped_quote_in_single_quoted_string
+query:
+  SELECT 1 'it\'s'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal 'it\'s' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal \'it\\\'s\' [at 1:10]
+
+case syntax_error_backslash_in_double_quoted_string
+query:
+  SELECT 1 "a\\b\"c"
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal "a\\b\"c" [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal \"a\\\\b\\\"c\" [at 1:10]
+
+case syntax_error_backslash_in_raw_string
+query:
+  SELECT 1 r'a\b'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal r'a\b' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal r\'a\\b\' [at 1:10]
+
+case syntax_error_backslash_in_triple_quoted_string
+query:
+  SELECT 1 '''a\nb'''
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal '''a\nb''' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal \'\'\'a\\nb\'\'\' [at 1:10]
+
+case syntax_error_backslash_in_bytes_literal
+query:
+  SELECT 1 b'\x00\\'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got bytes literal b'\x00\\' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got bytes literal b\'\\x00\\\\\' [at 1:10]
+
+case syntax_error_backslash_in_quoted_identifier
+query:
+  SELECT 1 AS x `a\\b`
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got identifier `a\\b` [at 1:15]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got identifier `a\\\\b` [at 1:15]
+
+case syntax_error_backslash_in_quoted_identifier_unexpected
+query:
+  SELECT 1 x `c\`d`
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got identifier `c\`d` [at 1:12]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got identifier `c\\`d` [at 1:12]
+
+case syntax_error_non_ascii_in_string
+query:
+  SELECT 1 'hé ☃'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal 'hé ☃' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal \'h\303\251 \342\230\203\' [at 1:10]
+
+case syntax_error_tab_in_string
+query:
+  SELECT 1 '''a	b'''
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got string literal '''a b''' [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got string literal \'\'\'a\tb\'\'\' [at 1:10]
+
+case syntax_error_backslash_token
+query:
+  SELECT 1 \ 2
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected end of input but got "\" [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Expected \";\" or end of input but got \"\\\" [at 1:10]
+
+case syntax_error_illegal_escape
+query:
+  SELECT 'a\qb'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Illegal escape sequence: \q [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Illegal escape sequence: \\q [at 1:10]
+
+case syntax_error_illegal_unicode_escape
+query:
+  SELECT 'a\u12'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Illegal escape sequence: \u must be followed by 4 hex digits but saw: \u12 [at 1:10]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Illegal escape sequence: \\u must be followed by 4 hex digits but saw: \\u12 [at 1:10]
+
+case syntax_error_unclosed_string_trailing_backslash
+query:
+  SELECT 'abc\'
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unclosed string literal [at 1:8]
+expect@spanner:
+  same
+
+case syntax_error_backslash_after_string
+query:
+  SELECT 'a\\b' FROM WHERE
+expect:
+  error: INVALID_ARGUMENT
+  message: Syntax error: Unexpected keyword WHERE [at 1:20]
+expect@spanner:
+  same
 

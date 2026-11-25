@@ -258,6 +258,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function JSON_SET Argument types: JSON, STRING Signature: JSON_SET(JSON, STRING, ANY, [[STRING, ANY], ...], [create_if_missing => BOOL]) Signature requires at least 3 arguments, found 2 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function JSON_SET\n Argument types: JSON, STRING\n Signature: JSON_SET(JSON, STRING, ANY, [[STRING, ANY], ...], [create_if_missing => BOOL])\n Signature requires at least 3 arguments, found 2 arguments [at 1:8]
 
 case jm_037
 query:
@@ -265,6 +268,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function JSON_SET Argument types: JSON, STRING, INT64, STRING Signature: JSON_SET(JSON, STRING, ANY, [[STRING, ANY], ...], [create_if_missing => BOOL]) Positional argument at 4 is invalid because argument `create_if_missing` can only be referred to by name [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function JSON_SET\n Argument types: JSON, STRING, INT64, STRING\n Signature: JSON_SET(JSON, STRING, ANY, [[STRING, ANY], ...], [create_if_missing => BOOL])\n Positional argument at 4 is invalid because argument `create_if_missing` can only be referred to by name [at 1:8]
 
 case jm_038
 query:

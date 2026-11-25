@@ -299,6 +299,141 @@ fn each_text(
     }
 }
 
+/// Runs of ASCII symbols Cloud Spanner's fulltext tokenizer keeps as tokens (recorded in
+/// `conformance/cases/sql/search_tokenizer_symbols.case`); it drops every other run.
+const SYMBOL_TOKENS: &[&str] = &[
+    "--", "---", "</", "/>", "<>", "</>", "-->", "&&", "@@", "&-", "-&", "<</",
+];
+
+/// Symbols Cloud Spanner keeps as tokens of their own (`foo€bar` is `foo, €, bar`).
+fn symbol_token(c: char) -> bool {
+    matches!(c, '€' | '™')
+}
+
+/// Non-ASCII characters that split tokens in Cloud Spanner: spaces, format characters and
+/// punctuation. Letters, digits, marks and the other symbols (`½`) stay in the token.
+fn unicode_break(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(c,
+            '\u{a1}'..='\u{a9}' | '\u{ab}'..='\u{b1}' | '\u{b4}' | '\u{b6}'..='\u{b8}' | '\u{bb}'
+            | '\u{bf}' | '\u{d7}' | '\u{f7}'
+            | '\u{200b}'..='\u{200f}' | '\u{2010}'..='\u{205e}' | '\u{2060}'..='\u{2064}'
+            | '\u{20a0}'..='\u{20cf}' | '\u{2190}'..='\u{2bff}' | '\u{3000}'..='\u{303f}'
+            | '\u{fe30}'..='\u{fe4f}' | '\u{feff}' | '\u{ff01}'..='\u{ff0f}'
+            | '\u{ff1a}'..='\u{ff20}' | '\u{ff3b}'..='\u{ff40}' | '\u{ff5b}'..='\u{ff65}')
+}
+
+/// Cloud Spanner's fulltext tokens of lower-cased `s`, one per position:
+/// - `_` and a lone `&` are part of a token (`foo_bar`, `at&t`, `&` alone);
+/// - other ASCII symbols split tokens, and a run of them is a token only if it is in
+///   `SYMBOL_TOKENS` (`foo -- bar` is `foo, --, bar`);
+/// - `3.14` and `c++`/`c#` stay whole, `1,000` is `1000`;
+/// - Unicode spaces, format characters and punctuation split tokens (`unicode_break`), a soft
+///   hyphen is dropped, `€` and `™` are tokens.
+///
+/// Not followed yet: the extra token prod stores at the same position for `foo@bar`, `_foo`,
+/// `#tag` and `foo's`; here they are only `foo, bar`, `foo`, `tag` and `foo, s`.
+pub fn fulltext_tokens(s: &str) -> impl Iterator<Item = String> {
+    #[derive(PartialEq)]
+    enum Part {
+        Word(String),
+        Sym(String),
+    }
+    let mut chunks: Vec<Vec<Part>> = vec![Vec::new()];
+    let mut singles = Vec::new();
+    for c in s.chars() {
+        let chunk = chunks.last_mut().expect("chunk");
+        if c == '\u{ad}' {
+            continue;
+        }
+        let word = c == '_' || c.is_ascii_alphanumeric() || (!c.is_ascii() && !unicode_break(c));
+        let sym = c.is_ascii_punctuation() && c != '_';
+        if symbol_token(c) {
+            singles.push((chunks.len(), c.to_string()));
+            chunks.push(Vec::new());
+        } else if word || sym {
+            match chunk.last_mut() {
+                Some(Part::Word(w)) if word => w.push(c),
+                Some(Part::Sym(w)) if sym => w.push(c),
+                _ if word => chunk.push(Part::Word(c.to_string())),
+                _ => chunk.push(Part::Sym(c.to_string())),
+            }
+        } else if !chunk.is_empty() {
+            chunks.push(Vec::new());
+        }
+    }
+    let digits = |w: &str| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit());
+    let mut out = Vec::new();
+    let mut singles = singles.into_iter().peekable();
+    for (n, mut parts) in chunks.into_iter().enumerate() {
+        while let Some((_, t)) = singles.next_if(|(at, _)| *at == n) {
+            out.push(t);
+        }
+        // Joins `parts[i..=i + 2]` (or `[i..=i + 1]`) into one word.
+        let mut i = 0;
+        while i < parts.len() {
+            let joined = match (&parts[i], parts.get(i + 1), parts.get(i + 2)) {
+                (Part::Word(a), Some(Part::Sym(s)), Some(Part::Word(b)))
+                    if digits(a) && digits(b) && (s == "." || (s == "," && b.len() == 3)) =>
+                {
+                    let sep = if s == "." { "." } else { "" };
+                    Some((format!("{a}{sep}{b}"), 3))
+                }
+                (Part::Word(a), Some(Part::Sym(s)), next)
+                    if a.len() == 1
+                        && a.as_bytes()[0].is_ascii_alphabetic()
+                        && (s == "++" || s == "#")
+                        && next.is_none() =>
+                {
+                    Some((format!("{a}{s}"), 2))
+                }
+                _ => None,
+            };
+            match joined {
+                Some((w, len)) => drop(parts.splice(i..i + len, [Part::Word(w)])),
+                None => i += 1,
+            }
+        }
+        // A lone `&` joins the words around it.
+        let mut merged: Vec<Part> = Vec::new();
+        let mut glue = false;
+        for p in parts {
+            glue = match p {
+                Part::Sym(s) if s == "&" => {
+                    match merged.last_mut() {
+                        Some(Part::Word(w)) => w.push('&'),
+                        _ => merged.push(Part::Word(s)),
+                    }
+                    true
+                }
+                Part::Word(w) => {
+                    match merged.last_mut() {
+                        Some(Part::Word(prev)) if glue => prev.push_str(&w),
+                        _ => merged.push(Part::Word(w)),
+                    }
+                    false
+                }
+                sym => {
+                    merged.push(sym);
+                    false
+                }
+            };
+        }
+        for p in merged {
+            match p {
+                Part::Word(w) => {
+                    let core = w.trim_matches('_');
+                    out.push(if core.is_empty() { w } else { core.to_string() });
+                }
+                Part::Sym(s) if SYMBOL_TOKENS.contains(&s.as_str()) => out.push(s),
+                Part::Sym(_) => {}
+            }
+        }
+    }
+    out.extend(singles.map(|(_, t)| t));
+    out.into_iter()
+}
+
 /// `emulator` splits runs of single letters like the emulator; Cloud Spanner joins them
 /// (`joined_letters`).
 pub fn tokenize_fulltext(args: &[Value], emulator: bool) -> Result<Value> {
@@ -309,13 +444,12 @@ pub fn tokenize_fulltext(args: &[Value], emulator: bool) -> Result<Value> {
     each_text(
         text,
         |s| {
-            let l = if emulator {
-                lower(s)
+            let mut t = toks.borrow_mut();
+            if emulator {
+                t.extend(split(lower(s).as_bytes()).map(<[u8]>::to_vec));
             } else {
-                lower(&join_letters(s))
-            };
-            toks.borrow_mut()
-                .extend(split(l.as_bytes()).map(<[u8]>::to_vec));
+                t.extend(fulltext_tokens(&lower(&join_letters(s))).map(String::into_bytes));
+            }
             Ok(())
         },
         &mut || toks.borrow_mut().push(GAP.to_vec()),
@@ -621,10 +755,86 @@ mod tests {
 
     /// Prod's fulltext tokens, from DEBUG_TOKENLIST recordings.
     fn prod_tokens(s: &str) -> Vec<String> {
-        let l = lower(&join_letters(s));
-        split(l.as_bytes())
-            .map(|t| String::from_utf8(t.to_vec()).unwrap())
-            .collect()
+        fulltext_tokens(&lower(&join_letters(s))).collect()
+    }
+
+    /// DEBUG_TOKENLIST recordings from `search_tokenizer_symbols.case`. Where prod stores two
+    /// tokens at one position (`[foo, foo@bar]`) only the first is expected here.
+    #[test]
+    fn tokenizes_symbols_like_prod() {
+        for (text, want) in [
+            ("foo_bar", "foo_bar"),
+            ("foo__bar", "foo__bar"),
+            ("a_b_c", "a_b_c"),
+            ("1_2", "1_2"),
+            ("foo _ bar", "foo _ bar"),
+            ("é_f", "é_f"),
+            ("FOO_BAR", "foo_bar"),
+            ("_foo", "foo"),
+            ("__init__", "init"),
+            ("AT&T", "at&t"),
+            ("foo & bar", "foo & bar"),
+            ("&foo", "&foo"),
+            ("foo&", "foo&"),
+            ("a&&b", "a && b"),
+            ("x&y&z", "x&y&z"),
+            ("foo&amp;bar", "foo&amp bar"),
+            ("foo&bar_baz", "foo&bar_baz"),
+            ("foo&-bar", "foo &- bar"),
+            ("foo-&bar", "foo -& bar"),
+            ("foo@", "foo"),
+            ("a@b@c", "a b c"),
+            ("foo @ bar", "foo bar"),
+            ("foo@@bar", "foo @@ bar"),
+            ("--", "--"),
+            ("foo--bar", "foo -- bar"),
+            ("foo---bar", "foo --- bar"),
+            ("----", ""),
+            ("-", ""),
+            ("--foo", "-- foo"),
+            ("x--y--z", "x -- y -- z"),
+            ("</", "</"),
+            ("<", ""),
+            ("<foo", "foo"),
+            ("foo>", "foo"),
+            ("<!--", ""),
+            ("-->", "-->"),
+            ("<br/>", "br />"),
+            ("x<y", "x y"),
+            ("<>", "<>"),
+            ("</>", "</>"),
+            ("<//", ""),
+            ("<p>hello</p>", "p hello </ p"),
+            ("x<</y", "x <</ y"),
+            ("foo\u{a0}bar", "foo bar"),
+            ("foo\u{3000}\u{3000}bar", "foo bar"),
+            ("foo\u{200b}bar", "foo bar"),
+            ("foo\u{85}bar", "foo bar"),
+            ("foo\u{b}bar", "foo bar"),
+            ("foo\u{2060}bar", "foo bar"),
+            ("foo\u{feff}bar", "foo bar"),
+            ("x\u{a0}y\u{a0}z", "x y z"),
+            ("foo—bar", "foo bar"),
+            ("foo\u{ad}bar", "foobar"),
+            ("foo、bar", "foo bar"),
+            ("foo，bar", "foo bar"),
+            ("foo·bar baz", "foo bar baz"),
+            ("foo“bar”", "foo bar"),
+            ("foo…bar", "foo bar"),
+            ("foo€bar", "foo € bar"),
+            ("foo©bar", "foo bar"),
+            ("foo™bar", "foo ™ bar"),
+            ("foo±bar", "foo bar"),
+            ("foo½bar", "foo½bar"),
+            ("c++", "c++"),
+            ("c#", "c#"),
+            ("node.js", "node js"),
+            ("3.14", "3.14"),
+            ("1,000", "1000"),
+            ("a@b.c", "a bc"),
+        ] {
+            assert_eq!(prod_tokens(text).join(" "), want, "{text:?}");
+        }
     }
 
     #[test]

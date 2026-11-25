@@ -2,7 +2,6 @@
 
 use googlesql_sys::proto::any_resolved_statement_proto::Node as StmtNode;
 use googlesql_sys::proto::{AnyResolvedStatementProto, ResolvedQueryStmtProto};
-use prost::Message;
 use spanbolt_storage::{Code, Error, Result};
 
 use crate::catalog::SqlCatalog;
@@ -51,8 +50,7 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     googlesql_sys::with_stack_for(sql.len(), || {
         crate::limits::check(&bytes, cat.emulator_compat)
     })?;
-    AnyResolvedStatementProto::decode(bytes.as_slice())
-        .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
+    googlesql_sys::decode_statement(&bytes).map_err(|e| Error::internal(e.message))
 }
 
 /// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too

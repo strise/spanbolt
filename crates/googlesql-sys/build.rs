@@ -140,6 +140,86 @@ fn main() {
     prost_build::Config::new()
         .compile_fds(fds)
         .expect("prost codegen for resolved_ast.proto");
+    let generated = out.join("googlesql.rs");
+    let code = fs::read_to_string(&generated).expect("read googlesql.rs");
+    let code = DEEP_NODES
+        .iter()
+        .fold(code, |code, name| decode_without_depth_limit(code, name));
+    fs::write(&generated, code).expect("write googlesql.rs");
+}
+
+/// The node wrappers every expression and scan of a resolved AST passes through.
+const DEEP_NODES: &[&str] = &["AnyResolvedExprProto", "AnyResolvedScanProto"];
+
+/// Replaces the derived `prost::Message` of the oneof wrapper `name` with one that decodes its node
+/// with a fresh `DecodeContext` and counts its own depth instead (`deep` in lib.rs). prost stops at
+/// 100 nested messages, and a function call in the resolved AST is four of them, so a statement
+/// nested 34 calls deep didn't decode. Requests to the server keep prost's limit.
+fn decode_without_depth_limit(code: String, name: &str) -> String {
+    let derive = format!("#[derive(Clone, PartialEq, ::prost::Message)]\npub struct {name} {{\n");
+    let start = code
+        .find(&derive)
+        .unwrap_or_else(|| panic!("generated {name} not found"));
+    let body = start + derive.len();
+    let end = body + code[body..].find("\n}\n").expect("end of struct") + 3;
+    let fields = &code[body..end];
+    let tags = fields
+        .split("tags = \"")
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .unwrap_or_else(|| panic!("{name} is not a single oneof"));
+    let node = fields
+        .split("oneof = \"")
+        .nth(1)
+        .and_then(|t| t.split('"').next())
+        .expect("oneof type");
+    let tags = tags.replace(", ", " | ");
+    let replacement = format!(
+        "#[derive(Clone, PartialEq, Debug, Default)]
+pub struct {name} {{
+    pub node: ::core::option::Option<{node}>,
+}}
+impl ::prost::Message for {name} {{
+    fn encode_raw(&self, buf: &mut impl ::prost::bytes::BufMut) {{
+        if let Some(node) = &self.node {{
+            node.encode(buf);
+        }}
+    }}
+    fn merge_field(
+        &mut self,
+        tag: u32,
+        wire_type: ::prost::encoding::wire_type::WireType,
+        buf: &mut impl ::prost::bytes::Buf,
+        ctx: ::prost::encoding::DecodeContext,
+    ) -> ::core::result::Result<(), ::prost::DecodeError> {{
+        match tag {{
+            {tags} => {{
+                let _level = crate::deep::Level::enter()?;
+                {node}::merge(
+                    &mut self.node,
+                    tag,
+                    wire_type,
+                    buf,
+                    ::prost::encoding::DecodeContext::default(),
+                )
+                .map_err(|mut e| {{
+                    e.push(\"{name}\", \"node\");
+                    e
+                }})
+            }}
+            _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+        }}
+    }}
+    fn encoded_len(&self) -> usize {{
+        self.node.as_ref().map_or(0, {node}::encoded_len)
+    }}
+    fn clear(&mut self) {{
+        self.node = None;
+    }}
+}}
+"
+    );
+    format!("{}{replacement}{}", &code[..start], &code[end..])
 }
 
 /// Descriptor set of resolved_ast.proto and its imports. Generated protos (resolved_ast.proto,

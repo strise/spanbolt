@@ -148,12 +148,15 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
     return head;
   };
 
-  catalog->AddOwnedFunction(Scalar(
-      "token",
-      {FunctionSignature{tok, {{str, Pos("value")}}, nullptr},
-       FunctionSignature{tok, {{bytes, Pos("value")}}, nullptr},
-       FunctionSignature{tok, {{str_arr, Pos("value")}}, nullptr},
-       FunctionSignature{tok, {{bytes_arr, Pos("value")}}, nullptr}}));
+  // Errors list the signatures in this order: Cloud Spanner's starts with BYTES.
+  std::vector<FunctionSignature> token_sigs;
+  const std::vector<const Type*> token_types =
+      production ? std::vector<const Type*>{bytes, bytes_arr, str, str_arr}
+                 : std::vector<const Type*>{str, bytes, str_arr, bytes_arr};
+  for (const Type* t : token_types) {
+    token_sigs.push_back(FunctionSignature{tok, {{t, Pos("value")}}, nullptr});
+  }
+  catalog->AddOwnedFunction(Scalar("token", token_sigs));
 
   std::vector<FunctionSignature> number_sigs;
   for (const char* precision : {"ieee_precision", "precision"}) {

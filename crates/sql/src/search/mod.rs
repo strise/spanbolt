@@ -23,20 +23,26 @@
 //!   and SEARCH, SCORE and SNIPPET read queries the same way (`tokens::joined_letters`);
 //! - SNIPPET counts `max_snippet_width` in proportional character widths, cuts and splits
 //!   snippets as prod does, and ignores stopwords in a query with other words (`eval::Snippets`);
+//! - TOKENIZE_FULLTEXT and TOKENIZE_SUBSTRING, and SEARCH, SCORE and SEARCH_SUBSTRING queries,
+//!   normalise text (compatibility forms of letters, full case folding, NFC: `fold`) where the
+//!   emulator only lower-cases it;
 //! - TOKENIZE_NGRAMS and SEARCH_NGRAMS over it keep case (the emulator lower-cases both), and
 //!   n-grams are cut from characters, not UTF-8 bytes (`tokens::char_ngrams_of`).
 //!
 //! DEBUG_TOKENLIST, which only prod has, prints token lists in prod's format (`debug`). It is
 //! UNIMPLEMENTED until the analyser's catalog declares it (`engine.rs`).
 //!
-//! Not followed yet: SCORE with `enhance_query => true`; SNIPPET's preference for snippets that
-//! don't cross a sentence end, and for the occurrence of a repeated term nearest the other terms.
+//! Not followed yet: CJK word segmentation (`日本語` is `日本, 語` in prod); SCORE with
+//! `enhance_query => true`; SNIPPET widths of scripts Arial doesn't cover (Georgian, Armenian,
+//! Indic, Thai) and of texts with no letters or digits.
 
 mod debug;
 mod eval;
+mod fold;
 mod index;
 mod rquery;
 mod score;
+mod snippet_widths;
 mod tokens;
 
 pub use index::search_keys;
@@ -92,7 +98,7 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
         "debug_tokenlist" => f(|_, a| debug::debug_tokenlist(a)),
         "token" => f(|_, a| tokens::token(a)),
         "tokenize_fulltext" => f(move |_, a| tokens::tokenize_fulltext(a, emu)),
-        "tokenize_substring" => f(|_, a| tokens::tokenize_substring(a)),
+        "tokenize_substring" => f(move |_, a| tokens::tokenize_substring(a, emu)),
         "tokenize_ngrams" => f(move |_, a| {
             tokens::tokenize_ngrams(a, emu).map_err(|e| {
                 prod_message(emu, e, |m| format!("Invalid use of TOKENIZE_NGRAMS: {m}"))
@@ -123,7 +129,10 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
                 })
             })
         }),
-        "snippet" => f(move |_, a| eval::snippet(a, emu)),
+        "snippet" => {
+            let cache = eval::SnippetCache::default();
+            f(move |_, a| eval::snippet(a, emu, &cache))
+        }
         _ => return None,
     })
 }

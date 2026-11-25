@@ -1708,9 +1708,9 @@ impl Schema {
                 i.table = to.to_string();
             }
         }
-        for o in self.opaque.iter_mut().filter(|o| o.kind == "CHANGE STREAM") {
-            let Ok(mut cs) = ChangeStream::parse(&o.ddl) else {
-                continue;
+        let rename = |ddl: &mut String| {
+            let Ok(mut cs) = ChangeStream::parse(ddl) else {
+                return;
             };
             if let CsTarget::Tables(ts) = &mut cs.target
                 && ts.iter().any(|(t, _)| same(t))
@@ -1718,7 +1718,13 @@ impl Schema {
                 for (t, _) in ts.iter_mut().filter(|(t, _)| same(t)) {
                     *t = to.to_string();
                 }
-                o.ddl = cs.to_ddl();
+                *ddl = cs.to_ddl();
+            }
+        };
+        for o in self.opaque.iter_mut().filter(|o| o.kind == "CHANGE STREAM") {
+            rename(&mut o.ddl);
+            if let Some(p) = o.printed.as_mut() {
+                rename(p);
             }
         }
         Ok(new_key)
@@ -2127,6 +2133,7 @@ impl Schema {
                     kind: kind.to_string(),
                     name: name.to_string(),
                     ddl,
+                    printed: None,
                 });
             }
             "ALTER CHANGE STREAM" => {
@@ -2136,9 +2143,23 @@ impl Schema {
                     )));
                 };
                 let mut cs = ChangeStream::parse(&self.opaque[i].ddl)?;
-                cs.alter(&object.ddl)?;
+                let written = cs.alter(&object.ddl, compat)?;
                 self.validate_change_stream(&cs, compat)?;
-                self.opaque[i].ddl = cs.to_ddl();
+                let o = &mut self.opaque[i];
+                // The emulator prints the option list last written; its effective options merge.
+                let printed_options = match (written, &o.printed) {
+                    (Some(w), _) if compat => Some(w),
+                    (None, Some(p)) => ChangeStream::parse(p).ok().map(|p| p.options),
+                    _ => None,
+                };
+                o.printed = printed_options.map(|options| {
+                    ChangeStream {
+                        options,
+                        ..cs.clone()
+                    }
+                    .to_ddl()
+                });
+                o.ddl = cs.to_ddl();
             }
             "PROPERTY GRAPH" | "MODEL" => {
                 let (or_replace, if_not_exists, ddl) = normalize_create_head(&object.ddl, kind);
@@ -2165,6 +2186,7 @@ impl Schema {
                     kind: kind.to_string(),
                     name: name.to_string(),
                     ddl,
+                    printed: None,
                 });
             }
             "ANALYZE" => {}

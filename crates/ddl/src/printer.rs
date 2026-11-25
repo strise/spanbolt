@@ -347,9 +347,20 @@ pub(crate) fn view_sql(v: &View) -> String {
 
 impl Schema {
     /// Canonical statements as production's GetDatabaseDdl returns them: roles and role grants
-    /// after the database options, and each object's grants after the object. Snapshots store
-    /// these, so they keep everything the schema holds.
+    /// after the database options, and each object's grants after the object.
     pub fn to_ddl(&self) -> Vec<String> {
+        self.ddl_with_access(true)
+    }
+
+    /// What snapshots store: everything [`Schema::to_ddl`] holds, with change streams in the
+    /// order they were created and printed as the emulator prints them (options in the order
+    /// set), and CHECK constraints in the order they were added. Both orders are lost in
+    /// production's form, and `--emulator-compat` prints them after a snapshot is loaded.
+    pub fn to_ddl_snapshot(&self) -> Vec<String> {
+        self.ddl_with_access(false)
+    }
+
+    fn ddl_with_access(&self, production: bool) -> Vec<String> {
         let mut out = Vec::new();
         self.database_options_ddl(&mut out);
         out.extend(
@@ -360,7 +371,7 @@ impl Schema {
         );
         out.extend(self.role_grants());
         out.extend(self.locality_groups.iter().map(locality_group_sql));
-        self.objects_ddl(&mut out, true);
+        self.objects_ddl(&mut out, true, production);
         out
     }
 
@@ -379,7 +390,7 @@ impl Schema {
         }
         let mut out = Vec::new();
         s.database_options_ddl(&mut out);
-        s.objects_ddl(&mut out, false);
+        s.objects_ddl(&mut out, false, false);
         out.extend(s.locality_groups.iter().map(locality_group_sql_emulator));
         out
     }
@@ -396,8 +407,9 @@ impl Schema {
     }
 
     /// Schemas, sequences, tables, change streams, models, views and graphs; with `access`, each
-    /// followed by its grants.
-    fn objects_ddl(&self, out: &mut Vec<String>, access: bool) {
+    /// followed by its grants. With `production`, change streams and CHECK constraints in
+    /// production's order and form, else the emulator's.
+    fn objects_ddl(&self, out: &mut Vec<String>, access: bool, production: bool) {
         let ordered = |kind: ObjectKind| {
             self.creation_order
                 .iter()
@@ -421,7 +433,7 @@ impl Schema {
             let Some(t) = self.tables.get(key) else {
                 continue;
             };
-            out.push(table_sql_ordered(t, access));
+            out.push(table_sql_ordered(t, production));
             let mut idx: Vec<(&str, String)> = self
                 .indexes
                 .values()
@@ -445,18 +457,37 @@ impl Schema {
             .iter()
             .filter(|o| o.kind == "CHANGE STREAM")
             .collect();
-        if access {
+        if production {
             // Production lists change streams by name and prints each over several lines.
             streams.sort_by_cached_key(|o| o.name.to_ascii_lowercase());
         }
         for o in streams {
-            out.push(if access {
+            let stmt = if production {
                 crate::parser::ChangeStream::parse(&o.ddl)
                     .map(|cs| cs.to_ddl_production())
                     .unwrap_or_else(|_| o.ddl.clone())
+            } else if access {
+                // A snapshot: the definition, then what makes the emulator print it as it does.
+                if let Some(p) = &o.printed
+                    && let Ok(cs) = crate::parser::ChangeStream::parse(p)
+                {
+                    out.push(o.ddl.clone());
+                    format!(
+                        "ALTER CHANGE STREAM {} SET OPTIONS ( {} )",
+                        quote_path(&o.name),
+                        cs.options
+                            .iter()
+                            .map(|(k, v)| format!("{k} = {v}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                } else {
+                    o.ddl.clone()
+                }
             } else {
-                o.ddl.clone()
-            });
+                o.printed.clone().unwrap_or_else(|| o.ddl.clone())
+            };
+            out.push(stmt);
             if access {
                 let tvf = format!("READ_{}", o.name);
                 out.extend(self.object_grants(

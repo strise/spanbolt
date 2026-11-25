@@ -40,23 +40,43 @@ pub(crate) fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
 /// Analyses one statement and checks it against Spanner's query size limits.
 pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolvedStatementProto> {
     crate::limits::check_query_string(sql)?;
-    let bytes = cat
-        .gsql
-        .analyze_raw(sql, params)
-        .map_err(|e| unsupported(cat, proto_names(cat, map_error(e))))?;
-    crate::limits::check(&bytes, cat.emulator_compat)?;
+    let bytes = cat.gsql.analyze_raw(sql, params).map_err(|e| {
+        let e = unsupported(cat, map_error(e));
+        if cat.emulator_compat {
+            e
+        } else {
+            prod_syntax_error(prod_proto_names(e))
+        }
+    })?;
+    googlesql_sys::with_stack_for(sql.len(), || {
+        crate::limits::check(&bytes, cat.emulator_compat)
+    })?;
     AnyResolvedStatementProto::decode(bytes.as_slice())
         .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
 }
 
 /// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too
 /// (`No matching signature for function LENGTH ... Argument types: proto2.FileDescriptorSet`).
-fn proto_names(cat: &SqlCatalog, mut e: Error) -> Error {
+fn prod_proto_names(mut e: Error) -> Error {
     let name = crate::types::FILE_DESCRIPTOR_SET;
-    if !cat.emulator_compat && e.message.contains(name) {
+    if e.message.contains(name) {
         e.message = e
             .message
             .replace(name, &crate::types::production_proto_name(name));
+    }
+    e
+}
+
+/// Production Spanner C-escapes the quotes in a query's syntax error (`Unexpected identifier
+/// \"SELEC\"`, backslashes doubled), and accepts a `;` where a statement may end.
+fn prod_syntax_error(mut e: Error) -> Error {
+    if let Some(rest) = e.message.strip_prefix("Syntax error: ") {
+        let rest = rest.replacen("Expected end of input", "Expected \";\" or end of input", 1);
+        let escaped = rest
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\'', "\\'");
+        e.message = format!("Syntax error: {escaped}");
     }
     e
 }

@@ -2409,6 +2409,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected STRING; Got INT64 [at 1:8]
+expect@spanner:
+  same
 
 case format_051
 query:
@@ -2416,6 +2418,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid type for argument 2 to FORMAT; Expected STRING; Got BOOL [at 1:8]
+expect@spanner:
+  same
 
 case format_052
 query:
@@ -2430,6 +2434,8 @@ query:
 expect:
   columns: STRING
   ["1.250000"]
+expect@spanner:
+  same
 
 case format_054
 query:
@@ -2437,6 +2443,8 @@ query:
 expect:
   columns: STRING
   ["1.3"]
+expect@spanner:
+  same
 
 case format_055
 query:
@@ -2451,6 +2459,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Too few arguments to FORMAT for pattern "%s"; Expected 2; Got 1 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too few arguments to FORMAT for pattern \"%s\"; Expected 2; Got 1 [at 1:8]
 
 case format_057
 query:
@@ -2458,6 +2469,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Too many arguments to FORMAT for pattern "%s"; Expected 2; Got 3 [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Too many arguments to FORMAT for pattern \"%s\"; Expected 2; Got 3 [at 1:8]
 
 case format_058
 query:
@@ -2465,6 +2479,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "z" in FORMAT string: "%z" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"z\" in FORMAT string: \"%z\" [at 1:8]
 
 case format_059
 query:
@@ -2472,6 +2489,8 @@ query:
 expect:
   columns: STRING
   ["abc"]
+expect@spanner:
+  same
 
 case format_060
 query:
@@ -2696,6 +2715,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 3 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 3 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
 
 case regex_013
 query:
@@ -2703,6 +2725,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 4 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 4 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
 
 case regex_014
 query:
@@ -2710,6 +2735,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 4 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 4 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 4 arguments [at 1:8]
 
 case regex_015
 query:
@@ -2717,6 +2745,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 3 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 3 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
 
 case regex_016
 query:
@@ -2724,6 +2755,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function REGEXP_EXTRACT Argument types: STRING, STRING, INT64 Signature: REGEXP_EXTRACT(STRING, STRING) Signature accepts at most 2 arguments, found 3 arguments Signature: REGEXP_EXTRACT(BYTES, BYTES) Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function REGEXP_EXTRACT\n Argument types: STRING, STRING, INT64\n Signature: REGEXP_EXTRACT(STRING, STRING)\n Signature accepts at most 2 arguments, found 3 arguments\n Signature: REGEXP_EXTRACT(BYTES, BYTES)\n Signature accepts at most 2 arguments, found 3 arguments [at 1:8]
 
 case regex_017
 query:
@@ -3627,6 +3661,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "c" in FORMAT string: "%c" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"c\" in FORMAT string: \"%c\" [at 1:8]
 
 case regex_146
 query:
@@ -3641,6 +3678,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "a" in FORMAT string: "%a" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"a\" in FORMAT string: \"%a\" [at 1:8]
 
 case regex_148
 query:
@@ -3648,6 +3688,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid format specifier character "l" in FORMAT string: "%ld" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid format specifier character \"l\" in FORMAT string: \"%ld\" [at 1:8]
 
 case regex_149
 query:
@@ -3655,6 +3698,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid FORMAT string: "%5%" [at 1:8]
+expect@spanner:
+  error: OUT_OF_RANGE
+  message: Invalid format string provided to FORMAT; '%5%'.
 
 case regex_150
 query:
@@ -3662,6 +3708,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid FORMAT string: "%" [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid FORMAT string: \"%\" [at 1:8]
 
 case regex_151
 query:
@@ -3942,6 +3991,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Unknown date part 'DATETIME' [at 1:16]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unknown date part \'DATETIME\' [at 1:16]
 
 case time_031
 query:
@@ -3949,6 +4001,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Unknown date part 'TIME' [at 1:16]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Unknown date part \'TIME\' [at 1:16]
 
 case time_032
 query:
@@ -5198,6 +5253,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function DATE Argument types: DATE Signature: DATE(TIMESTAMP, [STRING]) Argument 1: Unable to coerce type DATE to expected type TIMESTAMP Signature: DATE(INT64, INT64, INT64) Signature requires at least 3 arguments, found 1 argument [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function DATE\n Argument types: DATE\n Signature: DATE(TIMESTAMP, [STRING])\n Argument 1: Unable to coerce type DATE to expected type TIMESTAMP\n Signature: DATE(INT64, INT64, INT64)\n Signature requires at least 3 arguments, found 1 argument [at 1:8]
 
 case time_210
 query:
@@ -5205,6 +5263,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: No matching signature for function TIMESTAMP Argument types: TIMESTAMP Signature: TIMESTAMP(STRING, [STRING]) Argument 1: Unable to coerce type TIMESTAMP to expected type STRING Signature: TIMESTAMP(DATE, [STRING]) Argument 1: Unable to coerce type TIMESTAMP to expected type DATE [at 1:8]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: No matching signature for function TIMESTAMP\n Argument types: TIMESTAMP\n Signature: TIMESTAMP(STRING, [STRING])\n Argument 1: Unable to coerce type TIMESTAMP to expected type STRING\n Signature: TIMESTAMP(DATE, [STRING])\n Argument 1: Unable to coerce type TIMESTAMP to expected type DATE [at 1:8]
 
 case time_211
 query:
@@ -5331,6 +5392,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Could not cast literal "2020-01-01x" to type TIMESTAMP [at 1:13]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Could not cast literal \"2020-01-01x\" to type TIMESTAMP [at 1:13]
 
 case time_229
 query:
@@ -5345,6 +5409,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Could not cast literal " 2020-01-01 " to type TIMESTAMP [at 1:13]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Could not cast literal \" 2020-01-01 \" to type TIMESTAMP [at 1:13]
 
 case time_231
 query:
@@ -7494,6 +7561,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Invalid JSON literal: number overflow parsing '1e400' [at 1:20]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Invalid JSON literal: number overflow parsing \'1e400\' [at 1:20]
 
 case json_178
 query:

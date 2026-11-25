@@ -2,6 +2,8 @@
 # native runner, smoke-tested, pushed by digest, then merged into one manifest list. Every push to
 # main publishes :main and :sha-<short>; a v* tag adds the semver tags. workflow_dispatch on any
 # other branch (e.g. a Dependabot PR) builds and smoke-tests both architectures but pushes nothing.
+# A pull request that touches what the smoke test runs (the conformance cases and harness, the
+# script, the Dockerfile, this workflow) builds and smoke-tests linux/amd64 only and pushes nothing.
 # Docker Hub mirror: set the repository variable DOCKERHUB_IMAGE (e.g. docker.io/strise/spanbolt)
 # and the secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN, and the merge job pushes the same tags there.
 name: image
@@ -10,10 +12,22 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
+    paths:
+      - conformance/cases/**
+      - crates/conformance/**
+      - scripts/docker-smoke.sh
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/image.yml
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   IMAGE: ghcr.io/strise/spanbolt
@@ -25,9 +39,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { platform: linux/amd64, runner: ubuntu-24.04, arch: amd64 }
-          - { platform: linux/arm64, runner: ubuntu-24.04-arm, arch: arm64 }
+        # One architecture on pull requests keeps their cost down; arm64 is smoke-tested on main.
+        include: ${{ fromJSON(github.event_name == 'pull_request'
+          && '[{"platform":"linux/amd64","runner":"ubuntu-24.04","arch":"amd64"}]'
+          || '[{"platform":"linux/amd64","runner":"ubuntu-24.04","arch":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm","arch":"arm64"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -67,7 +82,8 @@ jobs:
         run: python -m pip install google-cloud-spanner
       - name: Smoke test
         run: IMAGE=spanbolt:ci scripts/docker-smoke.sh
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

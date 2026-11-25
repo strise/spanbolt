@@ -498,7 +498,7 @@ impl Parser<'_> {
             }
         };
         skip_seps(self);
-        let d = match self.peek(0) {
+        match self.peek(0) {
             K::Number => {
                 let n = self.bump();
                 let mut d = number(&self.s[n.start..n.end]);
@@ -524,8 +524,7 @@ impl Parser<'_> {
                 self.skip_past_close();
                 None
             }
-        };
-        d
+        }
     }
 
     /// Skips to just past the next `)`, or to the end.

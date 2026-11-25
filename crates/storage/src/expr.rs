@@ -43,13 +43,21 @@ pub trait ExprEvaluator: Send + Sync {
         Ok(())
     }
 
-    /// Checks the property graph `name` of `schema` when DDL creates or replaces it.
+    /// Checks the property graph `name` of `schema` when DDL creates or replaces it, and returns
+    /// the definition to keep for it: Cloud Spanner's printed form, `PROPERTIES ALL COLUMNS`
+    /// written out as the columns there are now.
     fn validate_property_graph(
         &self,
         _schema: &Arc<spanbolt_ddl::Schema>,
         _name: &str,
-    ) -> Result<()> {
-        Ok(())
+    ) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// The property graphs of `state` as emulator 1.5.59's GetDatabaseDdl prints them, by name
+    /// (`--emulator-compat`).
+    fn emulator_graph_ddl(&self, _state: &crate::state::DbState) -> Vec<(String, String)> {
+        Vec::new()
     }
 
     /// Rejects `change`, which took `before` to `after`, when a property graph of `before` uses

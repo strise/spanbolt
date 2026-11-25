@@ -83,9 +83,9 @@
     "ddl": {
       "error": 0,
       "fail": 5,
-      "pass": 400,
+      "pass": 413,
       "skipped": 10,
-      "total": 427,
+      "total": 440,
       "unimplemented": 12
     },
     "diverges-from-emulator": {
@@ -139,9 +139,9 @@
     "graph": {
       "error": 0,
       "fail": 1,
-      "pass": 23,
+      "pass": 36,
       "skipped": 9,
-      "total": 33,
+      "total": 46,
       "unimplemented": 0
     },
     "hints": {
@@ -235,9 +235,9 @@
     "oracle": {
       "error": 0,
       "fail": 5,
-      "pass": 207,
+      "pass": 220,
       "skipped": 9,
-      "total": 221,
+      "total": 234,
       "unimplemented": 0
     },
     "oracle2": {
@@ -307,25 +307,25 @@
     "search": {
       "error": 0,
       "fail": 0,
-      "pass": 367,
+      "pass": 380,
       "skipped": 1,
-      "total": 368,
+      "total": 381,
       "unimplemented": 0
     },
     "select": {
       "error": 0,
       "fail": 0,
-      "pass": 45,
+      "pass": 60,
       "skipped": 0,
-      "total": 45,
+      "total": 60,
       "unimplemented": 0
     },
     "sql": {
       "error": 0,
       "fail": 20,
-      "pass": 3851,
+      "pass": 3879,
       "skipped": 3,
-      "total": 3883,
+      "total": 3911,
       "unimplemented": 9
     },
     "string": {
@@ -1107,6 +1107,136 @@
       "status": "pass",
       "tags": [
         "ddl"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/get_ddl",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/get_ddl_implicit_and_except",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/all_columns_after_add_column_query",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/all_columns_after_add_column_known_property",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/all_columns_after_add_column_get_ddl",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/all_columns_after_add_column_metadata",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/all_columns_after_add_column_drop_it",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/implicit_properties_after_add_column_query",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/create_error_position_property",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/create_error_position_edge_reference",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/create_error_position_missing_table",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/get_ddl_labels_and_aliases",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "ddl/graph_ddl/get_ddl_view_element",
+      "status": "pass",
+      "tags": [
+        "ddl",
+        "graph",
+        "oracle"
       ]
     },
     {
@@ -6218,7 +6348,7 @@
       ]
     },
     {
-      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T11:31:14.272358Z\"]",
+      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T13:41:53.757044Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_on_update",
       "status": "fail",
       "tags": [
@@ -6428,7 +6558,7 @@
       ]
     },
     {
-      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T11:31:14.284945Z\"]",
+      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T13:41:53.764408Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_default_pending",
       "status": "fail",
       "tags": [
@@ -6448,7 +6578,7 @@
       ]
     },
     {
-      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T11:31:14.289769Z\"]",
+      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T13:41:53.765779Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert",
       "status": "fail",
       "tags": [
@@ -6457,7 +6587,7 @@
       ]
     },
     {
-      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T11:31:14.289839Z\"]",
+      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T13:41:53.765722Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert_or_update",
       "status": "fail",
       "tags": [
@@ -29478,7 +29608,7 @@
       ]
     },
     {
-      "detail": "line 1865: UNIMPLEMENTED: Function APPROX_COSINE_DISTANCE is not supported by spanbolt yet.",
+      "detail": "line 1907: UNIMPLEMENTED: Function APPROX_COSINE_DISTANCE is not supported by spanbolt yet.",
       "name": "sql/functions_array_vector/approx_cosine_distance_options",
       "status": "unimplemented",
       "tags": [
@@ -29488,7 +29618,7 @@
       ]
     },
     {
-      "detail": "line 1872: UNIMPLEMENTED: Function APPROX_COSINE_DISTANCE is not supported by spanbolt yet.",
+      "detail": "line 1914: UNIMPLEMENTED: Function APPROX_COSINE_DISTANCE is not supported by spanbolt yet.",
       "name": "sql/functions_array_vector/approx_cosine_distance_column",
       "status": "unimplemented",
       "tags": [
@@ -29508,7 +29638,7 @@
       ]
     },
     {
-      "detail": "line 1886: UNIMPLEMENTED: Function APPROX_EUCLIDEAN_DISTANCE is not supported by spanbolt yet.",
+      "detail": "line 1928: UNIMPLEMENTED: Function APPROX_EUCLIDEAN_DISTANCE is not supported by spanbolt yet.",
       "name": "sql/functions_array_vector/approx_euclidean_distance_options",
       "status": "unimplemented",
       "tags": [
@@ -29518,7 +29648,7 @@
       ]
     },
     {
-      "detail": "line 1893: UNIMPLEMENTED: Function APPROX_EUCLIDEAN_DISTANCE is not supported by spanbolt yet.",
+      "detail": "line 1935: UNIMPLEMENTED: Function APPROX_EUCLIDEAN_DISTANCE is not supported by spanbolt yet.",
       "name": "sql/functions_array_vector/approx_euclidean_distance_column",
       "status": "unimplemented",
       "tags": [
@@ -29538,7 +29668,7 @@
       ]
     },
     {
-      "detail": "line 1907: UNIMPLEMENTED: Function APPROX_DOT_PRODUCT is not supported by spanbolt yet.",
+      "detail": "line 1949: UNIMPLEMENTED: Function APPROX_DOT_PRODUCT is not supported by spanbolt yet.",
       "name": "sql/functions_array_vector/approx_dot_product_options",
       "status": "unimplemented",
       "tags": [
@@ -29548,7 +29678,7 @@
       ]
     },
     {
-      "detail": "line 1914: UNIMPLEMENTED: Function APPROX_DOT_PRODUCT is not supported by spanbolt yet.",
+      "detail": "line 1956: UNIMPLEMENTED: Function APPROX_DOT_PRODUCT is not supported by spanbolt yet.",
       "name": "sql/functions_array_vector/approx_dot_product_column",
       "status": "unimplemented",
       "tags": [
@@ -32478,7 +32608,7 @@
       ]
     },
     {
-      "detail": "line 2068: UNIMPLEMENTED: NET.PUBLIC_SUFFIX and NET.REG_DOMAIN on a host with non-ASCII characters is not supported by spanbolt yet.",
+      "detail": "line 2071: UNIMPLEMENTED: NET.PUBLIC_SUFFIX and NET.REG_DOMAIN on a host with non-ASCII characters is not supported by spanbolt yet.",
       "name": "sql/functions_net/public_suffix_non_ascii",
       "status": "unimplemented",
       "tags": [
@@ -35722,6 +35852,69 @@
     },
     {
       "detail": null,
+      "name": "sql/search_around/default_distance",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_around/distances",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_around/phrases",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_around/chains",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_around/malformed",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_around/quoted",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_around/distance_forms",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/search_functions/and_operator",
       "status": "pass",
       "tags": [
@@ -37008,6 +37201,42 @@
     },
     {
       "detail": null,
+      "name": "sql/search_negation_only/negations",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_negation_only/negation_score",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_negation_only/stopwords_and_null",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_negation_only/double_hyphen",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/search_persons/name_two_terms",
       "status": "pass",
       "tags": [
@@ -37180,6 +37409,24 @@
     {
       "detail": null,
       "name": "sql/search_persons/dml_delete_with_search_in_read_write",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_query_dots/dots",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/search_query_dots/connectors",
       "status": "pass",
       "tags": [
         "sql",
@@ -38533,6 +38780,141 @@
     {
       "detail": null,
       "name": "sql/select/syntax_error",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_single_quoted_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_escaped_quote_in_single_quoted_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_double_quoted_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_raw_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_triple_quoted_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_bytes_literal",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_quoted_identifier",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_in_quoted_identifier_unexpected",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_non_ascii_in_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_tab_in_string",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_token",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_illegal_escape",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_illegal_unicode_escape",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_unclosed_string_trailing_backslash",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "select"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/select/syntax_error_backslash_after_string",
       "status": "pass",
       "tags": [
         "sql",
@@ -42495,13 +42877,13 @@
       ]
     }
   ],
-  "target": "127.0.0.1:58768",
+  "target": "127.0.0.1:25420",
   "totals": {
     "error": 0,
     "fail": 24,
-    "pass": 4565,
+    "pass": 4606,
     "skipped": 18,
-    "total": 4628,
+    "total": 4669,
     "unimplemented": 21
   },
   "unimplemented": "skip"

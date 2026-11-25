@@ -781,3 +781,496 @@ expect:
 expect@spanner:
   columns: Id INT64
   ["14"]
+
+case distance_limit
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(101) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(255) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  same
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1000) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(65536) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(1000000) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(2147483646) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(0.5) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(0.5) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(9.0) omega') ORDER BY Id
+expect:
+  error: INVALID_ARGUMENT
+  message: Error(s) parsing search query `alpha AROUND(9.0) omega`, has error(s): -Syntax error on column 15: Expecting ')
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(256) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(300) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(400) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(500) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(511) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(512) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(513) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(600) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(768) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]
+query:
+  SELECT Id FROM D WHERE SEARCH(Tok, 'alpha AROUND(999) omega') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["7"]
+  ["8"]
+  ["9"]
+  ["10"]
+  ["11"]
+  ["12"]
+  ["13"]
+  ["14"]
+  ["16"]
+expect@spanner:
+  columns: Id INT64
+  ["1"]
+  ["2"]
+  ["3"]
+  ["4"]
+  ["5"]
+  ["6"]
+  ["11"]
+  ["12"]
+  ["14"]

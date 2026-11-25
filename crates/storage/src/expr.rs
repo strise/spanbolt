@@ -138,6 +138,15 @@ pub fn identifiers(expr: &str) -> Vec<String> {
     }
 }
 
+/// The identifiers `expr` may use as column names, lowercased: [`identifiers`] without function
+/// names, so a call to `UPPER` doesn't read a column `Upper` (the rule the DDL cycle check uses).
+pub fn column_references(expr: &str) -> Vec<String> {
+    match spanbolt_ddl::column_references(expr) {
+        Some(ids) => ids.into_iter().map(|w| w.to_ascii_lowercase()).collect(),
+        None => identifiers(expr),
+    }
+}
+
 /// Whether `expr` refers to the identifier `name` (case-insensitive; see [`identifiers`]).
 pub fn mentions(expr: &str, name: &str) -> bool {
     identifiers(expr)
@@ -175,7 +184,7 @@ pub fn check_generated_key_inputs(
         if kind == WriteKind::Update && columns.contains(&k) {
             continue;
         }
-        let ids = identifiers(e);
+        let ids = column_references(e);
         let unset = tm.columns.iter().enumerate().any(|(c, cm)| {
             ids.iter().any(|w| w.eq_ignore_ascii_case(&cm.name))
                 && !columns.contains(&c)

@@ -826,8 +826,9 @@ fn locality_groups_print_and_reload() {
     assert_eq!(
         ddl,
         [
-            "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '10d'\n)",
+            // By name, `default` included (conformance/cases/ddl/object_order.case).
             "ALTER LOCALITY GROUP `default` SET OPTIONS (\n  storage = 'hdd'\n)",
+            "CREATE LOCALITY GROUP lg OPTIONS (\n  storage = 'ssd',\n  ssd_to_hdd_spill_timespan = '10d'\n)",
             "CREATE TABLE P (\n  id INT64 NOT NULL,\n  ts TIMESTAMP OPTIONS (\n    locality_group = 'lg',\n    allow_commit_timestamp = true\n  ),\n) PRIMARY KEY(id), OPTIONS (\n  locality_group = 'lg'\n)",
             "CREATE TABLE C (\n  id INT64 NOT NULL,\n  c INT64 NOT NULL,\n) PRIMARY KEY(id, c),\n  INTERLEAVE IN PARENT P ON DELETE CASCADE, OPTIONS (\n  locality_group = 'lg'\n)",
             "CREATE INDEX ci ON C(c) OPTIONS (\n  locality_group = 'lg'\n)",

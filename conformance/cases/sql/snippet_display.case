@@ -1,0 +1,105 @@
+# How Cloud Spanner shows a SNIPPET (#123, #124): single letters joined across a newline that
+# follows a space, closing punctuation kept at the end of the text, stopwords not highlighted in a
+# query with other words, and the proportional character widths `max_snippet_width` counts
+# (each width case pairs a width the text just fits in with one it doesn't).
+tags: sql search
+schema:
+  CREATE TABLE W (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX WSearch ON W(Body_Tokens)
+
+case newline_joins_letters
+query:
+  SELECT
+    SNIPPET("x \n y", "zz") AS a,
+    SNIPPET("x\ny", "zz") AS b,
+    SNIPPET("x \t\ty", "zz") AS c,
+    SNIPPET("x\n y", "zz") AS d,
+    SNIPPET("x \r\ny", "zz") AS e,
+    SNIPPET("x \n y \n z", "zz") AS f,
+    SNIPPET("x 　 y", "zz") AS g,
+    SNIPPET("ab x \n y cd", "xy") AS h
+expect:
+  columns: a JSON, b JSON, c JSON, d JSON, e JSON, f JSON, g JSON, h JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"x \\n y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\\ny\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x \\t\\ty\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x\\n y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x \\r\\ny\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x \\n y \\n z\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x 　 y\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ab x \\n y cd\"}]}"]
+expect@spanner:
+  columns: a JSON, b JSON, c JSON, d JSON, e JSON, f JSON, g JSON, h JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xyz\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x y\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[{\"begin\":4,\"end\":6}],\"snippet\":\"ab xy cd\",\"source_begin\":1,\"source_end\":12}]}"]
+
+case closing_punctuation
+query:
+  SELECT
+    SNIPPET("(xy)", "xy") AS a,
+    SNIPPET('"xy"', "xy") AS b,
+    SNIPPET("xy)).", "xy") AS c,
+    SNIPPET("[xy]", "xy") AS d,
+    SNIPPET("{xy}", "xy") AS e,
+    SNIPPET("'xy'", "xy") AS f,
+    SNIPPET("xy;", "xy") AS g,
+    SNIPPET("xy.", "xy") AS h,
+    SNIPPET("xy,", "xy") AS i,
+    SNIPPET("xy!", "xy") AS j,
+    SNIPPET("xy?", "xy") AS k,
+    SNIPPET("(xy", "xy") AS l
+expect:
+  columns: a JSON, b JSON, c JSON, d JSON, e JSON, f JSON, g JSON, h JSON, i JSON, j JSON, k JSON, l JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"(xy)\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"\\\"xy\\\"\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy)).\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"[xy]\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"{xy}\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"'xy'\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy;\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy.\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy,\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy!\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1}],\"snippet\":\"xy?\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":2}],\"snippet\":\"(xy\"}]}"]
+expect@spanner:
+  columns: a JSON, b JSON, c JSON, d JSON, e JSON, f JSON, g JSON, h JSON, i JSON, j JSON, k JSON, l JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"(xy)\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"\\\"xy\\\"\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy))\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"[xy]\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"{xy}\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"'xy'\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy;\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3}],\"snippet\":\"xy\",\"source_begin\":1,\"source_end\":3}]}","{\"snippets\":[{\"highlights\":[{\"begin\":2,\"end\":4}],\"snippet\":\"(xy\",\"source_begin\":1,\"source_end\":4}]}"]
+
+case cut_at_punctuation
+query:
+  SELECT
+    SNIPPET('aaa (bbb) ccc "ddd" eee [fff] ggg, hhh. iii', "bbb", max_snippet_width=>8) AS a,
+    SNIPPET('aaa (bbb) ccc "ddd" eee [fff] ggg, hhh. iii', "ddd", max_snippet_width=>10) AS b,
+    SNIPPET('aaa (bbb) ccc "ddd" eee [fff] ggg, hhh. iii', "fff", max_snippet_width=>10) AS c,
+    SNIPPET('aaa (bbb) ccc "ddd" eee [fff] ggg, hhh. iii', "ggg", max_snippet_width=>12) AS d
+expect:
+  columns: a JSON, b JSON, c JSON, d JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":9,\"start_position\":6}],\"snippet\":\"aaa (bbb\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"ddd\\\" eee\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"fff] ggg\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":4,\"start_position\":1}],\"snippet\":\"ggg, hhh\"}]}"]
+expect@spanner:
+  columns: a JSON, b JSON, c JSON, d JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":4}],\"snippet\":\"bbb\",\"source_begin\":6,\"source_end\":9}]}","{\"snippets\":[{\"highlights\":[{\"begin\":6,\"end\":9}],\"snippet\":\"ccc \\\"ddd\",\"source_begin\":11,\"source_end\":19}]}","{\"snippets\":[{\"highlights\":[{\"begin\":6,\"end\":9}],\"snippet\":\"eee [fff\",\"source_begin\":21,\"source_end\":29}]}","{\"snippets\":[{\"highlights\":[{\"begin\":6,\"end\":9}],\"snippet\":\"fff] ggg\",\"source_begin\":26,\"source_end\":34}]}"]
+
+case stopwords
+query:
+  SELECT
+    SNIPPET("watch the x", "watch the") AS a,
+    SNIPPET("I x", "I x") AS b,
+    SNIPPET("zq the a zq", "the a") AS c,
+    SNIPPET("zq the zq", "the") AS d,
+    SNIPPET("zq and which why com www und zq", "and which why com www und zq") AS e,
+    SNIPPET("zq will not zq", "will not kk") AS f,
+    SNIPPET("zq The zq", "THE zq") AS g
+expect:
+  columns: a JSON, b JSON, c JSON, d JSON, e JSON, f JSON, g JSON
+  ["{\"snippets\":[{\"highlights\":[{\"end_position\":6,\"start_position\":1},{\"end_position\":10,\"start_position\":7}],\"snippet\":\"watch the x\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":2,\"start_position\":1},{\"end_position\":4,\"start_position\":3}],\"snippet\":\"I x\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":7,\"start_position\":4},{\"end_position\":9,\"start_position\":8}],\"snippet\":\"zq the a zq\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":7,\"start_position\":4}],\"snippet\":\"zq the zq\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1},{\"end_position\":7,\"start_position\":4},{\"end_position\":13,\"start_position\":8},{\"end_position\":17,\"start_position\":14},{\"end_position\":21,\"start_position\":18},{\"end_position\":25,\"start_position\":22},{\"end_position\":29,\"start_position\":26},{\"end_position\":32,\"start_position\":30}],\"snippet\":\"zq and which why com www und zq\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":8,\"start_position\":4},{\"end_position\":12,\"start_position\":9}],\"snippet\":\"zq will not zq\"}]}","{\"snippets\":[{\"highlights\":[{\"end_position\":3,\"start_position\":1},{\"end_position\":7,\"start_position\":4},{\"end_position\":10,\"start_position\":8}],\"snippet\":\"zq The zq\"}]}"]
+expect@spanner:
+  columns: a JSON, b JSON, c JSON, d JSON, e JSON, f JSON, g JSON
+  ["{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":6}],\"snippet\":\"watch the x\",\"source_begin\":1,\"source_end\":12}]}","{\"snippets\":[{\"highlights\":[{\"begin\":3,\"end\":4}],\"snippet\":\"I x\",\"source_begin\":1,\"source_end\":4}]}","{\"snippets\":[{\"highlights\":[{\"begin\":4,\"end\":7},{\"begin\":8,\"end\":9}],\"snippet\":\"zq the a zq\",\"source_begin\":1,\"source_end\":12}]}","{\"snippets\":[{\"highlights\":[{\"begin\":4,\"end\":7}],\"snippet\":\"zq the zq\",\"source_begin\":1,\"source_end\":10}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3},{\"begin\":30,\"end\":32}],\"snippet\":\"zq and which why com www und zq\",\"source_begin\":1,\"source_end\":32}]}","{\"snippets\":[{\"highlights\":[{\"begin\":4,\"end\":8},{\"begin\":9,\"end\":12}],\"snippet\":\"zq will not zq\",\"source_begin\":1,\"source_end\":15}]}","{\"snippets\":[{\"highlights\":[{\"begin\":1,\"end\":3},{\"begin\":8,\"end\":10}],\"snippet\":\"zq The zq\",\"source_begin\":1,\"source_end\":10}]}"]
+
+case char_widths
+query:
+  SELECT
+    SNIPPET("Wide Mmm iii", "zz", max_snippet_width=>15) AS w0,
+    SNIPPET("Wide Mmm iii", "zz", max_snippet_width=>14) AS w1,
+    SNIPPET("ÆØÅ æøå çÿ", "zz", max_snippet_width=>15) AS w2,
+    SNIPPET("ÆØÅ æøå çÿ", "zz", max_snippet_width=>14) AS w3,
+    SNIPPET("中日 한 ア", "zz", max_snippet_width=>11) AS w4,
+    SNIPPET("中日 한 ア", "zz", max_snippet_width=>10) AS w5,
+    SNIPPET("Жж Дд Ωω αβ", "zz", max_snippet_width=>15) AS w6,
+    SNIPPET("Жж Дд Ωω αβ", "zz", max_snippet_width=>14) AS w7,
+    SNIPPET("x@y 50% a&b", "zz", max_snippet_width=>16) AS w8,
+    SNIPPET("x@y 50% a&b", "zz", max_snippet_width=>15) AS w9,
+    SNIPPET("mill wall", "zz", max_snippet_width=>9) AS w10,
+    SNIPPET("mill wall", "zz", max_snippet_width=>8) AS w11
+expect:
+  columns: w0 JSON, w1 JSON, w2 JSON, w3 JSON, w4 JSON, w5 JSON, w6 JSON, w7 JSON, w8 JSON, w9 JSON, w10 JSON, w11 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"Wide Mmm iii\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Wide Mmm iii\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x@y 50% a&b\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x@y 50% a&b\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mill\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mill\"}]}"]
+expect@spanner:
+  columns: w0 JSON, w1 JSON, w2 JSON, w3 JSON, w4 JSON, w5 JSON, w6 JSON, w7 JSON, w8 JSON, w9 JSON, w10 JSON, w11 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"Wide Mmm iii\",\"source_begin\":1,\"source_end\":13}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Wide Mmm\",\"source_begin\":1,\"source_end\":9}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ÆØÅ æøå çÿ\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ÆØÅ æøå\",\"source_begin\":1,\"source_end\":8}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"中日 한 ア\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"中日 한\",\"source_begin\":1,\"source_end\":5}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Жж Дд Ωω αβ\",\"source_begin\":1,\"source_end\":12}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"Жж Дд Ωω\",\"source_begin\":1,\"source_end\":9}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x@y 50% a&b\",\"source_begin\":1,\"source_end\":12}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"x@y 50\",\"source_begin\":1,\"source_end\":7}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mill wall\",\"source_begin\":1,\"source_end\":10}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mill\",\"source_begin\":1,\"source_end\":5}]}"]

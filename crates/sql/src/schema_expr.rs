@@ -228,9 +228,13 @@ impl ExprEvaluator for SchemaExprs {
             let msg = relocate(msg, PREFIX.len());
             let t = &table.name;
             Error::invalid_argument(match kind {
-                ExprKind::Check { name } => format!(
+                ExprKind::Check { name } if self.engine.opts.emulator_compat => format!(
                     "Error parsing expression '{expr}' from check constraint '{name}' in table '{t}': {msg}"
                 ),
+                // Production escapes these quotes too (`ddl/qualified_columns.case`).
+                ExprKind::Check { name } => c_escape_quotes(&format!(
+                    "Error parsing expression '{expr}' from check constraint '{name}' in table '{t}': {msg}"
+                )),
                 ExprKind::Generated { column } => format!(
                     "Error parsing the definition of generated column `{t}`.`{column}`: {msg}"
                 ),

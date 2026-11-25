@@ -385,6 +385,17 @@ fn unicode_break(c: char) -> bool {
             | '\u{ff1a}'..='\u{ff20}' | '\u{ff3b}'..='\u{ff40}' | '\u{ff5b}'..='\u{ff65}')
 }
 
+/// Whether `fulltext_tokens` keeps `c` in the run of words and ASCII symbols it is reading, so
+/// that a run of these characters is tokenized on its own (anything else ends the run).
+pub fn fulltext_chunk_char(c: char) -> bool {
+    if matches!(c, '\u{ad}' | '\u{2019}') {
+        return true;
+    }
+    let word = (c == '_' || c.is_ascii_alphanumeric() || (!c.is_ascii() && !unicode_break(c)))
+        && !symbol_token(c);
+    word || (c.is_ascii_punctuation() && c != '_')
+}
+
 enum Part {
     /// A word, the token prod stores at its position too, and the word with the separators
     /// `joined_letters` drops (`a.b` for `ab`) if it dropped any, which an address keeps.
@@ -408,8 +419,21 @@ enum Part {
 ///
 /// Not followed: CJK word segmentation (`日本語` is `日本, 語` in prod).
 pub fn fulltext_tokens(s: &str) -> Vec<(String, bool)> {
+    fulltext_tokens_of(s, true)
+}
+
+/// `fulltext_tokens` of text whose single letters are joined already, or must stay apart.
+pub fn fulltext_tokens_unjoined(s: &str) -> Vec<(String, bool)> {
+    fulltext_tokens_of(s, false)
+}
+
+fn fulltext_tokens_of(s: &str, join: bool) -> Vec<(String, bool)> {
     let chars: Vec<char> = s.chars().collect();
-    let drop = joined_letters(&chars);
+    let drop = if join {
+        joined_letters(&chars)
+    } else {
+        vec![false; chars.len()]
+    };
     let mut out = Vec::new();
     let mut chunk: Vec<Part> = Vec::new();
     // Prod reads tokens from the text as written and normalises their characters (`ŀ` is `l·`,

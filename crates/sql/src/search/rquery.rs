@@ -8,6 +8,11 @@
 //! Cloud Spanner: Unicode letters and digits are term characters (lower-cased with Unicode rules),
 //! other non-ASCII characters separate terms, and a run of separators is one separator. It reads
 //! runs of single letters as one term, as its tokenizer stores them (`tokens::joined_letters`).
+//! Prod also ignores a connector (`.`, `/`, `-`, ...) that doesn't join two terms (`apple. pie`),
+//! reads a bare upper-case `AROUND` as `AROUND(5)` and `"a AROUND b"` as AROUND in query order,
+//! and matches nothing for a double negation (`--a`) or a negation inside or of a parenthesised
+//! group. All fitted to recordings (`conformance/cases/sql/search_query_dots.case`,
+//! `search_around.case`, `search_negation_only.case`).
 
 use spanbolt_storage::{Error, Result};
 
@@ -20,6 +25,8 @@ pub enum Node {
     Not(Box<Node>),
     Phrase(Vec<Node>),
     Around(Vec<Node>),
+    /// Prod's `"a AROUND b"`: AROUND with the operands in query order.
+    InOrder(Vec<Node>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -225,6 +232,51 @@ fn lex(s: &[u8], emulator: bool) -> Vec<Tok> {
     toks
 }
 
+/// Prod drops connectors and hyphens that don't join two terms or negate one (`apple. pie`,
+/// `apple .pie`, `apple -`), then the separators left at either end.
+fn drop_dangling(toks: Vec<Tok>) -> Vec<Tok> {
+    let joins = |k: K| matches!(k, K::Connector | K::Hyphen);
+    let mut out: Vec<Tok> = Vec::with_capacity(toks.len());
+    let mut i = 0;
+    let mut quotes = 0;
+    while i < toks.len() {
+        if !joins(toks[i].k) {
+            quotes += usize::from(toks[i].k == K::Quote);
+            out.push(toks[i]);
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j < toks.len() && joins(toks[j].k) {
+            j += 1;
+        }
+        let prev = out.last().map(|t| t.k);
+        let next = toks.get(j).map_or(K::Eof, |t| t.k);
+        // A quote after an odd number of them closes a phrase.
+        let opens = next == K::Quote && quotes % 2 == 0;
+        let starts = opens || matches!(next, K::Term | K::Number | K::Open | K::Around);
+        let between = matches!(prev, Some(K::Term | K::Number | K::Close));
+        let negation = toks[i..j].iter().all(|t| t.k == K::Hyphen);
+        if starts && (between || negation) {
+            out.extend_from_slice(&toks[i..j]);
+        }
+        i = j;
+    }
+    // Separators at the ends, or next to `|` once a connector between them is gone.
+    let mut kept: Vec<Tok> = Vec::with_capacity(out.len());
+    for (n, t) in out.iter().enumerate() {
+        let next = out.get(n + 1).map_or(K::Eof, |t| t.k);
+        let prev = kept.last().map(|t| t.k);
+        if t.k == K::Sep
+            && (matches!(prev, None | Some(K::OrOp)) || matches!(next, K::Eof | K::OrOp))
+        {
+            continue;
+        }
+        kept.push(*t);
+    }
+    kept
+}
+
 /// Length of the UTF-8 character at `i` (1 for a stray byte).
 fn utf8_len(s: &[u8], i: usize) -> usize {
     let n = match s[i] {
@@ -260,6 +312,10 @@ struct Parser<'a> {
     emulator: bool,
     toks: Vec<Tok>,
     pos: usize,
+    /// Prod dropped a lower-case `or` from the top-level AND.
+    dropped_or: bool,
+    /// Depth of `and_expression` calls (1 is the top level).
+    depth: usize,
 }
 
 type P<T> = std::result::Result<T, String>;
@@ -320,6 +376,13 @@ impl Parser<'_> {
     }
 
     fn and_expression(&mut self) -> P<Node> {
+        self.depth += 1;
+        let n = self.and_expression_inner();
+        self.depth -= 1;
+        n
+    }
+
+    fn and_expression_inner(&mut self) -> P<Node> {
         let mut c = vec![self.around_expression()?];
         while self.peek(0) == K::Sep {
             while self.peek(0) == K::Sep {
@@ -335,6 +398,7 @@ impl Parser<'_> {
                 .cloned()
                 .collect();
             if !kept.is_empty() {
+                self.dropped_or |= self.depth == 1 && kept.len() < c.len();
                 c = kept;
             }
         }
@@ -348,27 +412,32 @@ impl Parser<'_> {
             while self.peek(0) == K::Sep {
                 self.bump();
             }
-            self.expect(K::Around)?;
             if self.emulator {
+                self.expect(K::Around)?;
                 let n = self.expect(K::Number)?;
-                c.push(Node::Number(number(&self.s[n.start..n.end])));
+                let d = number(&self.s[n.start..n.end]);
+                // The emulator rejects a distance past i32 (-1 is its "invalid distance").
+                c.push(Node::Number(if d > i64::from(i32::MAX) { -1 } else { d }));
                 self.expect(K::Close)?;
                 self.expect(K::Sep)?;
             } else {
-                // Prod: `AROUND(two)` parses and matches nothing; `)` and the separator after it
-                // may be missing.
-                let n = self.bump();
-                c.push(Node::Number(match n.k {
-                    K::Number => number(&self.s[n.start..n.end]),
-                    K::Term => {
-                        never = true;
-                        DEFAULT_GAP
-                    }
-                    _ => return Err(self.parse_error("around_expression")),
-                }));
-                if self.peek(0) == K::Close {
+                let d = self.prod_distance();
+                never |= d.is_none();
+                let mut gap = d.unwrap_or(DEFAULT_GAP);
+                while self.peek(0) == K::Sep {
                     self.bump();
                 }
+                match self.peek(0) {
+                    // `a AROUND(1)` matches nothing.
+                    K::Eof => return Ok(never_node()),
+                    // `a AROUND(1) | b` is `a AROUND b`.
+                    K::OrOp => {
+                        self.bump();
+                        gap = DEFAULT_GAP;
+                    }
+                    _ => {}
+                }
+                c.push(Node::Number(gap));
             }
             while self.peek(0) == K::Sep {
                 self.bump();
@@ -376,10 +445,97 @@ impl Parser<'_> {
             c.push(self.or_expression()?);
         }
         if never {
-            // An empty term: no token matches it.
-            return Ok(Node::Term(Vec::new()));
+            return Ok(never_node());
         }
         Ok(wrap(c, Node::Around))
+    }
+
+    /// Whether the token `n` ahead is prod's bare `AROUND`: an upper-case word followed by a
+    /// separator and an operand (`a AROUND b`; `a AROUND | b` and `a AROUND-b` are terms).
+    fn bare_around(&self, n: usize) -> bool {
+        let Some(t) = self.toks.get(self.pos + n) else {
+            return false;
+        };
+        if t.k != K::Term || &self.s[t.start..t.end] != b"AROUND" || self.peek(n + 1) != K::Sep {
+            return false;
+        }
+        let mut m = n + 1;
+        while self.peek(m) == K::Sep {
+            m += 1;
+        }
+        matches!(
+            self.peek(m),
+            K::Term | K::Number | K::Quote | K::Hyphen | K::Open | K::Around
+        )
+    }
+
+    /// Prod: reads an AROUND operator (`AROUND(n)`, `AROUND (n)` or a bare `AROUND`) and its
+    /// distance. `None` when the operator matches nothing (`AROUND(two)`, `AROUND()`,
+    /// `AROUND(-1)`, `AROUND(1 2)`). A missing `)` is fine (`AROUND(2 b`); a distance that isn't
+    /// a whole number of at most `MAX_GAP` (`AROUND(1.5)`) is the default.
+    fn prod_distance(&mut self) -> Option<i64> {
+        let t = self.bump();
+        if t.k == K::Term {
+            // Bare `AROUND`: `AROUND (n)` still gives the distance.
+            let mut n = 0;
+            while self.peek(n) == K::Sep {
+                n += 1;
+            }
+            let mut m = n + 1;
+            while self.peek(m) == K::Sep {
+                m += 1;
+            }
+            if !(self.peek(n) == K::Open && self.peek(m) == K::Number) {
+                return Some(DEFAULT_GAP);
+            }
+            for _ in 0..=n {
+                self.bump();
+            }
+        }
+        let skip_seps = |p: &mut Self| {
+            while p.peek(0) == K::Sep {
+                p.bump();
+            }
+        };
+        skip_seps(self);
+        let d = match self.peek(0) {
+            K::Number => {
+                let n = self.bump();
+                let mut d = number(&self.s[n.start..n.end]);
+                if self.peek(0) == K::Connector && self.peek(1) == K::Number {
+                    self.bump();
+                    self.bump();
+                    d = DEFAULT_GAP;
+                }
+                skip_seps(self);
+                match self.peek(0) {
+                    K::Close => {
+                        self.bump();
+                    }
+                    K::Number | K::Hyphen | K::Connector => {
+                        self.skip_past_close();
+                        return None;
+                    }
+                    _ => {}
+                }
+                Some(if d > MAX_GAP { DEFAULT_GAP } else { d })
+            }
+            _ => {
+                self.skip_past_close();
+                None
+            }
+        };
+        d
+    }
+
+    /// Skips to just past the next `)`, or to the end.
+    fn skip_past_close(&mut self) {
+        while !matches!(self.peek(0), K::Close | K::Eof) {
+            self.bump();
+        }
+        if self.peek(0) == K::Close {
+            self.bump();
+        }
     }
 
     /// Whether a separator starts an `AROUND(n)` operator. The emulator's grammar reads two
@@ -392,7 +548,7 @@ impl Parser<'_> {
         while self.peek(n) == K::Sep {
             n += 1;
         }
-        self.peek(n) == K::Around
+        self.peek(n) == K::Around || self.bare_around(n)
     }
 
     fn or_expression(&mut self) -> P<Node> {
@@ -411,21 +567,32 @@ impl Parser<'_> {
         match self.peek(0) {
             K::Hyphen => {
                 self.bump();
-                Ok(Node::Not(Box::new(self.sub_expression()?)))
+                let inner = self.sub_expression()?;
+                // Prod: `--a` and `-(a)` match nothing.
+                let negated = matches!(inner, Node::Not(_)) || inner == never_node();
+                if !self.emulator && (negated || self.after_group()) {
+                    return Ok(never_node());
+                }
+                Ok(Node::Not(Box::new(inner)))
             }
             K::Quote => self.quoted_phrase(),
             K::Term | K::Number => self.connected_phrase(),
-            // Prod groups with parentheses.
+            // Prod groups with parentheses; a group with a negation in it matches nothing.
             K::Open if !self.emulator => {
                 self.bump();
                 let n = self.and_expression()?;
                 if self.peek(0) == K::Close {
                     self.bump();
                 }
-                Ok(n)
+                Ok(if has_not(&n) { never_node() } else { n })
             }
             _ => Err(self.parse_error("sub_expression")),
         }
+    }
+
+    /// Whether the last sub-expression read was a parenthesised group.
+    fn after_group(&self) -> bool {
+        self.pos > 0 && self.toks[self.pos - 1].k == K::Close
     }
 
     fn connected_phrase(&mut self) -> P<Node> {
@@ -441,16 +608,61 @@ impl Parser<'_> {
 
     fn quoted_phrase(&mut self) -> P<Node> {
         self.expect(K::Quote)?;
-        let mut c = vec![self.or_term()?];
+        // Prod: `"a AROUND b"` splits the phrase into AROUND operands.
+        let mut parts = vec![(vec![self.or_term()?], DEFAULT_GAP)];
         let inner = |k: K| matches!(k, K::Sep | K::Connector | K::Hyphen);
-        while inner(self.peek(0)) {
+        let mut never = false;
+        loop {
+            if !self.emulator && self.peek(0) == K::Sep {
+                let mut n = 0;
+                while self.peek(n) == K::Sep {
+                    n += 1;
+                }
+                if self.peek(n) == K::Around || self.bare_around(n) {
+                    for _ in 0..n {
+                        self.bump();
+                    }
+                    let d = self.prod_distance();
+                    never |= d.is_none();
+                    while self.peek(0) == K::Sep {
+                        self.bump();
+                    }
+                    parts.push((vec![self.or_term()?], d.unwrap_or(DEFAULT_GAP)));
+                    continue;
+                }
+            }
+            if !inner(self.peek(0)) {
+                break;
+            }
             while inner(self.peek(0)) {
                 self.bump();
             }
-            c.push(self.or_term()?);
+            if let Some(last) = parts.last_mut() {
+                last.0.push(self.or_term()?);
+            }
         }
         self.expect(K::Quote)?;
-        Ok(wrap(c, Node::Phrase))
+        if parts.len() == 1 {
+            let (c, _) = parts.pop().unwrap_or_default();
+            // Prod keeps a quoted single term a phrase, so a quoted stopword stays (`"the"`).
+            if !self.emulator && c.len() == 1 {
+                return Ok(Node::Phrase(c));
+            }
+            return Ok(wrap(c, Node::Phrase));
+        }
+        // Only single terms around AROUND have been seen to match (`"a b AROUND c"` matches
+        // nothing).
+        if never || parts.iter().any(|(c, _)| c.len() != 1) {
+            return Ok(never_node());
+        }
+        let mut c = Vec::new();
+        for (i, (mut t, d)) in parts.into_iter().enumerate() {
+            if i > 0 {
+                c.push(Node::Number(d));
+            }
+            c.append(&mut t);
+        }
+        Ok(Node::InOrder(c))
     }
 
     fn or_term(&mut self) -> P<Node> {
@@ -478,8 +690,26 @@ impl Parser<'_> {
     }
 }
 
-/// Any valid distance; `AROUND(two)` matches nothing whatever the distance.
+/// Prod's distance for a bare `AROUND` and for one it can't read (`AROUND(1.5)`).
 const DEFAULT_GAP: i64 = 5;
+
+/// The largest distance prod honours; `AROUND(2147483647)` is `AROUND(5)`.
+const MAX_GAP: i64 = i32::MAX as i64 - 1;
+
+/// A node no document matches (an empty term).
+fn never_node() -> Node {
+    Node::Term(Vec::new())
+}
+
+fn has_not(n: &Node) -> bool {
+    match n {
+        Node::Not(_) => true,
+        Node::And(c) | Node::Or(c) | Node::Phrase(c) | Node::Around(c) | Node::InOrder(c) => {
+            c.iter().any(has_not)
+        }
+        Node::Term(_) | Node::Number(_) => false,
+    }
+}
 
 fn number(digits: &[u8]) -> i64 {
     std::str::from_utf8(digits)
@@ -492,18 +722,9 @@ fn number(digits: &[u8]) -> i64 {
 fn not_in_around(n: &Node, around: bool) -> bool {
     match n {
         Node::Not(c) => around || not_in_around(c, around),
-        Node::Around(c) => c.iter().any(|c| not_in_around(c, true)),
+        Node::Around(c) | Node::InOrder(c) => c.iter().any(|c| not_in_around(c, true)),
         Node::And(c) | Node::Or(c) | Node::Phrase(c) => c.iter().any(|c| not_in_around(c, around)),
         Node::Term(_) | Node::Number(_) => false,
-    }
-}
-
-/// A query with only negated parts, which matches nothing on prod (`--cloud`, `-a -b`).
-pub fn only_negations(n: &Node) -> bool {
-    match n {
-        Node::Not(_) => true,
-        Node::And(c) => c.iter().all(only_negations),
-        _ => false,
     }
 }
 
@@ -517,7 +738,20 @@ fn wrap(mut c: Vec<Node>, f: fn(Vec<Node>) -> Node) -> Node {
 
 /// Parses a SEARCH query. `None` means the query is empty after trimming separators.
 /// `emulator` selects the emulator's grammar quirks (see the module docs).
+#[cfg(test)]
 pub fn parse(query: &str, emulator: bool) -> Result<Option<Node>> {
+    parse_query(query, emulator).map(|q| q.map(|q| q.node))
+}
+
+/// A parsed SEARCH query.
+pub struct Query {
+    pub node: Node,
+    /// Prod dropped a lower-case `or` from the query's top-level AND (`-a or`).
+    pub dropped_or: bool,
+}
+
+/// `parse`, keeping what prod's grammar dropped.
+pub fn parse_query(query: &str, emulator: bool) -> Result<Option<Query>> {
     let b = query.as_bytes();
     let starts = query.char_indices().map(|(i, _)| i);
     let Some(start) = starts.clone().find(|&i| !trimmed_at(b, i, emulator)) else {
@@ -532,11 +766,20 @@ pub fn parse(query: &str, emulator: bool) -> Result<Option<Node>> {
     let joined =
         (!emulator).then(|| super::tokens::join_letters(&query[start..last + utf8_len(b, last)]));
     let s = joined.as_deref().map_or(orig, str::as_bytes);
+    let mut toks = lex(s, emulator);
+    if !emulator {
+        toks = drop_dangling(toks);
+        if toks.iter().all(|t| t.k == K::Eof) {
+            return Ok(None);
+        }
+    }
     let mut p = Parser {
         s,
         emulator,
-        toks: lex(s, emulator),
+        toks,
         pos: 0,
+        dropped_or: false,
+        depth: 0,
     };
     let parsed = p.rquery();
     if !emulator
@@ -547,12 +790,19 @@ pub fn parse(query: &str, emulator: bool) -> Result<Option<Node>> {
             "Invalid use of negation found in search query. Negation may not be used within AROUND.",
         ));
     }
-    parsed.map(Some).map_err(|e| {
-        Error::invalid_argument(format!(
-            "Error(s) parsing search query `{}`, has error(s):\n-{e}",
-            String::from_utf8_lossy(orig)
-        ))
-    })
+    parsed
+        .map(|node| {
+            Some(Query {
+                node,
+                dropped_or: p.dropped_or,
+            })
+        })
+        .map_err(|e| {
+            Error::invalid_argument(format!(
+                "Error(s) parsing search query `{}`, has error(s):\n-{e}",
+                String::from_utf8_lossy(orig)
+            ))
+        })
 }
 
 #[cfg(test)]
@@ -574,6 +824,7 @@ mod tests {
             Node::Not(c) => format!("(n {})", show(c)),
             Node::Phrase(c) => list("p", c),
             Node::Around(c) => list("ar", c),
+            Node::InOrder(c) => list("io", c),
         }
     }
 
@@ -703,8 +954,48 @@ mod tests {
         assert_eq!(prod("«tromsø»"), "tromsø");
         assert_eq!(prod("a – b"), "(a a b)");
         assert_eq!(prod("谷歌"), "谷歌");
+        // Connectors that join nothing are ignored (#121).
+        assert_eq!(prod("apple. banana"), "(a apple banana)");
+        assert_eq!(prod("apple .banana"), "(a apple banana)");
+        assert_eq!(prod("apple banana."), "(a apple banana)");
+        assert_eq!(prod("apple. | banana"), "(o apple banana)");
+        assert_eq!(prod("\"apple banana.\""), "(p apple banana)");
+        assert_eq!(prod("apple -"), "apple");
+        assert_eq!(prod("- -apple"), "(n apple)");
+        assert_eq!(prod("apple.banana"), "(p apple banana)");
+        assert_eq!(prod(". ."), "");
+        // AROUND (#122).
+        assert_eq!(prod("alpha AROUND omega"), "(ar alpha 5 omega)");
+        assert_eq!(prod("alpha AROUND (2) omega"), "(ar alpha 2 omega)");
+        assert_eq!(prod("alpha AROUND( 2 ) omega"), "(ar alpha 2 omega)");
+        assert_eq!(prod("alpha AROUND(1.5) omega"), "(ar alpha 5 omega)");
+        assert_eq!(prod("alpha AROUND(2147483647) omega"), "(ar alpha 5 omega)");
+        assert_eq!(prod("alpha AROUND(1) | omega"), "(ar alpha 5 omega)");
+        assert_eq!(prod("alpha AROUND(-1) omega"), "");
+        assert_eq!(prod("alpha AROUND() omega"), "");
+        assert_eq!(prod("alpha AROUND(1 2) omega"), "");
+        assert_eq!(prod("alpha AROUND(1)"), "");
+        assert_eq!(prod("quick AROUND | fox"), "(a quick (o around fox))");
+        assert_eq!(prod("quick AROUND-fox"), "(a quick (p around fox))");
+        assert_eq!(prod("\"quick AROUND fox\""), "(io quick 5 fox)");
+        assert_eq!(prod("\"quick AROUND(1) fox\""), "(io quick 1 fox)");
+        assert_eq!(prod("\"quick brown AROUND fox\""), "");
+        assert_eq!(prod("\"quick AROUND\""), "(p quick around)");
+        assert!(prod("quick AROUND -fox").contains("Negation may not be used within AROUND"));
+        // Double negation and negated groups match nothing (#120).
+        assert_eq!(prod("--apple"), "");
+        assert_eq!(prod("---apple"), "");
+        assert_eq!(prod("-(apple)"), "");
+        assert_eq!(prod("cherry (-banana)"), "(a cherry )");
+        assert_eq!(prod("-apple -banana"), "(a (n apple) (n banana))");
+        assert_eq!(prod("\"the\""), "(p the)");
         // The emulator's grammar is unchanged.
         assert!(parse("Ola  Testmann", true).is_err());
+        assert!(
+            parse("alpha AROUND omega", true)
+                .is_ok_and(|n| n.is_some_and(|n| show(&n) == "(a alpha around omega)"))
+        );
+        assert!(parse("apple. banana", true).is_err());
         assert_eq!(show(&parse("Åse", true).unwrap().unwrap()), "se");
     }
 }

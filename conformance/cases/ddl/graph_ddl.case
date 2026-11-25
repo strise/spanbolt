@@ -1,0 +1,188 @@
+tags: ddl graph oracle
+# How a property graph's DDL is kept: GetDatabaseDdl's printed form, error positions in it
+# (spanbolt #126), and PROPERTIES ALL COLUMNS expanded once, when the graph is created (#125).
+schema:
+  CREATE TABLE Knows (Id STRING(MAX) NOT NULL, Src STRING(MAX), Dst STRING(MAX), W INT64) PRIMARY KEY (Id);
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE PROPERTY GRAPH G NODE TABLES (Person KEY (Id) LABEL P PROPERTIES (Id, Name)) EDGE TABLES (Knows KEY (Id) SOURCE KEY (Src) REFERENCES Person (Id) DESTINATION KEY (Dst) REFERENCES Person (Id) LABEL K PROPERTIES (Id));
+  CREATE PROPERTY GRAPH GA NODE TABLES (Person KEY (Id) LABEL P PROPERTIES ALL COLUMNS)
+insert Person cols=Id,Name,Extra:
+  ["p1", "Ola", 1]
+
+case get_ddl
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Knows (\n  Id STRING(MAX) NOT NULL,\n  Src STRING(MAX),\n  Dst STRING(MAX),\n  W INT64,\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH G\nNODE TABLES(\n  Person KEY(Id) LABEL P PROPERTIES(\nId,\nName)\n)\nEDGE TABLES(\n  Knows KEY(Id) SOURCE KEY(Src) REFERENCES Person(Id) DESTINATION KEY(Dst) REFERENCES Person(Id) LABEL K PROPERTIES(\nId)\n)"
+  "CREATE PROPERTY GRAPH GA\nNODE TABLES(\n  Person KEY(Id) LABEL P PROPERTIES(\nExtra,\nId,\nName)\n)"
+expect@spanner:
+  statements:
+  "CREATE TABLE Knows (\n  Id STRING(MAX) NOT NULL,\n  Src STRING(MAX),\n  Dst STRING(MAX),\n  W INT64,\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH G\n  NODE TABLES(\n    Person\n      KEY(Id)\n      LABEL P PROPERTIES(\n        Id,\n        Name)\n  )\n  EDGE TABLES(\n    Knows\n      KEY(Id)\n      SOURCE KEY(Src) REFERENCES Person(Id)\n      DESTINATION KEY(Dst) REFERENCES Person(Id)\n      LABEL K PROPERTIES(\n        Id)\n  )"
+  "CREATE PROPERTY GRAPH GA\n  NODE TABLES(\n    Person\n      KEY(Id)\n      LABEL P PROPERTIES(\n        Extra,\n        Id,\n        Name)\n  )"
+
+case get_ddl_implicit_and_except
+schema:
+  CREATE TABLE Knows (Id STRING(MAX) NOT NULL, Src STRING(MAX), Dst STRING(MAX), W INT64) PRIMARY KEY (Id);
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE PROPERTY GRAPH GI NODE TABLES (Person, Knows AS Friend KEY (Id) DEFAULT LABEL PROPERTIES ALL COLUMNS EXCEPT (W));
+  CREATE PROPERTY GRAPH GX NODE TABLES (Person KEY (Id) LABEL P PROPERTIES (Id, UPPER(Name) AS Upper, Extra + 1 AS Next) LABEL Q NO PROPERTIES)
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Knows (\n  Id STRING(MAX) NOT NULL,\n  Src STRING(MAX),\n  Dst STRING(MAX),\n  W INT64,\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH GI\nNODE TABLES(\n  Knows AS Friend KEY(Id) LABEL Friend PROPERTIES(\nDst,\nId,\nSrc),\nPerson KEY(Id) LABEL Person PROPERTIES(\nExtra,\nId,\nName)\n)"
+  "CREATE PROPERTY GRAPH GX\nNODE TABLES(\n  Person KEY(Id) LABEL P PROPERTIES(\nId,\nNext,\nUpper), LABEL Q\n)"
+expect@spanner:
+  statements:
+  "CREATE TABLE Knows (\n  Id STRING(MAX) NOT NULL,\n  Src STRING(MAX),\n  Dst STRING(MAX),\n  W INT64,\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH GI\n  NODE TABLES(\n    Knows AS Friend\n      KEY(Id)\n      LABEL Friend PROPERTIES(\n        Dst,\n        Id,\n        Src),\n\n    Person\n      KEY(Id)\n      LABEL Person PROPERTIES(\n        Extra,\n        Id,\n        Name)\n  )"
+  "CREATE PROPERTY GRAPH GX\n  NODE TABLES(\n    Person\n      KEY(Id)\n      LABEL P PROPERTIES(\n        Id,\n        Extra + 1 AS Next,\n        UPPER(Name) AS Upper)\n      LABEL Q NO PROPERTIES\n  )"
+
+case all_columns_after_add_column_query
+ddl:
+  ALTER TABLE Person ADD COLUMN Age INT64
+query:
+  SELECT * FROM GRAPH_TABLE(GA MATCH (n:P) RETURN n.Age AS age)
+expect:
+  error: INVALID_ARGUMENT
+  message: Property Age is not exposed by element type GRAPH_NODE(GA)<Extra INT64, Id STRING, Name STRING> [at 1:51]
+expect@spanner:
+  same
+
+case all_columns_after_add_column_known_property
+ddl:
+  ALTER TABLE Person ADD COLUMN Age INT64
+query:
+  SELECT * FROM GRAPH_TABLE(GA MATCH (n:P) RETURN n.Name AS name, n.Extra AS extra)
+expect:
+  columns: name STRING, extra INT64
+  ["Ola","1"]
+expect@spanner:
+  same
+
+case all_columns_after_add_column_get_ddl
+ddl:
+  ALTER TABLE Person ADD COLUMN Age INT64
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Knows (\n  Id STRING(MAX) NOT NULL,\n  Src STRING(MAX),\n  Dst STRING(MAX),\n  W INT64,\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n  Age INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH G\nNODE TABLES(\n  Person KEY(Id) LABEL P PROPERTIES(\nId,\nName)\n)\nEDGE TABLES(\n  Knows KEY(Id) SOURCE KEY(Src) REFERENCES Person(Id) DESTINATION KEY(Dst) REFERENCES Person(Id) LABEL K PROPERTIES(\nId)\n)"
+  "CREATE PROPERTY GRAPH GA\nNODE TABLES(\n  Person KEY(Id) LABEL P PROPERTIES(\nExtra,\nId,\nName)\n)"
+expect@spanner:
+  statements:
+  "CREATE TABLE Knows (\n  Id STRING(MAX) NOT NULL,\n  Src STRING(MAX),\n  Dst STRING(MAX),\n  W INT64,\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n  Age INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH G\n  NODE TABLES(\n    Person\n      KEY(Id)\n      LABEL P PROPERTIES(\n        Id,\n        Name)\n  )\n  EDGE TABLES(\n    Knows\n      KEY(Id)\n      SOURCE KEY(Src) REFERENCES Person(Id)\n      DESTINATION KEY(Dst) REFERENCES Person(Id)\n      LABEL K PROPERTIES(\n        Id)\n  )"
+  "CREATE PROPERTY GRAPH GA\n  NODE TABLES(\n    Person\n      KEY(Id)\n      LABEL P PROPERTIES(\n        Extra,\n        Id,\n        Name)\n  )"
+
+case all_columns_after_add_column_metadata
+ddl:
+  ALTER TABLE Person ADD COLUMN Age INT64
+query:
+  SELECT JSON_QUERY(PROPERTY_GRAPH_METADATA_JSON, '$.propertyDeclarations') AS properties
+  FROM INFORMATION_SCHEMA.PROPERTY_GRAPHS WHERE PROPERTY_GRAPH_NAME = 'GA'
+expect:
+  columns: properties JSON
+  ["[{\"name\":\"Id\",\"type\":\"STRING\"},{\"name\":\"Name\",\"type\":\"STRING\"},{\"name\":\"Extra\",\"type\":\"INT64\"}]"]
+expect@spanner:
+  columns: properties JSON
+  ["[{\"name\":\"Extra\",\"type\":\"INT64\"},{\"name\":\"Id\",\"type\":\"STRING\"},{\"name\":\"Name\",\"type\":\"STRING\"}]"]
+
+case all_columns_after_add_column_drop_it
+ddl:
+  ALTER TABLE Person ADD COLUMN Age INT64
+ddl:
+  ALTER TABLE Person DROP COLUMN Age
+expect:
+  ok
+expect@spanner:
+  same
+
+case implicit_properties_after_add_column_query
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE PROPERTY GRAPH GI NODE TABLES (Person)
+ddl:
+  ALTER TABLE Person ADD COLUMN Age INT64
+query:
+  SELECT * FROM GRAPH_TABLE(GI MATCH (n:Person) RETURN n.Age AS age)
+expect:
+  error: INVALID_ARGUMENT
+  message: Property Age is not exposed by element type GRAPH_NODE(GI)<Extra INT64, Id STRING, Name STRING> [at 1:56]
+expect@spanner:
+  same
+
+case create_error_position_property
+ddl:
+  CREATE PROPERTY GRAPH Bad NODE TABLES (Person KEY (Id) LABEL P PROPERTIES (Id, Nope))
+expect:
+  error: INVALID_ARGUMENT
+  message: Unrecognized name: Nope; Did you mean Name? [at 1:80]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of graph `Bad`: Unrecognized name: Nope; Did you mean Name? [at 7:9]
+
+case create_error_position_edge_reference
+ddl:
+  CREATE PROPERTY GRAPH Bad NODE TABLES (Person KEY (Id) LABEL P PROPERTIES (Id)) EDGE TABLES (Knows KEY (Id) SOURCE KEY (W) REFERENCES Person (Id) DESTINATION KEY (Dst) REFERENCES Person (Id) LABEL K PROPERTIES (Id))
+expect:
+  error: INVALID_ARGUMENT
+  message: Data types and/or annotations of the referencing columns in the edge table do not match those of the referenced columns in the node table [at 1:109]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of graph `Bad`: Data types and/or annotations of the referencing columns in the edge table do not match those of the referenced columns in the node table [at 11:7]
+
+case create_error_position_missing_table
+ddl:
+  CREATE PROPERTY GRAPH Bad NODE TABLES (Missing KEY (Id) LABEL X PROPERTIES ALL COLUMNS)
+expect:
+  error: INVALID_ARGUMENT
+  message: Table not found: Missing [at 1:40]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error analyzing the definition of graph `Bad`: Table not found: Missing [at 3:5]
+
+case get_ddl_labels_and_aliases
+schema:
+  CREATE TABLE Company (Id STRING(MAX) NOT NULL, Name STRING(MAX)) PRIMARY KEY (Id);
+  CREATE TABLE Owns (A STRING(MAX) NOT NULL, B STRING(MAX) NOT NULL, Share FLOAT64) PRIMARY KEY (A, B);
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE PROPERTY GRAPH Own NODE TABLES (Person AS Alpha KEY (Id) LABEL Person PROPERTIES ALL COLUMNS LABEL Entity PROPERTIES (Id, Name), Company KEY (Id) LABEL Entity PROPERTIES (Id, Name) LABEL Company) EDGE TABLES (Owns AS Holds KEY (A, B) SOURCE KEY (A) REFERENCES Alpha (Id) DESTINATION KEY (B) REFERENCES Company (Id) LABEL Owns PROPERTIES (Share * 2 AS Double, Share))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Company (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Owns (\n  A STRING(MAX) NOT NULL,\n  B STRING(MAX) NOT NULL,\n  Share FLOAT64,\n) PRIMARY KEY(A, B)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH Own\nNODE TABLES(\n  Person AS Alpha KEY(Id) LABEL Person PROPERTIES(\nExtra,\nId,\nName), LABEL Entity PROPERTIES(\nId,\nName),\nCompany KEY(Id) LABEL Entity PROPERTIES(\nId,\nName), LABEL Company PROPERTIES(\nId,\nName)\n)\nEDGE TABLES(\n  Owns AS Holds KEY(A, B) SOURCE KEY(A) REFERENCES Alpha(Id) DESTINATION KEY(B) REFERENCES Company(Id) LABEL Owns PROPERTIES(\nDouble,\nShare)\n)"
+expect@spanner:
+  statements:
+  "CREATE TABLE Company (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n) PRIMARY KEY(Id)"
+  "CREATE TABLE Owns (\n  A STRING(MAX) NOT NULL,\n  B STRING(MAX) NOT NULL,\n  Share FLOAT64,\n) PRIMARY KEY(A, B)"
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE PROPERTY GRAPH Own\n  NODE TABLES(\n    Person AS Alpha\n      KEY(Id)\n      LABEL Entity PROPERTIES(\n        Id,\n        Name)\n      LABEL Person PROPERTIES(\n        Extra,\n        Id,\n        Name),\n\n    Company\n      KEY(Id)\n      LABEL Company PROPERTIES(\n        Id,\n        Name)\n      LABEL Entity PROPERTIES(\n        Id,\n        Name)\n  )\n  EDGE TABLES(\n    Owns AS Holds\n      KEY(A, B)\n      SOURCE KEY(A) REFERENCES Alpha(Id)\n      DESTINATION KEY(B) REFERENCES Company(Id)\n      LABEL Owns PROPERTIES(\n        Share * 2 AS Double,\n        Share)\n  )"
+
+case get_ddl_view_element
+schema:
+  CREATE TABLE Person (Id STRING(MAX) NOT NULL, Name STRING(MAX), Extra INT64) PRIMARY KEY (Id);
+  CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p;
+  CREATE PROPERTY GRAPH GV NODE TABLES (PV KEY (Id))
+get_ddl
+expect:
+  statements:
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p"
+  "CREATE PROPERTY GRAPH GV\nNODE TABLES(\n  PV KEY(Id) LABEL PV PROPERTIES(\nId,\nName)\n)"
+expect@spanner:
+  statements:
+  "CREATE TABLE Person (\n  Id STRING(MAX) NOT NULL,\n  Name STRING(MAX),\n  Extra INT64,\n) PRIMARY KEY(Id)"
+  "CREATE VIEW PV SQL SECURITY INVOKER AS SELECT p.Id, p.Name FROM Person p"
+  "CREATE PROPERTY GRAPH GV\n  NODE TABLES(\n    PV\n      KEY(Id)\n      LABEL PV PROPERTIES(\n        Id,\n        Name)\n  )"

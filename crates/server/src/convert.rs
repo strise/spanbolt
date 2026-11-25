@@ -26,6 +26,11 @@ pub fn spanner_type(t: &ColumnType) -> pb::Type {
         ColumnType::Json => code(C::Json),
         ColumnType::Interval => code(C::Interval),
         ColumnType::Uuid => code(C::Uuid),
+        ColumnType::Proto(name) => pb::Type {
+            code: C::Proto as i32,
+            proto_type_fqn: name.clone(),
+            ..Default::default()
+        },
         ColumnType::Array(e) => pb::Type {
             code: C::Array as i32,
             array_element_type: Some(Box::new(spanner_type(e))),

@@ -43,10 +43,22 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     let bytes = cat
         .gsql
         .analyze_raw(sql, params)
-        .map_err(|e| unsupported(cat, map_error(e)))?;
+        .map_err(|e| unsupported(cat, proto_names(cat, map_error(e))))?;
     crate::limits::check(&bytes, cat.emulator_compat)?;
     AnyResolvedStatementProto::decode(bytes.as_slice())
         .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
+}
+
+/// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too
+/// (`No matching signature for function LENGTH ... Argument types: proto2.FileDescriptorSet`).
+fn proto_names(cat: &SqlCatalog, mut e: Error) -> Error {
+    let name = crate::types::FILE_DESCRIPTOR_SET;
+    if !cat.emulator_compat && e.message.contains(name) {
+        e.message = e
+            .message
+            .replace(name, &crate::types::production_proto_name(name));
+    }
+    e
 }
 
 /// Spanner SQL the catalog doesn't register, so the analyser reports it as missing: UNIMPLEMENTED

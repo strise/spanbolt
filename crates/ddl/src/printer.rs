@@ -18,6 +18,7 @@ pub(crate) fn type_sql(ty: &ColumnType) -> String {
         ColumnType::Interval => "INTERVAL".into(),
         ColumnType::Uuid => "UUID".into(),
         ColumnType::TokenList => "TOKENLIST".into(),
+        ColumnType::Proto(name) => name.clone(),
         ColumnType::Array(t) => format!("ARRAY<{}>", type_sql(t)),
         ColumnType::Struct(fields) => {
             let f: Vec<String> = fields

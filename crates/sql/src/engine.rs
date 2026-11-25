@@ -433,7 +433,11 @@ impl Engine {
                         .clone()
                         .filter(|n| !n.starts_with('$'))
                         .unwrap_or_default();
-                    fields.push((name, crate::plan::col_type(c)?));
+                    let ty = crate::plan::col_type(c)?;
+                    fields.push((
+                        name,
+                        crate::types::result_type(ty, self.opts.emulator_compat),
+                    ));
                 }
                 if q.is_value_table == Some(true) {
                     for f in &mut fields {

@@ -349,7 +349,7 @@ fn nid(c: &Option<ResolvedColumnProto>) -> i64 {
 }
 
 pub fn col_type(c: &ResolvedColumnProto) -> Result<Type> {
-    types::from_proto(
+    types::column_from_proto(
         c.r#type
             .as_ref()
             .ok_or_else(|| Error::internal("column without type"))?,

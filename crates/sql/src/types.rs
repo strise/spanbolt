@@ -15,6 +15,40 @@ pub fn unimplemented(what: impl std::fmt::Display) -> Error {
     )
 }
 
+/// GoogleSQL's name of `INFORMATION_SCHEMA.SCHEMATA.PROTO_BUNDLE`'s type, the only PROTO type.
+pub const FILE_DESCRIPTOR_SET: &str = "google.protobuf.FileDescriptorSet";
+
+/// Production's name for a PROTO type: Spanner's descriptors live in `proto2`, not
+/// `google.protobuf`. INFORMATION_SCHEMA spells it this way in both modes; result metadata only
+/// by default.
+pub fn production_proto_name(name: &str) -> String {
+    match name.strip_prefix("google.protobuf.") {
+        Some(rest) => format!("proto2.{rest}"),
+        None => name.to_string(),
+    }
+}
+
+/// The type of a column read from a table or returned by a query. Unlike [`from_proto`], it
+/// accepts `PROTO_BUNDLE`'s PROTO type, which spanbolt can scan and return but nothing else.
+pub fn column_from_proto(t: &TypeProto) -> Result<Type> {
+    if t.type_kind == Some(TypeKind::TypeProto as i32)
+        && let Some(name) = t.proto_type.as_ref().and_then(|p| p.proto_name.as_deref())
+        && name == FILE_DESCRIPTOR_SET
+    {
+        return Ok(Type::Proto(name.to_string()));
+    }
+    from_proto(t)
+}
+
+/// A query result column's type as the mode reports it: production names PROTO types
+/// `proto2.*`, the emulator `google.protobuf.*`.
+pub fn result_type(t: Type, emulator_compat: bool) -> Type {
+    match t {
+        Type::Proto(name) if !emulator_compat => Type::Proto(production_proto_name(&name)),
+        other => other,
+    }
+}
+
 pub fn from_proto(t: &TypeProto) -> Result<Type> {
     let kind = t.type_kind.and_then(|k| TypeKind::try_from(k).ok());
     Ok(match kind {
@@ -52,6 +86,8 @@ pub fn from_proto(t: &TypeProto) -> Result<Type> {
             }
             Type::Struct(fields)
         }
+        // Only scanning and returning PROTO_BUNDLE is supported (`column_from_proto`).
+        Some(TypeKind::TypeProto) => return Err(unimplemented("Using a PROTO value")),
         // Graph elements are carried as structs (see `graph_exec`).
         Some(TypeKind::TypeGraphElement) => {
             Type::Struct(vec![(Some("$graph_element".into()), Type::Int64)])
@@ -103,6 +139,11 @@ pub fn spanner_type(t: &Type) -> pb::Type {
         Type::Json => code(C::Json),
         Type::Interval => code(C::Interval),
         Type::Uuid => code(C::Uuid),
+        Type::Proto(name) => pb::Type {
+            code: C::Proto as i32,
+            proto_type_fqn: name.clone(),
+            ..Default::default()
+        },
         Type::Array(e) => pb::Type {
             code: C::Array as i32,
             array_element_type: Some(Box::new(spanner_type(e))),
@@ -187,6 +228,8 @@ pub fn gsql_name(t: &Type) -> String {
         Type::Interval => "INTERVAL".into(),
         Type::Uuid => "UUID".into(),
         Type::TokenList => "TOKENLIST".into(),
+        // The shim builds this one PROTO type by this name.
+        Type::Proto(name) => format!("PROTO<{name}>"),
         Type::Array(e) => format!("ARRAY<{}>", gsql_name(e)),
         Type::Struct(fields) => {
             let parts: Vec<String> = fields
@@ -206,6 +249,7 @@ pub fn spanner_name(t: &Type) -> String {
     match t {
         Type::Float32 => "FLOAT32".into(),
         Type::Float64 => "FLOAT64".into(),
+        Type::Proto(name) => format!("PROTO<{}>", production_proto_name(name)),
         Type::Array(e) => format!("ARRAY<{}>", spanner_name(e)),
         Type::Struct(fields) => {
             let parts: Vec<String> = fields
@@ -230,5 +274,52 @@ pub fn same(a: &Type, b: &Type) -> bool {
             x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same(&p.1, &q.1))
         }
         _ => a == b,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use googlesql_sys::proto::ProtoTypeProto;
+
+    fn proto_type(name: &str) -> TypeProto {
+        TypeProto {
+            type_kind: Some(TypeKind::TypeProto as i32),
+            proto_type: Some(ProtoTypeProto {
+                proto_name: Some(name.into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn proto_bundle_is_only_a_column_type() {
+        let t = proto_type(FILE_DESCRIPTOR_SET);
+        assert_eq!(
+            column_from_proto(&t).ok(),
+            Some(Type::Proto(FILE_DESCRIPTOR_SET.into()))
+        );
+        assert_eq!(
+            from_proto(&t).err().map(|e| e.code),
+            Some(Code::Unimplemented)
+        );
+        let other = proto_type("google.protobuf.FileDescriptorProto");
+        assert_eq!(
+            column_from_proto(&other).err().map(|e| e.code),
+            Some(Code::Unimplemented)
+        );
+    }
+
+    #[test]
+    fn proto_names_per_mode() {
+        let t = Type::Proto(FILE_DESCRIPTOR_SET.into());
+        assert_eq!(gsql_name(&t), "PROTO<google.protobuf.FileDescriptorSet>");
+        assert_eq!(spanner_name(&t), "PROTO<proto2.FileDescriptorSet>");
+        assert_eq!(result_type(t.clone(), true), t);
+        assert_eq!(
+            spanner_type(&result_type(t, false)).proto_type_fqn,
+            "proto2.FileDescriptorSet"
+        );
     }
 }

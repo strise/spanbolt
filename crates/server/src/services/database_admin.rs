@@ -104,7 +104,9 @@ pub fn apply_ddl(
 
 /// Validates the DEFAULT, generated-column and CHECK expressions a statement declares through
 /// the registered SQL evaluator (none without the `googlesql` feature).
-fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
+/// A property graph is kept as the definition the evaluator prints for it (its `ALL COLUMNS`
+/// written out), as Cloud Spanner keeps it.
+fn validate_exprs(schema: &mut Schema, stmt: &Statement) -> Result<(), Status> {
     use spanbolt_storage::expr::ExprKind;
     let (table, only): (&str, Option<&str>) = match stmt {
         Statement::Opaque {
@@ -114,9 +116,17 @@ fn validate_exprs(schema: &Schema, stmt: &Statement) -> Result<(), Status> {
             let Some(ev) = expr_evaluator() else {
                 return Ok(());
             };
-            return ev
+            let ddl = ev
                 .validate_property_graph(&std::sync::Arc::new(schema.clone()), &object.name)
-                .map_err(to_status);
+                .map_err(to_status)?;
+            if let Some(ddl) = ddl
+                && let Some(o) = schema.opaque.iter_mut().find(|o| {
+                    o.kind == "PROPERTY GRAPH" && o.name.eq_ignore_ascii_case(&object.name)
+                })
+            {
+                o.ddl = ddl;
+            }
+            return Ok(());
         }
         Statement::CreateTable { table, .. } => (&table.name, None),
         Statement::AlterTable { table, action, .. } => match action {
@@ -518,7 +528,23 @@ impl DatabaseAdmin for DatabaseAdminService {
         let schema = &entry.db.latest().state.schema;
         // The emulator leaves roles and grants out of GetDatabaseDdl.
         let statements = if self.emu.emulator_compat {
-            schema.to_ddl_emulator_compat()
+            let mut out = schema.to_ddl_emulator_compat();
+            // The emulator prints a graph from its analysed form, not as it was written.
+            if let Some(ev) = expr_evaluator() {
+                let printed = ev.emulator_graph_ddl(&entry.db.latest().state);
+                for o in schema.opaque.iter().filter(|o| o.kind == "PROPERTY GRAPH") {
+                    let Some((_, p)) = printed
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case(&o.name))
+                    else {
+                        continue;
+                    };
+                    if let Some(s) = out.iter_mut().find(|s| **s == o.ddl) {
+                        s.clone_from(p);
+                    }
+                }
+            }
+            out
         } else {
             schema.to_ddl()
         };

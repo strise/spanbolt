@@ -145,7 +145,217 @@ fn main() {
     let code = DEEP_NODES
         .iter()
         .fold(code, |code, name| decode_without_depth_limit(code, name));
+    let code = struct_field_without_depth_limit(code);
+    let code = struct_value_without_depth_limit(array_type_with_depth_count(code));
     fs::write(&generated, code).expect("write googlesql.rs");
+}
+
+/// `StructFieldProto` as prost-build generates it.
+const STRUCT_FIELD: &str = "#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StructFieldProto {
+    #[prost(string, optional, tag = \"1\")]
+    pub field_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = \"2\")]
+    pub field_type: ::core::option::Option<TypeProto>,
+}
+";
+
+/// Replaces the derived `prost::Message` of `StructFieldProto` with one that decodes its type with
+/// a fresh `DecodeContext` and counts its own depth instead (`deep` in lib.rs). A STRUCT level of a
+/// `TypeProto` is three messages, so prost stopped at a type 32 STRUCTs deep, where the emulator
+/// answers thousands.
+fn struct_field_without_depth_limit(code: String) -> String {
+    assert!(
+        code.contains(STRUCT_FIELD),
+        "generated StructFieldProto changed; update STRUCT_FIELD in build.rs"
+    );
+    let replacement = "#[derive(Clone, PartialEq, Debug, Default)]
+pub struct StructFieldProto {
+    pub field_name: ::core::option::Option<::prost::alloc::string::String>,
+    pub field_type: ::core::option::Option<TypeProto>,
+}
+impl ::prost::Message for StructFieldProto {
+    fn encode_raw(&self, buf: &mut impl ::prost::bytes::BufMut) {
+        if let Some(name) = &self.field_name {
+            ::prost::encoding::string::encode(1, name, buf);
+        }
+        if let Some(ty) = &self.field_type {
+            ::prost::encoding::message::encode(2, ty, buf);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        tag: u32,
+        wire_type: ::prost::encoding::wire_type::WireType,
+        buf: &mut impl ::prost::bytes::Buf,
+        ctx: ::prost::encoding::DecodeContext,
+    ) -> ::core::result::Result<(), ::prost::DecodeError> {
+        match tag {
+            1 => ::prost::encoding::string::merge(
+                wire_type,
+                self.field_name.get_or_insert_with(Default::default),
+                buf,
+                ctx,
+            )
+            .map_err(|mut e| {
+                e.push(\"StructFieldProto\", \"field_name\");
+                e
+            }),
+            2 => {
+                let _level = crate::deep::Level::enter_type()?;
+                ::prost::encoding::message::merge(
+                    wire_type,
+                    self.field_type.get_or_insert_with(Default::default),
+                    buf,
+                    ::prost::encoding::DecodeContext::default(),
+                )
+                .map_err(|mut e| {
+                    e.push(\"StructFieldProto\", \"field_type\");
+                    e
+                })
+            }
+            _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+    fn encoded_len(&self) -> usize {
+        self.field_name
+            .as_ref()
+            .map_or(0, |name| ::prost::encoding::string::encoded_len(1, name))
+            + self
+                .field_type
+                .as_ref()
+                .map_or(0, |ty| ::prost::encoding::message::encoded_len(2, ty))
+    }
+    fn clear(&mut self) {
+        self.field_name = None;
+        self.field_type = None;
+    }
+}
+";
+    code.replacen(STRUCT_FIELD, replacement, 1)
+}
+
+/// `ArrayTypeProto` as prost-build generates it.
+const ARRAY_TYPE: &str = "#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ArrayTypeProto {
+    #[prost(message, optional, boxed, tag = \"1\")]
+    pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<TypeProto>>,
+}
+";
+
+/// Replaces the derived `prost::Message` of `ArrayTypeProto` with one that counts its element type
+/// as a level of type, so that `deep::MAX` bounds how deep a type nests whatever it is made of.
+fn array_type_with_depth_count(code: String) -> String {
+    assert!(
+        code.contains(ARRAY_TYPE),
+        "generated ArrayTypeProto changed; update ARRAY_TYPE in build.rs"
+    );
+    let replacement = "#[derive(Clone, PartialEq, Debug, Default)]
+pub struct ArrayTypeProto {
+    pub element_type: ::core::option::Option<::prost::alloc::boxed::Box<TypeProto>>,
+}
+impl ::prost::Message for ArrayTypeProto {
+    fn encode_raw(&self, buf: &mut impl ::prost::bytes::BufMut) {
+        if let Some(ty) = &self.element_type {
+            ::prost::encoding::message::encode(1, &**ty, buf);
+        }
+    }
+    fn merge_field(
+        &mut self,
+        tag: u32,
+        wire_type: ::prost::encoding::wire_type::WireType,
+        buf: &mut impl ::prost::bytes::Buf,
+        ctx: ::prost::encoding::DecodeContext,
+    ) -> ::core::result::Result<(), ::prost::DecodeError> {
+        match tag {
+            1 => {
+                let _level = crate::deep::Level::enter_type()?;
+                ::prost::encoding::message::merge(
+                    wire_type,
+                    &mut **self.element_type.get_or_insert_with(Default::default),
+                    buf,
+                    ::prost::encoding::DecodeContext::default(),
+                )
+                .map_err(|mut e| {
+                    e.push(\"ArrayTypeProto\", \"element_type\");
+                    e
+                })
+            }
+            _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+        }
+    }
+    fn encoded_len(&self) -> usize {
+        self.element_type
+            .as_ref()
+            .map_or(0, |ty| ::prost::encoding::message::encoded_len(1, &**ty))
+    }
+    fn clear(&mut self) {
+        self.element_type = None;
+    }
+}
+";
+    code.replacen(ARRAY_TYPE, replacement, 1)
+}
+
+/// `ValueProto.Struct` as prost-build generates it.
+const STRUCT_VALUE: &str = "    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Struct {
+        #[prost(message, repeated, tag = \"1\")]
+        pub field: ::prost::alloc::vec::Vec<super::ValueProto>,
+    }
+";
+
+/// Replaces the derived `prost::Message` of a STRUCT value (`ValueProto.Struct`) with one that
+/// decodes its fields with a fresh `DecodeContext`, counted as a level of type. The analyser folds
+/// `STRUCT(STRUCT(1))` into a literal, two messages a level: prost stopped at 50.
+fn struct_value_without_depth_limit(code: String) -> String {
+    assert!(
+        code.contains(STRUCT_VALUE),
+        "generated ValueProto.Struct changed; update STRUCT_VALUE in build.rs"
+    );
+    let replacement = "    #[derive(Clone, PartialEq, Debug, Default)]
+    pub struct Struct {
+        pub field: ::prost::alloc::vec::Vec<super::ValueProto>,
+    }
+    impl ::prost::Message for Struct {
+        fn encode_raw(&self, buf: &mut impl ::prost::bytes::BufMut) {
+            for value in &self.field {
+                ::prost::encoding::message::encode(1, value, buf);
+            }
+        }
+        fn merge_field(
+            &mut self,
+            tag: u32,
+            wire_type: ::prost::encoding::wire_type::WireType,
+            buf: &mut impl ::prost::bytes::Buf,
+            ctx: ::prost::encoding::DecodeContext,
+        ) -> ::core::result::Result<(), ::prost::DecodeError> {
+            match tag {
+                1 => {
+                    let _level = crate::deep::Level::enter_type()?;
+                    ::prost::encoding::message::merge_repeated(
+                        wire_type,
+                        &mut self.field,
+                        buf,
+                        ::prost::encoding::DecodeContext::default(),
+                    )
+                    .map_err(|mut e| {
+                        e.push(\"Struct\", \"field\");
+                        e
+                    })
+                }
+                _ => ::prost::encoding::skip_field(wire_type, tag, buf, ctx),
+            }
+        }
+        fn encoded_len(&self) -> usize {
+            ::prost::encoding::message::encoded_len_repeated(1, &self.field)
+        }
+        fn clear(&mut self) {
+            self.field.clear();
+        }
+    }
+";
+    code.replacen(STRUCT_VALUE, replacement, 1)
 }
 
 /// The node wrappers every expression and scan of a resolved AST passes through.

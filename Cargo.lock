@@ -1417,10 +1417,12 @@ dependencies = [
  "prost-types",
  "protoc-bin-vendored",
  "regex",
+ "serde",
  "serde_json",
  "spanbolt-proto",
  "tokio",
  "tonic",
+ "tonic-prost",
 ]
 
 [[package]]

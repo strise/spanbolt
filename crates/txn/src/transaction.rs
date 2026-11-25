@@ -167,7 +167,8 @@ impl ReadWriteTxn {
         let clock = self.db.clock();
         let mut w = Writer::new(&state, ts)
             .with_max_ts(clock.write_horizon())
-            .with_now(clock.now());
+            .with_now(clock.now())
+            .with_dml();
         for m in &ops {
             w.apply(m)?;
         }

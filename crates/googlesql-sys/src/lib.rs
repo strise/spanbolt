@@ -43,16 +43,36 @@ struct RawTable {
     _private: [u8; 0],
 }
 
+#[repr(C)]
+struct RawProtos {
+    _private: [u8; 0],
+}
+
 unsafe extern "C" {
     fn gsql_catalog_new(json: *const c_char, len: usize, error: *mut Buf) -> *mut RawCatalog;
     fn gsql_catalog_free(catalog: *mut RawCatalog);
     fn gsql_table_new(json: *const c_char, len: usize, error: *mut Buf) -> *mut RawTable;
     fn gsql_table_free(table: *mut RawTable);
-    fn gsql_catalog_from_tables(
+    fn gsql_protos_new(
+        descriptors: *const u8,
+        descriptors_len: usize,
+        types: *const c_char,
+        types_len: usize,
+        error: *mut Buf,
+    ) -> *mut RawProtos;
+    fn gsql_protos_free(protos: *mut RawProtos);
+    fn gsql_table_new_with_protos(
+        json: *const c_char,
+        len: usize,
+        protos: *const RawProtos,
+        error: *mut Buf,
+    ) -> *mut RawTable;
+    fn gsql_catalog_from_tables_with_protos(
         tables: *const *const RawTable,
         n: usize,
         features: *const c_char,
         features_len: usize,
+        protos: *const RawProtos,
         error: *mut Buf,
     ) -> *mut RawCatalog;
     fn gsql_analyze(
@@ -122,9 +142,73 @@ fn build_error(err: Buf) -> AnalyzeError {
     }
 }
 
+/// The types of a proto bundle (`CREATE PROTO BUNDLE`), immutable. Tables and catalogs built
+/// with them hold an `Arc`, so they outlive every user.
+pub struct Protos(NonNull<RawProtos>);
+
+// SAFETY: the shim never mutates bundle types after construction except through GoogleSQL's
+// TypeFactory, which is thread-safe.
+unsafe impl Send for Protos {}
+unsafe impl Sync for Protos {}
+
+impl Protos {
+    /// The bundle's `types` (full names: messages, nested messages and enums) from
+    /// `descriptors`, a serialized `google.protobuf.FileDescriptorSet`. Imports the set leaves
+    /// out (`google/protobuf/*.proto`) come from the protos compiled into the shim.
+    pub fn new(descriptors: &[u8], types: &[&str]) -> Result<Self, AnalyzeError> {
+        let types = serde_json_array(types);
+        let mut err = empty_buf();
+        // SAFETY: pointers are valid for the given lengths for the duration of the call.
+        let raw = unsafe {
+            gsql_protos_new(
+                descriptors.as_ptr(),
+                descriptors.len(),
+                types.as_ptr().cast(),
+                types.len(),
+                &mut err,
+            )
+        };
+        NonNull::new(raw).map(Self).ok_or_else(|| build_error(err))
+    }
+}
+
+impl Drop for Protos {
+    fn drop(&mut self) {
+        // SAFETY: created by gsql_protos_new, freed once, after every table and catalog that
+        // uses it (they hold an Arc).
+        unsafe { gsql_protos_free(self.0.as_ptr()) }
+    }
+}
+
+/// A JSON array of strings.
+fn serde_json_array(items: &[&str]) -> String {
+    let quoted: Vec<String> = items
+        .iter()
+        .map(|s| {
+            let mut out = String::with_capacity(s.len() + 2);
+            out.push('"');
+            for c in s.chars() {
+                match c {
+                    '"' => out.push_str("\\\""),
+                    '\\' => out.push_str("\\\\"),
+                    c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                    c => out.push(c),
+                }
+            }
+            out.push('"');
+            out
+        })
+        .collect();
+    format!("[{}]", quoted.join(","))
+}
+
 /// One GoogleSQL table definition, immutable. Any number of catalogs can share it, so a table
 /// that a DDL leaves unchanged is built once for every schema version that has it.
-pub struct Table(NonNull<RawTable>);
+pub struct Table {
+    raw: NonNull<RawTable>,
+    /// The bundle types its columns use; dropped after `raw`.
+    _protos: Option<Arc<Protos>>,
+}
 
 // SAFETY: the shim never mutates a table after construction.
 unsafe impl Send for Table {}
@@ -137,14 +221,38 @@ impl Table {
         let mut err = empty_buf();
         // SAFETY: pointers are valid for the given lengths for the duration of the call.
         let raw = unsafe { gsql_table_new(json.as_ptr().cast(), json.len(), &mut err) };
-        NonNull::new(raw).map(Self).ok_or_else(|| build_error(err))
+        NonNull::new(raw)
+            .map(|raw| Self { raw, _protos: None })
+            .ok_or_else(|| build_error(err))
+    }
+
+    /// [`Table::new`] where column types may also be `PROTO<x>`, `ENUM<x>` and arrays of them,
+    /// for types of `protos`.
+    pub fn with_protos(json: &str, protos: &Arc<Protos>) -> Result<Self, AnalyzeError> {
+        let mut err = empty_buf();
+        // SAFETY: pointers are valid for the given lengths for the duration of the call; the
+        // table keeps `protos` alive.
+        let raw = unsafe {
+            gsql_table_new_with_protos(
+                json.as_ptr().cast(),
+                json.len(),
+                protos.0.as_ptr().cast_const(),
+                &mut err,
+            )
+        };
+        NonNull::new(raw)
+            .map(|raw| Self {
+                raw,
+                _protos: Some(protos.clone()),
+            })
+            .ok_or_else(|| build_error(err))
     }
 }
 
 impl Drop for Table {
     fn drop(&mut self) {
         // SAFETY: created by gsql_table_new, freed once. Catalogs that refer to it hold an Arc.
-        unsafe { gsql_table_free(self.0.as_ptr()) }
+        unsafe { gsql_table_free(self.raw.as_ptr()) }
     }
 }
 
@@ -154,6 +262,8 @@ pub struct Catalog {
     raw: NonNull<RawCatalog>,
     /// Tables the catalog refers to; dropped after `raw` (see `Drop`).
     _tables: Vec<Arc<Table>>,
+    /// The bundle types SQL can name; dropped after `raw`.
+    _protos: Option<Arc<Protos>>,
 }
 
 // SAFETY: the shim never mutates the catalog after construction; each analysis uses its own
@@ -171,6 +281,7 @@ impl Catalog {
             Some(raw) => Ok(Self {
                 raw,
                 _tables: Vec::new(),
+                _protos: None,
             }),
             None => Err(build_error(err)),
         }
@@ -185,22 +296,36 @@ impl Catalog {
         tables: Vec<Arc<Table>>,
         extra_features: &[&str],
     ) -> Result<Self, AnalyzeError> {
+        Self::from_tables_with_protos(tables, extra_features, None)
+    }
+
+    /// [`Catalog::from_tables`] where SQL can also name the types of `protos`: in `CAST`, `NEW`
+    /// and parameter types (`PROTO<x>`, `ENUM<x>`). Tables must use the same `protos`, if any.
+    pub fn from_tables_with_protos(
+        tables: Vec<Arc<Table>>,
+        extra_features: &[&str],
+        protos: Option<Arc<Protos>>,
+    ) -> Result<Self, AnalyzeError> {
         let features = if extra_features.is_empty() {
             String::new()
         } else {
-            let quoted: Vec<String> = extra_features.iter().map(|f| format!("\"{f}\"")).collect();
-            format!("[{}]", quoted.join(","))
+            serde_json_array(extra_features)
         };
-        let ptrs: Vec<*const RawTable> = tables.iter().map(|t| t.0.as_ptr().cast_const()).collect();
+        let ptrs: Vec<*const RawTable> =
+            tables.iter().map(|t| t.raw.as_ptr().cast_const()).collect();
+        let protos_ptr = protos
+            .as_ref()
+            .map_or(std::ptr::null(), |p| p.0.as_ptr().cast_const());
         let mut err = empty_buf();
         // SAFETY: `ptrs` holds live tables (kept alive by `tables`, stored in the catalog);
         // string pointers valid for their lengths for the call.
         let raw = unsafe {
-            gsql_catalog_from_tables(
+            gsql_catalog_from_tables_with_protos(
                 ptrs.as_ptr(),
                 ptrs.len(),
                 features.as_ptr().cast(),
                 features.len(),
+                protos_ptr,
                 &mut err,
             )
         };
@@ -208,6 +333,7 @@ impl Catalog {
             Some(raw) => Ok(Self {
                 raw,
                 _tables: tables,
+                _protos: protos,
             }),
             None => Err(build_error(err)),
         }
@@ -345,85 +471,143 @@ pub fn with_stack_for<R: Send>(sql_len: usize, f: impl FnOnce() -> R + Send) -> 
     })
 }
 
-/// Decodes a serialized resolved AST. Expressions and scans nest past prost's limit of 100
-/// messages (build.rs), and a level of them takes tens of KiB of stack to decode: an AST deeper
-/// than [`deep::INLINE_LEVELS`] decodes again on a thread with a stack for [`deep::MAX_LEVELS`].
+/// Decodes a serialized resolved AST. Expressions, scans and STRUCT types nest past prost's limit of
+/// 100 messages (build.rs), and a level of them takes up to tens of KiB of stack to decode: an AST
+/// deeper than [`deep::INLINE`] decodes again on a thread with a stack for [`deep::MAX`].
 pub fn decode_statement(bytes: &[u8]) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
-    let (mut r, mut too_deep) = deep::decode(bytes, deep::INLINE_LEVELS);
-    if too_deep {
+    decode_statement_within(bytes, deep::MAX.types)
+}
+
+/// [`decode_statement`], with types nested at most `types` levels (at most [`deep::MAX`]'s).
+pub fn decode_statement_within(
+    bytes: &[u8],
+    types: u32,
+) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+    let max = deep::Limits {
+        types: types.min(deep::MAX.types),
+        ..deep::MAX
+    };
+    let inline = deep::Limits {
+        types: deep::INLINE.types.min(max.types),
+        ..deep::INLINE
+    };
+    let (mut r, mut too_deep) = deep::decode(bytes, inline);
+    if too_deep.is_some() {
         (r, too_deep) = std::thread::scope(|s| {
             std::thread::Builder::new()
                 .name("googlesql-decode".into())
                 .stack_size(deep::STACK)
-                .spawn_scoped(s, || deep::decode(bytes, deep::MAX_LEVELS))
+                .spawn_scoped(s, || deep::decode(bytes, max))
                 .expect("spawn a decoder thread")
                 .join()
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         });
     }
-    r.map_err(|e| AnalyzeError {
-        code: 13,
+    r.map_err(|e| match too_deep {
+        // What the emulator's analyser and Spanner's answer when they run out of stack on a deep
+        // expression or type.
+        Some(_) => AnalyzeError {
+            code: 8,
+            message: "Out of stack space due to deeply nested query expression during query \
+                      resolution"
+                .into(),
+        },
         // The error names every message it is nested in: too long for a gRPC status.
-        message: if too_deep {
-            "decode AnyResolvedStatementProto: expressions nested too deep".into()
-        } else {
-            format!("decode AnyResolvedStatementProto: {e}")
+        None => AnalyzeError {
+            code: 13,
+            message: format!("decode AnyResolvedStatementProto: {e}"),
         },
     })
 }
 
-/// Depth of the expression and scan nodes being decoded on this thread, for the wrappers build.rs
-/// generates.
+/// Depth of the expression and scan nodes, and of the STRUCT types, being decoded on this thread,
+/// for the wrappers build.rs generates.
 #[doc(hidden)]
 pub mod deep {
     use std::cell::Cell;
 
-    /// Nested expression and scan nodes decoded on the caller's stack: ordinary statements.
-    pub const INLINE_LEVELS: u32 = 16;
-    /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
-    /// subqueries and 15 nested structs before this.
-    pub const MAX_LEVELS: u32 = 256;
-    /// Stack for [`MAX_LEVELS`] (address space, used only as deep as the AST goes).
-    pub const STACK: usize = 64 << 20;
-
-    thread_local! {
-        static DEPTH: Cell<u32> = const { Cell::new(0) };
-        static LIMIT: Cell<u32> = const { Cell::new(INLINE_LEVELS) };
-        static TOO_DEEP: Cell<bool> = const { Cell::new(false) };
+    /// How deep a decode goes: nested expression and scan nodes, and nested STRUCT types.
+    #[derive(Clone, Copy)]
+    pub struct Limits {
+        pub nodes: u32,
+        pub types: u32,
     }
 
-    /// One nested expression or scan node, for as long as it decodes.
-    pub struct Level(());
+    /// Decoded on the caller's stack: ordinary statements.
+    pub const INLINE: Limits = Limits {
+        nodes: 16,
+        types: 32,
+    };
+    /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
+    /// subqueries and 15 nested STRUCT parameters well before `nodes`, but not a chain of field
+    /// accesses (`(STRUCT(STRUCT(1 AS f) AS f)).f.f`): Spanner answers 400 of them and runs out of
+    /// stack before 500, the emulator answers 5000. Deeper than `nodes`, a statement fails the way
+    /// both do when they run out of stack. A type has no limit of its own in the emulator
+    /// (`CAST(NULL AS STRUCT<f STRUCT<...>>)` answers 5000 levels, until its analyser runs out of
+    /// stack; Spanner about 1200), but the engine converts and drops types recursively, on 2 MiB
+    /// handler threads: about 6500 nested STRUCT and ARRAY types overflow one.
+    pub const MAX: Limits = Limits {
+        nodes: 500,
+        types: 2000,
+    };
+    /// Stack for [`MAX`] (address space, used only as deep as the AST goes).
+    pub const STACK: usize = 64 << 20;
+    /// What [`Level::enter_type`] counts, as [`decode`] reports it.
+    pub const TYPES: &str = "types";
+
+    thread_local! {
+        static NODES: Cell<u32> = const { Cell::new(0) };
+        static TYPE_LEVELS: Cell<u32> = const { Cell::new(0) };
+        static LIMITS: Cell<Limits> = const { Cell::new(INLINE) };
+        static TOO_DEEP: Cell<Option<&'static str>> = const { Cell::new(None) };
+    }
+
+    /// One nested expression or scan node, or STRUCT field type, for as long as it decodes.
+    pub struct Level(&'static std::thread::LocalKey<Cell<u32>>);
 
     impl Level {
+        /// An expression or scan node.
         pub fn enter() -> Result<Level, prost::DecodeError> {
-            let depth = DEPTH.get() + 1;
-            if depth > LIMIT.get() {
-                TOO_DEEP.set(true);
+            Self::enter_in(&NODES, LIMITS.get().nodes, "expressions")
+        }
+
+        /// The type of a STRUCT field or ARRAY element, or a STRUCT value's fields.
+        pub fn enter_type() -> Result<Level, prost::DecodeError> {
+            Self::enter_in(&TYPE_LEVELS, LIMITS.get().types, TYPES)
+        }
+
+        fn enter_in(
+            counter: &'static std::thread::LocalKey<Cell<u32>>,
+            limit: u32,
+            what: &'static str,
+        ) -> Result<Level, prost::DecodeError> {
+            let depth = counter.get() + 1;
+            if depth > limit {
+                TOO_DEEP.set(Some(what));
                 #[allow(deprecated)]
-                return Err(prost::DecodeError::new("expressions nested too deep"));
+                return Err(prost::DecodeError::new("nested too deep"));
             }
-            DEPTH.set(depth);
-            Ok(Level(()))
+            counter.set(depth);
+            Ok(Level(counter))
         }
     }
 
     impl Drop for Level {
         fn drop(&mut self) {
-            DEPTH.set(DEPTH.get() - 1);
+            self.0.set(self.0.get() - 1);
         }
     }
 
-    /// Decodes `bytes` with at most `limit` nested levels, and whether it went past them.
+    /// Decodes `bytes` within `limits`, and what went past them.
     pub(crate) fn decode<M: prost::Message + Default>(
         bytes: &[u8],
-        limit: u32,
-    ) -> (Result<M, prost::DecodeError>, bool) {
-        LIMIT.set(limit);
-        TOO_DEEP.set(false);
+        limits: Limits,
+    ) -> (Result<M, prost::DecodeError>, Option<&'static str>) {
+        LIMITS.set(limits);
+        TOO_DEEP.set(None);
         let r = M::decode(bytes);
-        LIMIT.set(INLINE_LEVELS);
-        (r, TOO_DEEP.replace(false))
+        LIMITS.set(INLINE);
+        (r, TOO_DEEP.replace(None))
     }
 }
 

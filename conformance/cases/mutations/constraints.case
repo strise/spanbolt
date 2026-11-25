@@ -50,6 +50,9 @@ insert Parent cols=P,Name:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: Parent.Name in table: Parent
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Name must not be NULL in table Parent.
 
 case not_null_missing_column
 insert Parent cols=P:
@@ -57,6 +60,9 @@ insert Parent cols=P:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table Parent does not specify a non-null value for NOT NULL column: Name
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table Parent does not specify a non-null value for these NOT NULL columns: Name.
 
 case not_null_update
 update Parent cols=P,Name:
@@ -64,6 +70,9 @@ update Parent cols=P,Name:
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: Parent.Name in table: Parent
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Name must not be NULL in table Parent.
 
 case duplicate_key_insert
 insert Parent cols=P,Name:
@@ -167,6 +176,9 @@ insert Parent cols=Name:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table Parent does not specify a non-null value for NOT NULL column: P
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: P must not be NULL in table Parent.
 
 case missing_interleave_parent
 insert Child cols=P,C:

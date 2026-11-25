@@ -75,20 +75,30 @@ dml txn=t:
   INSERT INTO T (Id, V) VALUES (2, 'two')
 expect:
   count: 1
+expect@spanner:
+  same
 dml txn=t:
   UPDATE T SET V = NULL WHERE Id = 1
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.V in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: V must not be NULL in table T.
 commit txn=t
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: T.V in table: T
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: V must not be NULL in table T.
 read T cols=Id,V:
   all
 expect:
   columns: Id INT64, V STRING
   ["1","one"]
+expect@spanner:
+  same
 
 case dml_failure_then_mutations_commit
 begin txn=t

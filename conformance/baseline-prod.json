@@ -130,10 +130,10 @@
     },
     "function": {
       "error": 0,
-      "fail": 4,
-      "pass": 2691,
+      "fail": 9,
+      "pass": 2706,
       "skipped": 0,
-      "total": 2702,
+      "total": 2722,
       "unimplemented": 7
     },
     "graph": {
@@ -203,9 +203,9 @@
     "limits": {
       "error": 0,
       "fail": 0,
-      "pass": 7,
+      "pass": 13,
       "skipped": 0,
-      "total": 7,
+      "total": 13,
       "unimplemented": 0
     },
     "mutations": {
@@ -235,9 +235,9 @@
     "oracle": {
       "error": 0,
       "fail": 4,
-      "pass": 230,
+      "pass": 236,
       "skipped": 0,
-      "total": 234,
+      "total": 240,
       "unimplemented": 0
     },
     "oracle2": {
@@ -307,9 +307,9 @@
     "search": {
       "error": 0,
       "fail": 48,
-      "pass": 311,
+      "pass": 312,
       "skipped": 1,
-      "total": 381,
+      "total": 382,
       "unimplemented": 21
     },
     "select": {
@@ -322,10 +322,10 @@
     },
     "sql": {
       "error": 0,
-      "fail": 64,
-      "pass": 3812,
+      "fail": 69,
+      "pass": 3834,
       "skipped": 3,
-      "total": 3911,
+      "total": 3938,
       "unimplemented": 32
     },
     "string": {
@@ -6606,6 +6606,66 @@
     },
     {
       "detail": null,
+      "name": "sql/concat_nesting/string_chain",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/concat_nesting/column_chain",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/concat_nesting/other_types",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/concat_nesting/mixed",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/concat_nesting/concat_calls",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/concat_nesting/concat_args",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "limits",
+        "oracle"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/correlated_nonkey/exists_string",
       "status": "pass",
       "tags": [
@@ -11414,6 +11474,186 @@
       ]
     },
     {
+      "detail": "line 2645:\n  status: expected OK, got INVALID_ARGUMENT\n  columns:\n    - STRING\n    + (none)",
+      "name": "sql/functions/format_invalid_percent_empty_table",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": "line 2654:\n  status: expected OUT_OF_RANGE, got INVALID_ARGUMENT",
+      "name": "sql/functions/format_invalid_percent_minus",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": "line 2664:\n  status: expected OUT_OF_RANGE, got INVALID_ARGUMENT",
+      "name": "sql/functions/format_invalid_percent_precision",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_invalid_percent_grouping",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": "line 2683:\n  message:\n    - Too many arguments to FORMAT for pattern \\\"%5%d\\\"; Expected 1; Got 2 [at 1:8]\n    + Invalid FORMAT string: \\\"%5%d\\\" [at 1:8]",
+      "name": "sql/functions/format_invalid_percent_then_spec",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": "line 2693:\n  message:\n    - Too many arguments to FORMAT for pattern \\\"%5%\\\"; Expected 1; Got 2 [at 1:8]\n    + Invalid FORMAT string: \\\"%5%\\\" [at 1:8]",
+      "name": "sql/functions/format_invalid_percent_extra_arg",
+      "status": "fail",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_invalid_percent_param",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_invalid_trailing_param",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_invalid_specifier_param",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_invalid_type_param",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_too_many",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_too_few",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_flagged_percent_with_arg",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_float_type",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_string_type",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_star_type",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_specifier_no_arg",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_unsigned",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_second_arg_type",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
+      "detail": null,
+      "name": "sql/functions/format_runtime_valid",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "function"
+      ]
+    },
+    {
       "detail": null,
       "name": "sql/functions/regex_001",
       "status": "pass",
@@ -12746,7 +12986,7 @@
       ]
     },
     {
-      "detail": "line 3696:\n  status: expected OUT_OF_RANGE, got INVALID_ARGUMENT",
+      "detail": "line 3930:\n  status: expected OUT_OF_RANGE, got INVALID_ARGUMENT",
       "name": "sql/functions/regex_149",
       "status": "fail",
       "tags": [
@@ -35915,6 +36155,15 @@
     },
     {
       "detail": null,
+      "name": "sql/search_around/distance_limit",
+      "status": "pass",
+      "tags": [
+        "sql",
+        "search"
+      ]
+    },
+    {
+      "detail": null,
       "name": "sql/search_functions/and_operator",
       "status": "pass",
       "tags": [
@@ -42880,10 +43129,10 @@
   "target": "127.0.0.1:25420",
   "totals": {
     "error": 0,
-    "fail": 65,
-    "pass": 4551,
+    "fail": 70,
+    "pass": 4573,
     "skipped": 9,
-    "total": 4669,
+    "total": 4696,
     "unimplemented": 44
   },
   "unimplemented": "skip"

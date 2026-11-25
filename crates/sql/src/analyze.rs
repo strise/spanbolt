@@ -44,7 +44,9 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
         .gsql
         .analyze_raw(sql, params)
         .map_err(|e| unsupported(cat, map_error(e)))?;
-    crate::limits::check(&bytes, cat.emulator_compat)?;
+    googlesql_sys::with_stack_for(sql.len(), || {
+        crate::limits::check(&bytes, cat.emulator_compat)
+    })?;
     AnyResolvedStatementProto::decode(bytes.as_slice())
         .map_err(|e| Error::internal(format!("decode AnyResolvedStatementProto: {e}")))
 }

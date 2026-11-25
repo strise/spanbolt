@@ -86,6 +86,20 @@ const MAX_JOINED_LETTERS: usize = 21;
 /// A token is a run of characters between delimiters (`is_delimiter`), so `é` or `x1` is no single
 /// letter.
 pub fn joined_letters(chars: &[char]) -> Vec<bool> {
+    joined_letters_across(chars, |gap| gap.iter().all(|&c| c == ' '))
+}
+
+/// The letters SNIPPET shows joined: as `joined_letters`, but same-case letters also join across
+/// any run of ASCII whitespace that starts with a space (`x \n y` is `xy`, `x\n y` stays
+/// `x y`). Recorded from Cloud Spanner (`snippet_display.case`).
+pub fn snippet_joined_letters(chars: &[char]) -> Vec<bool> {
+    joined_letters_across(chars, |gap| {
+        gap.first() == Some(&' ') && gap.iter().all(char::is_ascii_whitespace)
+    })
+}
+
+/// `joined_letters`, with `spaces` deciding which gaps between single letters are spaces.
+fn joined_letters_across(chars: &[char], spaces: impl Fn(&[char]) -> bool) -> Vec<bool> {
     let delim = |c: char| c.is_ascii() && is_delimiter(c as u8);
     let mut toks: Vec<(usize, usize)> = Vec::new();
     let mut start = None;
@@ -145,11 +159,7 @@ pub fn joined_letters(chars: &[char]) -> Vec<bool> {
             continue;
         }
         let mut j = i;
-        while j + 1 < n
-            && eligible(j + 1, &used)
-            && upper(j) == upper(j + 1)
-            && gap(j).iter().all(|&c| c == ' ')
-        {
+        while j + 1 < n && eligible(j + 1, &used) && upper(j) == upper(j + 1) && spaces(gap(j)) {
             j += 1;
         }
         if j > i {

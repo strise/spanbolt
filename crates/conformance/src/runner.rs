@@ -324,7 +324,11 @@ impl Target {
         format!("{prefix}{}x{n}", self.run_id)
     }
 
-    async fn create_db(&self, schema: &[String]) -> Result<String, Status> {
+    async fn create_db(
+        &self,
+        schema: &[String],
+        descriptors: Option<&[u8]>,
+    ) -> Result<String, Status> {
         let id = self.next_db_id('c');
         let name = format!("{}/databases/{id}", self.instance);
         // Logged before the request: a create that times out on our side may still finish.
@@ -335,6 +339,7 @@ impl Target {
                 parent: self.instance.clone(),
                 create_statement: format!("CREATE DATABASE `{id}`"),
                 extra_statements: schema.to_vec(),
+                proto_descriptors: descriptors.map(<[u8]>::to_vec).unwrap_or_default(),
                 ..Default::default()
             })
             .await;
@@ -416,7 +421,7 @@ impl Target {
 
     async fn build_db(&self, case: &Case) -> Result<String, SetupError> {
         let db = self
-            .create_db(&case.schema)
+            .create_db(&case.schema, case.descriptors.as_deref().map(Vec::as_slice))
             .await
             .map_err(|s| SetupError::status("CreateDatabase", &s))?;
         let res = self.run_prelude(case, &db).await;
@@ -998,6 +1003,7 @@ impl<'a> Ctx<'a> {
                         .into_iter()
                         .map(|s| s.replace(DB_ID, &id))
                         .collect(),
+                    proto_descriptors: step.descriptors.as_deref().cloned().unwrap_or_default(),
                     ..Default::default()
                 };
                 let res = match self.t.db_admin().update_database_ddl(req).await {

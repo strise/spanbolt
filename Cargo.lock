@@ -1415,6 +1415,7 @@ dependencies = [
  "clap",
  "prost",
  "prost-types",
+ "protoc-bin-vendored",
  "regex",
  "serde_json",
  "spanbolt-proto",

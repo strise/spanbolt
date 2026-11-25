@@ -1,8 +1,7 @@
 # SNIPPET cut to max_snippet_width, swept over widths 6..24 for every word of two texts (one
-# column per width). Cloud Spanner's cut isn't a character budget: near the end of the text it
-# keeps more than the width (row 11, 'll'), and a match that doesn't fit gives no snippet.
-# spanbolt approximates it (`width_cut` in crates/sql/src/search/eval.rs), so most of these fail
-# in default mode: they are the target for an exact port.
+# column per width). Cloud Spanner's cut isn't a character budget: it counts proportional
+# character widths (row 11, 'll', fits more narrow letters), and a match that doesn't fit gives no
+# snippet. spanbolt follows it (`Snippets` in crates/sql/src/search/eval.rs).
 tags: sql search
 schema:
   CREATE TABLE W (

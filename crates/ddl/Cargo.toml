@@ -14,6 +14,8 @@ readme = "README.md"
 include = ["src/**", "README.md", "LICENSE", "NOTICE"]
 
 [dependencies]
+prost.workspace = true
+prost-types.workspace = true
 thiserror = "2"
 
 [dev-dependencies]

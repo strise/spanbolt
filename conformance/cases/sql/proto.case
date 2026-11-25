@@ -1,0 +1,619 @@
+tags: sql proto
+# PROTO and ENUM values in queries and DML (#127). `expect:` from the emulator 1.5.59,
+# `expect@spanner:` from Cloud Spanner.
+proto:
+  syntax = "proto2";
+  package examples.music;
+  message SingerInfo {
+    optional int64 singer_id = 1;
+    optional string birth_date = 2;
+    optional string nationality = 3;
+    optional Genre genre = 4;
+    repeated string tags = 5;
+    message Nested { optional int64 x = 1; }
+    optional Nested nested = 6;
+    optional int64 with_default = 7 [default = 42];
+    optional bool flag = 8;
+    optional double score = 9;
+    optional bytes blob = 10;
+    repeated int64 nums = 11 [packed = true];
+    repeated Nested nesteds = 12;
+    optional int32 small = 13;
+    optional uint64 big = 14;
+    optional float ratio = 15;
+  }
+  enum Genre {
+    POP = 0;
+    JAZZ = 1;
+    FOLK = 2;
+    ROCK = 3;
+  }
+schema:
+  CREATE PROTO BUNDLE (examples.music.SingerInfo, examples.music.Genre, examples.music.SingerInfo.Nested);
+  CREATE TABLE Singers (
+    Id INT64 NOT NULL,
+    Info examples.music.SingerInfo,
+    G examples.music.Genre,
+    Infos ARRAY<examples.music.SingerInfo>,
+    Gs ARRAY<examples.music.Genre>,
+  ) PRIMARY KEY (Id)
+insert Singers cols=Id,Info,G,Infos,Gs:
+  [1, "CAUgASoBYTICCAE=", 1, ["CAU=", "CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk="], [1, 3]]
+  [2, "CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk=", 3, [], []]
+  [3, null, null, null, null]
+  [4, "", 0, null, [0]]
+
+case select_star
+query:
+  SELECT * FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, Info PROTO<examples.music.SingerInfo>, G ENUM<examples.music.Genre>, Infos ARRAY<PROTO<examples.music.SingerInfo>>, Gs ARRAY<ENUM<examples.music.Genre>>
+  ["1","CAUgASoBYTICCAE=","1",["CAU=","CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk="],["1","3"]]
+  ["2","CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk=","3",[],[]]
+  ["3",null,null,null,null]
+  ["4","","0",null,["0"]]
+expect@spanner:
+  same
+
+case field_access
+query:
+  SELECT Id, Info.singer_id, Info.birth_date, Info.nationality, Info.genre, Info.tags,
+    Info.nested, Info.nested.x, Info.with_default, Info.flag, Info.score, Info.blob, Info.nums
+  FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, singer_id INT64, birth_date STRING, nationality STRING, genre ENUM<examples.music.Genre>, tags ARRAY<STRING>, nested PROTO<examples.music.SingerInfo.Nested>, x INT64, with_default INT64, flag BOOL, score FLOAT64, blob BYTES, nums ARRAY<INT64>
+  ["1","5","","","1",["a"],"CAE=","1","42",false,0.0,"",[]]
+  ["2","7","1970-01-01","NO","3",["x","y"],null,null,"42",false,0.0,"",[]]
+  ["3",null,null,null,null,null,null,null,null,null,null,null,null]
+  ["4","0","","","0",[],null,null,"42",false,0.0,"",[]]
+expect@spanner:
+  same
+
+case has_fields
+query:
+  SELECT Id, Info.has_singer_id, Info.has_nested, Info.has_with_default, Info.has_genre
+  FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, has_singer_id BOOL, has_nested BOOL, has_with_default BOOL, has_genre BOOL
+  ["1",true,true,false,true]
+  ["2",true,false,false,true]
+  ["3",null,null,null,null]
+  ["4",false,false,false,false]
+expect@spanner:
+  same
+
+case int32_field
+query:
+  SELECT Info.small FROM Singers WHERE Id = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Type not found: INT32
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
+
+case uint64_field
+query:
+  SELECT Info.big FROM Singers WHERE Id = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: Type not found: UINT64
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
+
+case float_field
+query:
+  SELECT Info.ratio FROM Singers WHERE Id = 1
+expect:
+  columns: ratio FLOAT32
+  [0.0]
+expect@spanner:
+  same
+
+case repeated_message_field
+query:
+  SELECT Id, ARRAY_LENGTH(Info.nesteds) FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, INT64
+  ["1","0"]
+  ["2","0"]
+  ["3",null]
+  ["4","0"]
+expect@spanner:
+  same
+
+case field_access_unknown
+query:
+  SELECT Info.nope FROM Singers
+expect:
+  error: INVALID_ARGUMENT
+  message: Protocol buffer examples.music.SingerInfo does not have a field called nope [at 1:13]
+expect@spanner:
+  same
+
+case field_access_invalid_bytes
+query:
+  SELECT CAST(b'\xff\xff' AS examples.music.SingerInfo).singer_id
+expect:
+  columns: singer_id INT64
+  ["0"]
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
+
+case field_access_truncated_bytes
+query:
+  SELECT CAST(b'\x08' AS examples.music.SingerInfo).singer_id
+expect:
+  error: OUT_OF_RANGE
+  message: Corrupted protocol buffer: Failed to read value for field examples.music.SingerInfo.singer_id
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
+
+case where_on_field
+query:
+  SELECT Id FROM Singers WHERE Info.singer_id = 7
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case where_on_enum
+query:
+  SELECT Id FROM Singers WHERE G = 'ROCK'
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case where_on_enum_param
+query:
+  SELECT Id FROM Singers WHERE G = @g
+params:
+  @g ENUM<examples.music.Genre> = 1
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case where_on_enum_int
+query:
+  SELECT Id FROM Singers WHERE G = 1
+expect:
+  columns: Id INT64
+  ["1"]
+expect@spanner:
+  same
+
+case order_by_enum
+query:
+  SELECT Id, G FROM Singers ORDER BY G, Id
+expect:
+  columns: Id INT64, G ENUM<examples.music.Genre>
+  ["3",null]
+  ["4","0"]
+  ["1","1"]
+  ["2","3"]
+expect@spanner:
+  same
+
+case group_by_enum
+query:
+  SELECT G, COUNT(*) AS n FROM Singers GROUP BY G ORDER BY G
+expect:
+  columns: G ENUM<examples.music.Genre>, n INT64
+  [null,"1"]
+  ["0","1"]
+  ["1","1"]
+  ["3","1"]
+expect@spanner:
+  same
+
+case enum_in_list
+query:
+  SELECT Id FROM Singers WHERE G IN ('JAZZ', 'POP') ORDER BY Id
+expect:
+  columns: Id INT64
+  ["1"]
+  ["4"]
+expect@spanner:
+  same
+
+case proto_equality
+query:
+  SELECT Id FROM Singers WHERE Info = Info
+expect:
+  error: INVALID_ARGUMENT
+  message: Equality is not defined for arguments of type PROTO<examples.music.SingerInfo> [at 1:30]
+expect@spanner:
+  same
+
+case proto_order_by
+query:
+  SELECT Id FROM Singers ORDER BY Info
+expect:
+  error: INVALID_ARGUMENT
+  message: ORDER BY does not support expressions of type examples.music.SingerInfo [at 1:33]
+expect@spanner:
+  same
+
+case proto_is_null
+query:
+  SELECT Id, Info IS NULL, G IS NULL FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, BOOL, BOOL
+  ["1",false,false]
+  ["2",false,false]
+  ["3",true,true]
+  ["4",false,false]
+expect@spanner:
+  same
+
+case cast_proto_to_string
+query:
+  SELECT Id, CAST(Info AS STRING) FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, STRING
+  ["1","singer_id: 5 genre: JAZZ tags: \"a\" nested { x: 1 }"]
+  ["2","singer_id: 7 birth_date: \"1970-01-01\" nationality: \"NO\" genre: ROCK tags: \"x\" tags: \"y\""]
+  ["3",null]
+  ["4",""]
+expect@spanner:
+  same
+
+case cast_string_to_proto
+query:
+  SELECT CAST('singer_id: 5 genre: JAZZ tags: "a" nested { x: 1 }' AS examples.music.SingerInfo) AS p
+expect:
+  columns: p PROTO<examples.music.SingerInfo>
+  ["CAUgASoBYTICCAE="]
+expect@spanner:
+  same
+
+case cast_string_to_proto_invalid
+query:
+  SELECT CAST('singer_id: "x"' AS examples.music.SingerInfo) AS p
+expect:
+  error: OUT_OF_RANGE
+  message: Error parsing proto: Expected integer, got: "x" [1:12]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing proto: Expected integer, got: "x" [1:12]
+
+case cast_string_to_proto_unknown_field
+query:
+  SELECT CAST('nope: 1' AS examples.music.SingerInfo) AS p
+expect:
+  error: OUT_OF_RANGE
+  message: Error parsing proto: Message type "examples.music.SingerInfo" has no field named "nope". [1:5]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing proto: Message type "examples.music.SingerInfo" has no field named "nope". [1:5]
+
+case cast_string_escapes
+query:
+  SELECT CAST(CAST('birth_date: "a\\"b\\n\\x01" blob: "\\377"' AS examples.music.SingerInfo) AS STRING) AS s
+expect:
+  columns: s STRING
+  ["birth_date: \"a\\\"b\\n\\001\" blob: \"\\377\""]
+expect@spanner:
+  same
+
+case cast_proto_to_bytes
+query:
+  SELECT Id, CAST(Info AS BYTES) FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, BYTES
+  ["1","CAUgASoBYTICCAE="]
+  ["2","CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk="]
+  ["3",null]
+  ["4",""]
+expect@spanner:
+  same
+
+case cast_bytes_to_proto
+query:
+  SELECT CAST(b'\x08\x05' AS examples.music.SingerInfo) AS p
+expect:
+  columns: p PROTO<examples.music.SingerInfo>
+  ["CAU="]
+expect@spanner:
+  same
+
+case cast_enum
+query:
+  SELECT CAST('JAZZ' AS examples.music.Genre) AS a, CAST(2 AS examples.music.Genre) AS b,
+    CAST(G AS STRING) AS c, CAST(G AS INT64) AS d
+  FROM Singers WHERE Id = 1
+expect:
+  columns: a ENUM<examples.music.Genre>, b ENUM<examples.music.Genre>, c STRING, d INT64
+  ["1","2","JAZZ","1"]
+expect@spanner:
+  same
+
+case cast_enum_invalid_name
+query:
+  SELECT CAST('NOPE' AS examples.music.Genre)
+expect:
+  error: OUT_OF_RANGE
+  message: Out of range cast of string 'NOPE' to enum type examples.music.Genre; Did you mean 'POP'?
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case cast_enum_invalid_number
+query:
+  SELECT CAST(99 AS examples.music.Genre)
+expect:
+  error: OUT_OF_RANGE
+  message: Out of range cast of integer 99 to enum type examples.music.Genre
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
+
+case safe_cast_enum
+query:
+  SELECT SAFE_CAST('NOPE' AS examples.music.Genre) AS a, SAFE_CAST(99 AS examples.music.Genre) AS b
+expect:
+  columns: a ENUM<examples.music.Genre>, b ENUM<examples.music.Genre>
+  [null,null]
+expect@spanner:
+  same
+
+case enum_literal_in_expression
+query:
+  SELECT Id FROM Singers WHERE G = CAST('ROCK' AS examples.music.Genre)
+expect:
+  columns: Id INT64
+  ["2"]
+expect@spanner:
+  same
+
+case new_proto
+query:
+  SELECT NEW examples.music.SingerInfo(5 AS singer_id, 'JAZZ' AS genre, ['a', 'b'] AS tags) AS p
+expect:
+  columns: p PROTO<examples.music.SingerInfo>
+  ["CAUgASoBYSoBYg=="]
+expect@spanner:
+  same
+
+case new_proto_nested
+query:
+  SELECT NEW examples.music.SingerInfo(NEW examples.music.SingerInfo.Nested(3 AS x) AS nested) AS p
+expect:
+  columns: p PROTO<examples.music.SingerInfo>
+  ["MgIIAw=="]
+expect@spanner:
+  same
+
+case new_proto_unknown_field
+query:
+  SELECT NEW examples.music.SingerInfo(5 AS nope)
+expect:
+  error: INVALID_ARGUMENT
+  message: Argument 1 has name nope which is not a field in proto examples.music.SingerInfo [at 1:38]
+expect@spanner:
+  same
+
+case proto_param
+query:
+  SELECT @p.singer_id AS id, @p AS p
+params:
+  @p PROTO<examples.music.SingerInfo> = "CAUgASoBYQ=="
+expect:
+  columns: id INT64, p PROTO<examples.music.SingerInfo>
+  ["5","CAUgASoBYQ=="]
+expect@spanner:
+  same
+
+case proto_array_unnest
+query:
+  SELECT Id, i.singer_id FROM Singers, UNNEST(Infos) AS i ORDER BY Id, i.singer_id
+expect:
+  columns: Id INT64, singer_id INT64
+  ["1","5"]
+  ["1","7"]
+expect@spanner:
+  same
+
+case enum_array
+query:
+  SELECT Id, Gs, ARRAY_LENGTH(Gs) FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, Gs ARRAY<ENUM<examples.music.Genre>>, INT64
+  ["1",["1","3"],"2"]
+  ["2",[],"0"]
+  ["3",null,null]
+  ["4",["0"],"1"]
+expect@spanner:
+  same
+
+case array_of_enum_literal
+query:
+  SELECT ARRAY<examples.music.Genre>['JAZZ', 'ROCK'] AS a
+expect:
+  columns: a ARRAY<ENUM<examples.music.Genre>>
+  [["1","3"]]
+expect@spanner:
+  same
+
+case repeated_field_functions
+query:
+  SELECT Id, ARRAY_LENGTH(Info.tags), Info.tags[SAFE_OFFSET(0)] FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, INT64, STRING
+  ["1","1","a"]
+  ["2","2","x"]
+  ["3",null,null]
+  ["4","0",null]
+expect@spanner:
+  same
+
+case to_json
+query:
+  SELECT TO_JSON(Info) FROM Singers
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported argument type examples.music.SingerInfo for TO_JSON
+expect@spanner:
+  columns: JSON
+  ["{\"genre\":\"JAZZ\",\"nested\":{\"x\":\"1\"},\"singerId\":\"5\",\"tags\":[\"a\"]}"]
+  ["{\"birthDate\":\"1970-01-01\",\"genre\":\"ROCK\",\"nationality\":\"NO\",\"singerId\":\"7\",\"tags\":[\"x\",\"y\"]}"]
+  ["null"]
+  ["{}"]
+
+case enum_to_json
+query:
+  SELECT TO_JSON(G) FROM Singers WHERE Id = 1
+expect:
+  columns: JSON
+  ["\"JAZZ\""]
+expect@spanner:
+  same
+
+case extract_field
+query:
+  SELECT EXTRACT(FIELD(singer_id) FROM Info) FROM Singers WHERE Id = 1
+expect:
+  error: INVALID_ARGUMENT
+  message: EXTRACT from PROTO is not supported [at 1:8]
+expect@spanner:
+  same
+
+case replace_fields
+query:
+  SELECT CAST(REPLACE_FIELDS(Info, 9 AS singer_id) AS STRING) FROM Singers WHERE Id = 1
+expect:
+  columns: STRING
+  ["singer_id: 9 genre: JAZZ tags: \"a\" nested { x: 1 }"]
+expect@spanner:
+  same
+
+case select_as_struct_with_proto
+query:
+  SELECT AS STRUCT Info, G FROM Singers WHERE Id = 1
+expect:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
+
+case information_schema_in_query
+query:
+  SELECT Info.singer_id FROM Singers WHERE Id = (SELECT MIN(Id) FROM Singers)
+expect:
+  columns: singer_id INT64
+  ["5"]
+expect@spanner:
+  same
+
+case dml_insert_literal
+dml:
+  INSERT INTO Singers (Id, Info, G) VALUES (10, CAST('singer_id: 10' AS examples.music.SingerInfo), 'FOLK')
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Info, G FROM Singers WHERE Id = 10
+expect:
+  columns: Id INT64, Info PROTO<examples.music.SingerInfo>, G ENUM<examples.music.Genre>
+  ["10","CAo=","2"]
+expect@spanner:
+  same
+
+case dml_insert_param
+dml:
+  INSERT INTO Singers (Id, Info, G) VALUES (11, @p, @g)
+params:
+  @p PROTO<examples.music.SingerInfo> = "CAU="
+  @g ENUM<examples.music.Genre> = 2
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, Info.singer_id, G FROM Singers WHERE Id = 11
+expect:
+  columns: Id INT64, singer_id INT64, G ENUM<examples.music.Genre>
+  ["11","5","2"]
+expect@spanner:
+  same
+
+case dml_insert_bytes_into_proto
+dml:
+  INSERT INTO Singers (Id, Info) VALUES (12, b'\x08\x05')
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case dml_insert_int_into_enum
+dml:
+  INSERT INTO Singers (Id, G) VALUES (12, 2)
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case dml_update_enum
+dml:
+  UPDATE Singers SET G = 'POP' WHERE Info.singer_id = 5
+expect:
+  count: 1
+expect@spanner:
+  same
+query:
+  SELECT Id, G FROM Singers ORDER BY Id
+expect:
+  columns: Id INT64, G ENUM<examples.music.Genre>
+  ["1","0"]
+  ["2","3"]
+  ["3",null]
+  ["4","0"]
+expect@spanner:
+  same
+
+case dml_update_field
+dml:
+  UPDATE Singers SET Info.singer_id = 6 WHERE Id = 1
+expect:
+  count: 1
+expect@spanner:
+  same
+
+case dml_then_return
+dml:
+  UPDATE Singers SET G = 'FOLK' WHERE Id = 2 THEN RETURN Id, G, Info.nationality
+expect:
+  count: 1
+  columns: Id INT64, G ENUM<examples.music.Genre>, nationality STRING
+  ["2","2","NO"]
+expect@spanner:
+  same
+
+case information_schema_columns_proto
+query:
+  SELECT COLUMN_NAME, SPANNER_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_NAME = 'Singers' ORDER BY ORDINAL_POSITION
+expect:
+  columns: COLUMN_NAME STRING, SPANNER_TYPE STRING
+  ["Id","INT64"]
+  ["Info","`examples.music.SingerInfo`"]
+  ["G","`examples.music.Genre`"]
+  ["Infos","ARRAY<`examples.music.SingerInfo`>"]
+  ["Gs","ARRAY<`examples.music.Genre`>"]
+expect@spanner:
+  columns: COLUMN_NAME STRING, SPANNER_TYPE STRING
+  ["Id","INT64"]
+  ["Info","PROTO<examples.music.SingerInfo>"]
+  ["G","ENUM<examples.music.Genre>"]
+  ["Infos","ARRAY<PROTO<examples.music.SingerInfo>>"]
+  ["Gs","ARRAY<ENUM<examples.music.Genre>>"]

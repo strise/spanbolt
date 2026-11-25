@@ -530,7 +530,7 @@ pub fn type_name(ty: &ColumnType) -> String {
         ColumnType::Interval => "INTERVAL".into(),
         ColumnType::Uuid => "UUID".into(),
         ColumnType::TokenList => "TOKENLIST".into(),
-        ColumnType::Proto(name) => name.clone(),
+        ColumnType::Proto(name) | ColumnType::Enum(name) => name.clone(),
         ColumnType::Array(t) => format!("ARRAY<{}>", type_name(t)),
         ColumnType::Struct(fields) => {
             let inner: Vec<String> = fields
@@ -607,6 +607,7 @@ impl Value {
             ColumnType::Array(_) => "Array",
             ColumnType::Struct(_) => "Struct",
             ColumnType::Proto(_) => "Proto",
+            ColumnType::Enum(_) => "Enum",
         };
         out.push_str(tn);
         out.push('(');

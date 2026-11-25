@@ -137,12 +137,40 @@ fn parse_type_at(tokens: &[String], pos: &mut usize) -> Result<Type, String> {
                 ..Default::default()
             })
         }
+        "PROTO" | "ENUM" => {
+            // `PROTO<examples.music.SingerInfo>`: the full name of a type in the case's `proto:`.
+            expect(pos, "<")?;
+            let fqn = tokens
+                .get(*pos)
+                .filter(|t| {
+                    t.chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+                })
+                .ok_or_else(|| format!("{word} needs a type name"))?
+                .clone();
+            *pos += 1;
+            expect(pos, ">")?;
+            let code = if word == "PROTO" {
+                TypeCode::Proto
+            } else {
+                TypeCode::Enum
+            };
+            Ok(Type {
+                code: code as i32,
+                proto_type_fqn: fqn,
+                ..Default::default()
+            })
+        }
         other => {
             let code = TypeCode::from_str_name(other)
                 .filter(|c| {
                     !matches!(
                         c,
-                        TypeCode::Unspecified | TypeCode::Array | TypeCode::Struct
+                        TypeCode::Unspecified
+                            | TypeCode::Array
+                            | TypeCode::Struct
+                            | TypeCode::Proto
+                            | TypeCode::Enum
                     )
                 })
                 .ok_or_else(|| format!("unknown type `{other}`"))?;

@@ -108,6 +108,7 @@ expect:
 | `case NAME` | Starts a case. Full name is `<file path without .case>/NAME`. |
 | `tags: a b` | Extra tags (file-level tags are inherited; the top directory under `cases/` is always a tag). |
 | `schema:` | DDL statements (separated by `;` at line end) passed to `CreateDatabase`. A case's own `schema:` replaces the file's. |
+| `proto [NAME]:` | `.proto` source, compiled with the vendored `protoc` (`--include_imports`) into a `FileDescriptorSet`; or `bytes: <base64>` for raw bytes (`bytes:` alone is empty). The unnamed block is the `proto_descriptors` of the `CreateDatabase` for `schema:`; `ddl protos` / `ddl protos=NAME` sends one with an `UpdateDatabaseDdl`. A case's blocks add to (or replace, by name) the file's. |
 | `skip: reason` | Do not run (reported as skipped). |
 | `skip@emulator: reason` | Run only against Cloud Spanner (`record`/`check --oracle spanner`), for statements the emulator can't answer (it aborts on them); its steps have `expect@spanner:` blocks only. |
 
@@ -129,7 +130,7 @@ Steps take `key=value` options in the header. `txn=NAME` runs the step in a tran
 | `begin [txn=NAME] [ro] [bound=]` | – | `BeginTransaction` (read-write unless `ro`). |
 | `commit [txn=NAME] [save=TS]` | – | Commits buffered mutations. |
 | `rollback [txn=NAME]` | – | |
-| `ddl [op=NAME]:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation (`op=` saves its name). `<dbid>` stands for the case database's id, in the statements and in the error message (`ALTER DATABASE \`<dbid>\` SET OPTIONS (...)`). |
+| `ddl [op=NAME] [protos\|protos=NAME]:` | DDL statements | `UpdateDatabaseDdl`, waits for the operation (`op=` saves its name; `protos` sends a `proto:` block as its `proto_descriptors`). `<dbid>` stands for the case database's id, in the statements and in the error message (`ALTER DATABASE \`<dbid>\` SET OPTIONS (...)`). |
 | `get_ddl` | – | `GetDatabaseDdl`; expects `statements:`. |
 | `get_operation op=NAME [meta]` | – | `GetOperation` on the operation saved by `ddl op=NAME`; expects `counts: [1]` (done). With `meta`: `counts: [done, failed, statements, commit_timestamps]` from its `UpdateDatabaseDdlMetadata`, or `[-1]` when the `UpdateDatabaseDdl` request itself failed. |
 | `get_database` | – | `GetDatabase`; expects the database's `version_retention_period` as a one-row result. |

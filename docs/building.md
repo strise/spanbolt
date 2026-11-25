@@ -141,6 +141,7 @@ Drafts in `.github/workflows` (not enabled yet):
 - `crates.yml`: on a `v*` tag, publishes the crates to crates.io (`docs/releasing.md`).
 - `image.yml`: on a `v*` tag, builds each architecture natively with `SHIM=prebuilt`, smoke-tests
   it (`scripts/docker-smoke.sh`), pushes by digest and merges a multi-arch manifest at
-  `ghcr.io/strise/spanbolt`.
+  `ghcr.io/strise/spanbolt`. Pull requests that touch the conformance cases, the harness, the
+  smoke script, the Dockerfile or the workflow build and smoke-test linux/amd64 without pushing.
 
 Lint them with `actionlint` (`.github/actionlint.yaml` declares the `ubuntu-24.04-arm` runner).

@@ -289,6 +289,13 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
       /*coercible=*/true));
   catalog->AddOwnedFunction(Scalar(
       "tokenize_json", {FunctionSignature{tok, {{js, Req("value", false)}}, nullptr}}));
+
+  // Only Cloud Spanner has DEBUG_TOKENLIST: the emulator answers "Function not found".
+  if (production) {
+    catalog->AddOwnedFunction(Scalar(
+        "debug_tokenlist",
+        {FunctionSignature{str, {{tok, Req("tokenlist", false)}}, nullptr}}));
+  }
 }
 
 }  // namespace spanbolt

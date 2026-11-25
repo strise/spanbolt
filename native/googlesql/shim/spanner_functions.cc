@@ -186,6 +186,8 @@ void AddSpannerFunctions(googlesql::SimpleCatalog* catalog,
       {str, Opt("content_type")},
       {str, Opt("token_category")},
   };
+  // Cloud Spanner's TOKENIZE_FULLTEXT also takes remove_diacritics; the emulator's doesn't.
+  if (production) fulltext_opts.push_back({b, Opt("remove_diacritics")});
   catalog->AddOwnedFunction(Scalar(
       "tokenize_fulltext",
       {FunctionSignature{tok, with({{str, Req("value", false)}}, fulltext_opts),

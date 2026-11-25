@@ -42,18 +42,28 @@ expect:
   ["1","CAUgASoBYTICCAE=","1",["CAU=",null,""],["0","3",null],"CAE="]
   ["2",null,null,null,null,null]
   ["3","","0",[],[],""]
+expect@spanner:
+  same
 
 case enum_undefined_value
 skip@emulator: the emulator aborts on an enum number its enum doesn't define
 insert V cols=K,E:
   [1, 99]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
 read V cols=K,E:
   all
+expect@spanner:
+  columns: K INT64, E ENUM<examples.music.Genre>
 
 case enum_negative_value
 skip@emulator: the emulator aborts on an enum number its enum doesn't define
 insert V cols=K,E:
   [1, -1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
 
 case enum_out_of_int32_range
 insert V cols=K,E:
@@ -61,11 +71,17 @@ insert V cols=K,E:
 expect:
   error: FAILED_PRECONDITION
   message: Could not parse 4294967296 as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column E in table V: Expected ENUM.
 
 case enum_array_undefined_value
 skip@emulator: the emulator aborts on an enum number its enum doesn't define
 insert V cols=K,AE:
   [1, [1, 42]]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
 
 case enum_by_name
 insert V cols=K,E:
@@ -73,6 +89,9 @@ insert V cols=K,E:
 expect:
   error: FAILED_PRECONDITION
   message: Could not parse JAZZ as an integer
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column E in table V: Expected ENUM.
 
 case enum_as_float
 insert V cols=K,E:
@@ -80,17 +99,24 @@ insert V cols=K,E:
 expect:
   error: FAILED_PRECONDITION
   message: Could not parse number_value: 1 as ENUM<examples.music.Genre>
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column E in table V: Expected ENUM.
 
 case proto_invalid_bytes
 insert V cols=K,P:
   [1, "//8="]
 expect:
   ok
+expect@spanner:
+  same
 read V cols=K,P:
   all
 expect:
   columns: K INT64, P PROTO<examples.music.SingerInfo>
   ["1","//8="]
+expect@spanner:
+  same
 
 case proto_not_base64
 insert V cols=K,P:
@@ -98,6 +124,9 @@ insert V cols=K,P:
 expect:
   error: FAILED_PRECONDITION
   message: Could not parse not base64! as BYTES. Byte strings must be base64-encoded. For more details, see https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1#typecode
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column P in table V: Expected Base64 encoded PROTO.
 
 case proto_as_number
 insert V cols=K,P:
@@ -105,17 +134,24 @@ insert V cols=K,P:
 expect:
   error: FAILED_PRECONDITION
   message: Could not parse 5 as BYTES. Byte strings must be base64-encoded. For more details, see https://cloud.google.com/spanner/docs/reference/rpc/google.spanner.v1#typecode
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: Invalid value for column P in table V: Expected Base64 encoded PROTO.
 
 case proto_wrong_message_bytes
 insert V cols=K,N:
   [1, "CAUgASoBYTICCAE="]
 expect:
   ok
+expect@spanner:
+  same
 read V cols=K,N:
   all
 expect:
   columns: K INT64, N PROTO<examples.music.SingerInfo.Nested>
   ["1","CAUgASoBYTICCAE="]
+expect@spanner:
+  same
 
 case update_and_replace
 insert V cols=K,P,E:
@@ -130,6 +166,8 @@ expect:
   columns: K INT64, P PROTO<examples.music.SingerInfo>, E ENUM<examples.music.Genre>
   ["1","CAU=","2"]
   ["2","CAU=",null]
+expect@spanner:
+  same
 
 case not_null_columns
 schema:
@@ -144,20 +182,30 @@ insert V cols=K,P:
 expect:
   error: FAILED_PRECONDITION
   message: A new row in table V does not specify a non-null value for NOT NULL column: E
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: A new row in table V does not specify a non-null value for these NOT NULL columns: E.
 insert V cols=K,P,E:
   [1, null, 1]
 expect:
   error: FAILED_PRECONDITION
   message: Cannot specify a null value for column: V.P in table: V
+expect@spanner:
+  error: FAILED_PRECONDITION
+  message: P must not be NULL in table V.
 insert V cols=K,P,E:
   [1, "", 0]
 expect:
   ok
+expect@spanner:
+  same
 read V cols=K,P,E:
   all
 expect:
   columns: K INT64, P PROTO<examples.music.SingerInfo>, E ENUM<examples.music.Genre>
   ["1","","0"]
+expect@spanner:
+  same
 
 case enum_key
 schema:
@@ -177,17 +225,23 @@ expect:
   ["0","pop"]
   ["1","jazz"]
   ["3","rock"]
+expect@spanner:
+  same
 read V cols=G,S:
   [1]
 expect:
   columns: G ENUM<examples.music.Genre>, S STRING
   ["1","jazz"]
+expect@spanner:
+  same
 read V cols=G,S:
   range [1] .. [3]
 expect:
   columns: G ENUM<examples.music.Genre>, S STRING
   ["1","jazz"]
   ["3","rock"]
+expect@spanner:
+  same
 delete V:
   [1]
 read V cols=G,S:
@@ -196,6 +250,8 @@ expect:
   columns: G ENUM<examples.music.Genre>, S STRING
   ["0","pop"]
   ["3","rock"]
+expect@spanner:
+  same
 
 case enum_index_read
 schema:
@@ -216,8 +272,12 @@ expect:
   ["3",null]
   ["2","1"]
   ["1","3"]
+expect@spanner:
+  same
 read V cols=K,G index=VByG:
   [1]
 expect:
   columns: K INT64, G ENUM<examples.music.Genre>
   ["2","1"]
+expect@spanner:
+  same

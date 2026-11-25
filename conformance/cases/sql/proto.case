@@ -52,6 +52,8 @@ expect:
   ["2","CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk=","3",[],[]]
   ["3",null,null,null,null]
   ["4","","0",null,["0"]]
+expect@spanner:
+  same
 
 case field_access
 query:
@@ -64,6 +66,8 @@ expect:
   ["2","7","1970-01-01","NO","3",["x","y"],null,null,"42",false,0.0,"",[]]
   ["3",null,null,null,null,null,null,null,null,null,null,null,null]
   ["4","0","","","0",[],null,null,"42",false,0.0,"",[]]
+expect@spanner:
+  same
 
 case has_fields
 query:
@@ -75,6 +79,8 @@ expect:
   ["2",true,false,false,true]
   ["3",null,null,null,null]
   ["4",false,false,false,false]
+expect@spanner:
+  same
 
 case int32_field
 query:
@@ -82,6 +88,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Type not found: INT32
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
 
 case uint64_field
 query:
@@ -89,6 +98,9 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Type not found: UINT64
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
 
 case float_field
 query:
@@ -96,6 +108,8 @@ query:
 expect:
   columns: ratio FLOAT32
   [0.0]
+expect@spanner:
+  same
 
 case repeated_message_field
 query:
@@ -106,6 +120,8 @@ expect:
   ["2","0"]
   ["3",null]
   ["4","0"]
+expect@spanner:
+  same
 
 case field_access_unknown
 query:
@@ -113,6 +129,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Protocol buffer examples.music.SingerInfo does not have a field called nope [at 1:13]
+expect@spanner:
+  same
 
 case field_access_invalid_bytes
 query:
@@ -120,6 +138,9 @@ query:
 expect:
   columns: singer_id INT64
   ["0"]
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
 
 case field_access_truncated_bytes
 query:
@@ -127,6 +148,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Corrupted protocol buffer: Failed to read value for field examples.music.SingerInfo.singer_id
+expect@spanner:
+  error: INTERNAL
+  message: Internal error encountered.
 
 case where_on_field
 query:
@@ -134,6 +158,8 @@ query:
 expect:
   columns: Id INT64
   ["2"]
+expect@spanner:
+  same
 
 case where_on_enum
 query:
@@ -141,6 +167,8 @@ query:
 expect:
   columns: Id INT64
   ["2"]
+expect@spanner:
+  same
 
 case where_on_enum_param
 query:
@@ -150,6 +178,8 @@ params:
 expect:
   columns: Id INT64
   ["1"]
+expect@spanner:
+  same
 
 case where_on_enum_int
 query:
@@ -157,6 +187,8 @@ query:
 expect:
   columns: Id INT64
   ["1"]
+expect@spanner:
+  same
 
 case order_by_enum
 query:
@@ -167,6 +199,8 @@ expect:
   ["4","0"]
   ["1","1"]
   ["2","3"]
+expect@spanner:
+  same
 
 case group_by_enum
 query:
@@ -177,6 +211,8 @@ expect:
   ["0","1"]
   ["1","1"]
   ["3","1"]
+expect@spanner:
+  same
 
 case enum_in_list
 query:
@@ -185,6 +221,8 @@ expect:
   columns: Id INT64
   ["1"]
   ["4"]
+expect@spanner:
+  same
 
 case proto_equality
 query:
@@ -192,6 +230,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Equality is not defined for arguments of type PROTO<examples.music.SingerInfo> [at 1:30]
+expect@spanner:
+  same
 
 case proto_order_by
 query:
@@ -199,6 +239,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: ORDER BY does not support expressions of type examples.music.SingerInfo [at 1:33]
+expect@spanner:
+  same
 
 case proto_is_null
 query:
@@ -209,6 +251,8 @@ expect:
   ["2",false,false]
   ["3",true,true]
   ["4",false,false]
+expect@spanner:
+  same
 
 case cast_proto_to_string
 query:
@@ -219,6 +263,8 @@ expect:
   ["2","singer_id: 7 birth_date: \"1970-01-01\" nationality: \"NO\" genre: ROCK tags: \"x\" tags: \"y\""]
   ["3",null]
   ["4",""]
+expect@spanner:
+  same
 
 case cast_string_to_proto
 query:
@@ -226,12 +272,17 @@ query:
 expect:
   columns: p PROTO<examples.music.SingerInfo>
   ["CAUgASoBYTICCAE="]
+expect@spanner:
+  same
 
 case cast_string_to_proto_invalid
 query:
   SELECT CAST('singer_id: "x"' AS examples.music.SingerInfo) AS p
 expect:
   error: OUT_OF_RANGE
+  message: Error parsing proto: Expected integer, got: "x" [1:12]
+expect@spanner:
+  error: INVALID_ARGUMENT
   message: Error parsing proto: Expected integer, got: "x" [1:12]
 
 case cast_string_to_proto_unknown_field
@@ -240,6 +291,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Error parsing proto: Message type "examples.music.SingerInfo" has no field named "nope". [1:5]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing proto: Message type "examples.music.SingerInfo" has no field named "nope". [1:5]
 
 case cast_string_escapes
 query:
@@ -247,6 +301,8 @@ query:
 expect:
   columns: s STRING
   ["birth_date: \"a\\\"b\\n\\001\" blob: \"\\377\""]
+expect@spanner:
+  same
 
 case cast_proto_to_bytes
 query:
@@ -257,6 +313,8 @@ expect:
   ["2","CAcSCjE5NzAtMDEtMDEaAk5PIAMqAXgqAXk="]
   ["3",null]
   ["4",""]
+expect@spanner:
+  same
 
 case cast_bytes_to_proto
 query:
@@ -264,6 +322,8 @@ query:
 expect:
   columns: p PROTO<examples.music.SingerInfo>
   ["CAU="]
+expect@spanner:
+  same
 
 case cast_enum
 query:
@@ -273,6 +333,8 @@ query:
 expect:
   columns: a ENUM<examples.music.Genre>, b ENUM<examples.music.Genre>, c STRING, d INT64
   ["1","2","JAZZ","1"]
+expect@spanner:
+  same
 
 case cast_enum_invalid_name
 query:
@@ -280,6 +342,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Out of range cast of string 'NOPE' to enum type examples.music.Genre; Did you mean 'POP'?
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
 
 case cast_enum_invalid_number
 query:
@@ -287,6 +352,9 @@ query:
 expect:
   error: OUT_OF_RANGE
   message: Out of range cast of integer 99 to enum type examples.music.Genre
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Request contains an invalid argument.
 
 case safe_cast_enum
 query:
@@ -294,6 +362,8 @@ query:
 expect:
   columns: a ENUM<examples.music.Genre>, b ENUM<examples.music.Genre>
   [null,null]
+expect@spanner:
+  same
 
 case enum_literal_in_expression
 query:
@@ -301,6 +371,8 @@ query:
 expect:
   columns: Id INT64
   ["2"]
+expect@spanner:
+  same
 
 case new_proto
 query:
@@ -308,6 +380,8 @@ query:
 expect:
   columns: p PROTO<examples.music.SingerInfo>
   ["CAUgASoBYSoBYg=="]
+expect@spanner:
+  same
 
 case new_proto_nested
 query:
@@ -315,6 +389,8 @@ query:
 expect:
   columns: p PROTO<examples.music.SingerInfo>
   ["MgIIAw=="]
+expect@spanner:
+  same
 
 case new_proto_unknown_field
 query:
@@ -322,6 +398,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: Argument 1 has name nope which is not a field in proto examples.music.SingerInfo [at 1:38]
+expect@spanner:
+  same
 
 case proto_param
 query:
@@ -331,6 +409,8 @@ params:
 expect:
   columns: id INT64, p PROTO<examples.music.SingerInfo>
   ["5","CAUgASoBYQ=="]
+expect@spanner:
+  same
 
 case proto_array_unnest
 query:
@@ -339,6 +419,8 @@ expect:
   columns: Id INT64, singer_id INT64
   ["1","5"]
   ["1","7"]
+expect@spanner:
+  same
 
 case enum_array
 query:
@@ -349,6 +431,8 @@ expect:
   ["2",[],"0"]
   ["3",null,null]
   ["4",["0"],"1"]
+expect@spanner:
+  same
 
 case array_of_enum_literal
 query:
@@ -356,6 +440,8 @@ query:
 expect:
   columns: a ARRAY<ENUM<examples.music.Genre>>
   [["1","3"]]
+expect@spanner:
+  same
 
 case repeated_field_functions
 query:
@@ -366,6 +452,8 @@ expect:
   ["2","2","x"]
   ["3",null,null]
   ["4","0",null]
+expect@spanner:
+  same
 
 case to_json
 query:
@@ -373,6 +461,12 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported argument type examples.music.SingerInfo for TO_JSON
+expect@spanner:
+  columns: JSON
+  ["{\"genre\":\"JAZZ\",\"nested\":{\"x\":\"1\"},\"singerId\":\"5\",\"tags\":[\"a\"]}"]
+  ["{\"birthDate\":\"1970-01-01\",\"genre\":\"ROCK\",\"nationality\":\"NO\",\"singerId\":\"7\",\"tags\":[\"x\",\"y\"]}"]
+  ["null"]
+  ["{}"]
 
 case enum_to_json
 query:
@@ -380,6 +474,8 @@ query:
 expect:
   columns: JSON
   ["\"JAZZ\""]
+expect@spanner:
+  same
 
 case extract_field
 query:
@@ -387,6 +483,8 @@ query:
 expect:
   error: INVALID_ARGUMENT
   message: EXTRACT from PROTO is not supported [at 1:8]
+expect@spanner:
+  same
 
 case replace_fields
 query:
@@ -394,6 +492,8 @@ query:
 expect:
   columns: STRING
   ["singer_id: 9 genre: JAZZ tags: \"a\" nested { x: 1 }"]
+expect@spanner:
+  same
 
 case select_as_struct_with_proto
 query:
@@ -401,6 +501,9 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case information_schema_in_query
 query:
@@ -408,17 +511,23 @@ query:
 expect:
   columns: singer_id INT64
   ["5"]
+expect@spanner:
+  same
 
 case dml_insert_literal
 dml:
   INSERT INTO Singers (Id, Info, G) VALUES (10, CAST('singer_id: 10' AS examples.music.SingerInfo), 'FOLK')
 expect:
   count: 1
+expect@spanner:
+  same
 query:
   SELECT Id, Info, G FROM Singers WHERE Id = 10
 expect:
   columns: Id INT64, Info PROTO<examples.music.SingerInfo>, G ENUM<examples.music.Genre>
   ["10","CAo=","2"]
+expect@spanner:
+  same
 
 case dml_insert_param
 dml:
@@ -428,29 +537,39 @@ params:
   @g ENUM<examples.music.Genre> = 2
 expect:
   count: 1
+expect@spanner:
+  same
 query:
   SELECT Id, Info.singer_id, G FROM Singers WHERE Id = 11
 expect:
   columns: Id INT64, singer_id INT64, G ENUM<examples.music.Genre>
   ["11","5","2"]
+expect@spanner:
+  same
 
 case dml_insert_bytes_into_proto
 dml:
   INSERT INTO Singers (Id, Info) VALUES (12, b'\x08\x05')
 expect:
   count: 1
+expect@spanner:
+  same
 
 case dml_insert_int_into_enum
 dml:
   INSERT INTO Singers (Id, G) VALUES (12, 2)
 expect:
   count: 1
+expect@spanner:
+  same
 
 case dml_update_enum
 dml:
   UPDATE Singers SET G = 'POP' WHERE Info.singer_id = 5
 expect:
   count: 1
+expect@spanner:
+  same
 query:
   SELECT Id, G FROM Singers ORDER BY Id
 expect:
@@ -459,12 +578,16 @@ expect:
   ["2","3"]
   ["3",null]
   ["4","0"]
+expect@spanner:
+  same
 
 case dml_update_field
 dml:
   UPDATE Singers SET Info.singer_id = 6 WHERE Id = 1
 expect:
   count: 1
+expect@spanner:
+  same
 
 case dml_then_return
 dml:
@@ -473,6 +596,8 @@ expect:
   count: 1
   columns: Id INT64, G ENUM<examples.music.Genre>, nationality STRING
   ["2","2","NO"]
+expect@spanner:
+  same
 
 case information_schema_columns_proto
 query:
@@ -485,3 +610,10 @@ expect:
   ["G","`examples.music.Genre`"]
   ["Infos","ARRAY<`examples.music.SingerInfo`>"]
   ["Gs","ARRAY<`examples.music.Genre`>"]
+expect@spanner:
+  columns: COLUMN_NAME STRING, SPANNER_TYPE STRING
+  ["Id","INT64"]
+  ["Info","PROTO<examples.music.SingerInfo>"]
+  ["G","ENUM<examples.music.Genre>"]
+  ["Infos","ARRAY<PROTO<examples.music.SingerInfo>>"]
+  ["Gs","ARRAY<ENUM<examples.music.Genre>>"]

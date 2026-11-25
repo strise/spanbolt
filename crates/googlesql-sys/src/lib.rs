@@ -349,31 +349,44 @@ pub fn with_stack_for<R: Send>(sql_len: usize, f: impl FnOnce() -> R + Send) -> 
 /// 100 messages (build.rs), and a level of them takes up to tens of KiB of stack to decode: an AST
 /// deeper than [`deep::INLINE`] decodes again on a thread with a stack for [`deep::MAX`].
 pub fn decode_statement(bytes: &[u8]) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
-    let (mut r, mut too_deep) = deep::decode(bytes, deep::INLINE);
+    decode_statement_within(bytes, deep::MAX.types)
+}
+
+/// [`decode_statement`], with types nested at most `types` levels (at most [`deep::MAX`]'s).
+pub fn decode_statement_within(
+    bytes: &[u8],
+    types: u32,
+) -> Result<proto::AnyResolvedStatementProto, AnalyzeError> {
+    let max = deep::Limits {
+        types: types.min(deep::MAX.types),
+        ..deep::MAX
+    };
+    let inline = deep::Limits {
+        types: deep::INLINE.types.min(max.types),
+        ..deep::INLINE
+    };
+    let (mut r, mut too_deep) = deep::decode(bytes, inline);
     if too_deep.is_some() {
         (r, too_deep) = std::thread::scope(|s| {
             std::thread::Builder::new()
                 .name("googlesql-decode".into())
                 .stack_size(deep::STACK)
-                .spawn_scoped(s, || deep::decode(bytes, deep::MAX))
+                .spawn_scoped(s, || deep::decode(bytes, max))
                 .expect("spawn a decoder thread")
                 .join()
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         });
     }
     r.map_err(|e| match too_deep {
-        // What the emulator's analyser answers when it runs out of stack on a deep type.
-        Some(deep::TYPES) => AnalyzeError {
+        // What the emulator's analyser and Spanner's answer when they run out of stack on a deep
+        // expression or type.
+        Some(_) => AnalyzeError {
             code: 8,
             message: "Out of stack space due to deeply nested query expression during query \
                       resolution"
                 .into(),
         },
         // The error names every message it is nested in: too long for a gRPC status.
-        Some(what) => AnalyzeError {
-            code: 13,
-            message: format!("decode AnyResolvedStatementProto: {what} nested too deep"),
-        },
         None => AnalyzeError {
             code: 13,
             message: format!("decode AnyResolvedStatementProto: {e}"),
@@ -400,13 +413,15 @@ pub mod deep {
         types: 32,
     };
     /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
-    /// subqueries and 15 nested STRUCT parameters before 256 nodes. A type has no limit of its own
-    /// in the emulator (`CAST(NULL AS STRUCT<f STRUCT<...>>)` answers 5000 levels, until its
-    /// analyser runs out of stack), but the engine converts and drops types recursively, on 2 MiB
-    /// handler threads: about 6500 nested STRUCT and ARRAY types overflow one. Deeper than
-    /// `types`, a statement fails the way the emulator's does when it runs out of stack.
+    /// subqueries and 15 nested STRUCT parameters well before `nodes`, but not a chain of field
+    /// accesses (`(STRUCT(STRUCT(1 AS f) AS f)).f.f`): Spanner answers 400 of them and runs out of
+    /// stack before 500, the emulator answers 5000. Deeper than `nodes`, a statement fails the way
+    /// both do when they run out of stack. A type has no limit of its own in the emulator
+    /// (`CAST(NULL AS STRUCT<f STRUCT<...>>)` answers 5000 levels, until its analyser runs out of
+    /// stack; Spanner about 1200), but the engine converts and drops types recursively, on 2 MiB
+    /// handler threads: about 6500 nested STRUCT and ARRAY types overflow one.
     pub const MAX: Limits = Limits {
-        nodes: 256,
+        nodes: 500,
         types: 2000,
     };
     /// Stack for [`MAX`] (address space, used only as deep as the AST goes).

@@ -10,8 +10,9 @@
 //! - Each pair of consecutive query terms (adjacent in the query text, joined by AND, a phrase or
 //!   AROUND, not OR) that also occurs adjacently and in order in the document adds `G * A(n)`.
 //!
-//! Known gaps: `enhance_query => true` (prod scores lower by a term-dependent expansion: one hit of
-//! `alpha` 0.5597, `beta` 0.5813, `delta` 0.6315), and a query term repeated in the query
+//! Known gaps: `enhance_query => true` (prod scores by Google's query expansion, not the data: one
+//! hit of `alpha` 0.5597, `beta` 0.5813, `delta` 0.6315 in 2 rows and in 12, made-up `qzxv` 1.2589
+//! (the plain score) and `wplk` 1.4325 in 2 rows each; #160), and a query term repeated in the query
 //! (`alpha alpha` over `alpha alpha`: prod 3.937, this model 4.073; `alpha OR alpha` counts once).
 
 use super::rquery::Node;

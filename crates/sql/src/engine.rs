@@ -517,6 +517,7 @@ impl Engine {
                     // field read of a returned struct.
                     crate::struct_result::check(&q)?;
                     crate::struct_shape::check(&q)?;
+                    check_no_nested_struct_columns(&fields)?;
                 }
                 let positions = positions(&p.layout, &ids)?;
                 Ok(Prepared {
@@ -995,11 +996,36 @@ fn param_error(v: &prost_types::Value, ty: &Type, msg: String) -> Error {
 /// production reject the shape before execution, also for `THEN RETURN` and value tables.
 fn check_no_struct_columns(fields: &[(String, Type)]) -> Result<()> {
     if fields.iter().any(|(_, t)| matches!(t, Type::Struct(_))) {
-        return Err(Error::new(
-            Code::Unimplemented,
-            "Unsupported query shape: A struct value cannot be returned as a column value. \
-             Rewrite the query to flatten the struct fields in the result.",
-        ));
+        return Err(struct_column_error());
+    }
+    Ok(())
+}
+
+fn struct_column_error() -> Error {
+    Error::new(
+        Code::Unimplemented,
+        "Unsupported query shape: A struct value cannot be returned as a column value. Rewrite \
+         the query to flatten the struct fields in the result.",
+    )
+}
+
+/// Cloud Spanner returns no STRUCT nested in a returned ARRAY<STRUCT> either, however deep, and
+/// says so the same way (`struct_depth.case`); an ARRAY<STRUCT> field is fine. The emulator returns
+/// them.
+fn check_no_nested_struct_columns(fields: &[(String, Type)]) -> Result<()> {
+    /// Whether a STRUCT's fields hold a STRUCT other than as an array element.
+    fn nested(fields: &[(Option<String>, Type)]) -> bool {
+        fields.iter().any(|(_, t)| match t {
+            Type::Struct(_) => true,
+            Type::Array(e) => matches!(&**e, Type::Struct(f) if nested(f)),
+            _ => false,
+        })
+    }
+    if fields
+        .iter()
+        .any(|(_, t)| matches!(t, Type::Array(e) if matches!(&**e, Type::Struct(f) if nested(f))))
+    {
+        return Err(struct_column_error());
     }
     Ok(())
 }

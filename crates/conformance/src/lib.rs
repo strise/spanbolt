@@ -1,6 +1,7 @@
 //! Differential conformance harness for spanbolt. See `README.md` for the case format.
 
 pub mod case;
+pub mod deep;
 pub mod observe;
 pub mod protos;
 pub mod record;

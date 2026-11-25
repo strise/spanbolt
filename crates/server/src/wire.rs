@@ -77,20 +77,66 @@ where
     }
 
     fn call(&mut self, req: http::Request<B>) -> Self::Future {
+        let compat = self.svc.emu.emulator_compat;
         match req.uri().path() {
             EXECUTE_STREAMING_SQL => {
                 let mut grpc = self.grpc::<pb::ExecuteSqlRequest>();
                 let method = Method(self.svc.clone(), Sql);
-                Box::pin(async move { Ok(small_frames(grpc.server_streaming(method, req).await)) })
+                Box::pin(async move {
+                    let res = grpc.server_streaming(method, req).await;
+                    Ok(small_frames(undecodable_request(res, compat)))
+                })
             }
             STREAMING_READ => {
                 let mut grpc = self.grpc::<pb::ReadRequest>();
                 let method = Method(self.svc.clone(), Read);
-                Box::pin(async move { Ok(small_frames(grpc.server_streaming(method, req).await)) })
+                Box::pin(async move {
+                    let res = grpc.server_streaming(method, req).await;
+                    Ok(small_frames(undecodable_request(res, compat)))
+                })
             }
-            _ => self.generated.call(req),
+            _ => {
+                let call = self.generated.call(req);
+                Box::pin(async move { Ok(undecodable_request(call.await?, compat)) })
+            }
         }
     }
+}
+
+/// The start of the status tonic answers a request prost cannot decode with (INTERNAL).
+const DECODE_ERROR: &str = "failed to decode Protobuf message";
+
+/// Answers a request that does not decode the way Spanner does: INVALID_ARGUMENT with its own
+/// message (prost and Spanner's C++ protobuf both stop at 100 nested messages, a STRUCT parameter
+/// type 33 levels deep). The emulator answers INTERNAL without a message. tonic answers with the
+/// status in the response headers, before any handler runs.
+fn undecodable_request(
+    mut res: http::Response<tonic::body::Body>,
+    compat: bool,
+) -> http::Response<tonic::body::Body> {
+    if res.headers().get("grpc-status").map(|v| v.as_bytes()) != Some(b"13") {
+        return res;
+    }
+    let Some(status) = Status::from_header_map(res.headers()) else {
+        return res;
+    };
+    if !status.message().starts_with(DECODE_ERROR) {
+        return res;
+    }
+    let status = if compat {
+        Status::internal("")
+    } else {
+        Status::invalid_argument(
+            "Invalid request proto: an error was encountered during deserialization of the \
+             request proto.",
+        )
+    };
+    let headers = res.headers_mut();
+    headers.remove("grpc-message");
+    headers.remove("grpc-status-details-bin");
+    // Fails only on a message that isn't a valid header value; both are ASCII.
+    let _ = status.add_header(headers);
+    res
 }
 
 /// The largest DATA frame a streaming response is sent in: HTTP/2's default

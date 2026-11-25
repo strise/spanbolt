@@ -309,7 +309,7 @@ impl Walk<'_> {
                     c.depths.insert(depth);
                     if k == Kind::Parameter
                         && self.local.is_none()
-                        && let Err(e) = check_struct_parameter(b)
+                        && let Err(e) = check_struct_parameter(b, self.compat)
                     {
                         self.local = Some(e);
                     }
@@ -389,7 +389,7 @@ impl Walk<'_> {
 }
 
 /// A STRUCT (or ARRAY<STRUCT>) parameter: at most 1000 fields per struct and 15 levels.
-fn check_struct_parameter(b: &[u8]) -> Result<()> {
+fn check_struct_parameter(b: &[u8], compat: bool) -> Result<()> {
     let Ok(p) = ResolvedParameterProto::decode(b) else {
         return Ok(());
     };
@@ -427,10 +427,14 @@ fn check_struct_parameter(b: &[u8]) -> Result<()> {
         if !next.is_empty() {
             depth += 1;
             if depth > MAX_NESTED_STRUCT_DEPTH {
-                return Err(limit_error(
-                    "Number of nested struct types exceeds the maximum allowed limit of",
-                    MAX_NESTED_STRUCT_DEPTH,
-                ));
+                // Cloud Spanner names the parameter value (`struct_depth.case`).
+                let text = if compat {
+                    "Number of nested struct types exceeds the maximum allowed limit of"
+                } else {
+                    "Number of nested struct types in struct parameter value exceeds the maximum \
+                     allowed limit of"
+                };
+                return Err(limit_error(text, MAX_NESTED_STRUCT_DEPTH));
             }
         }
         level = next;

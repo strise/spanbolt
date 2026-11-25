@@ -86,6 +86,9 @@ impl Options {
     /// don't plan are UNIMPLEMENTED. Production also resolves `a || b || c` as nested binary
     /// concatenations, so each `||` counts toward the expression nesting limit
     /// (`conformance/cases/sql/concat_nesting.case`); the emulator makes one CONCAT call of it.
+    /// Production lets graph elements flow through a query (function arguments, GRAPH_TABLE
+    /// columns, GRAPH_TABLE without COLUMNS) and rejects them only where the statement returns
+    /// them (`conformance/cases/sql/graph.case`).
     pub fn extra_features(&self) -> &'static [&'static str] {
         if self.emulator_compat {
             &["FEATURE_INSERT_ON_CONFLICT_CLAUSE"]
@@ -96,6 +99,7 @@ impl Options {
                 "FEATURE_NULLS_FIRST_LAST_IN_ORDER_BY",
                 "FEATURE_PIPES",
                 "FEATURE_LEGACY_BINARY_CONCAT",
+                "FEATURE_SQL_GRAPH_EXPOSE_GRAPH_ELEMENT",
             ]
         }
     }

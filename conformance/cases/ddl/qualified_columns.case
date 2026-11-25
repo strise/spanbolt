@@ -13,6 +13,8 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing the definition of generated column `T`.`G`: Unrecognized name: T [at 1:2]
+expect@spanner:
+  same
 
 case generated_qualified_self_named
 ddl:
@@ -20,6 +22,8 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing the definition of generated column `T`.`N2`: Unrecognized name: T [at 1:2]
+expect@spanner:
+  same
 
 case default_qualified
 ddl:
@@ -27,6 +31,9 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing the default value of column `T`.`D`: Unrecognized name: T [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing default value expression \'T.N\' from column \'D\' in table \'T\': Unrecognized name: T [at 1:1]
 
 case check_qualified
 ddl:
@@ -34,3 +41,6 @@ ddl:
 expect:
   error: INVALID_ARGUMENT
   message: Error parsing expression 'T.N > 0' from check constraint 'C' in table 'T': Unrecognized name: T [at 1:1]
+expect@spanner:
+  error: INVALID_ARGUMENT
+  message: Error parsing expression \'T.N > 0\' from check constraint \'C\' in table \'T\': Unrecognized name: T [at 1:1]

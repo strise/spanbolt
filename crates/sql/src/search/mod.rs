@@ -32,7 +32,10 @@
 //! DEBUG_TOKENLIST, which only prod has, prints token lists in prod's format (`debug`). It is
 //! UNIMPLEMENTED until the analyser's catalog declares it (`engine.rs`).
 //!
-//! Not followed yet: CJK word segmentation (`日本語` is `日本, 語` in prod); SCORE with
+//! Not followed: CJK word segmentation (`日本語` is `日本, 語` in prod, recorded in
+//! `search_tokenizer_cjk.case`). Prod's segmenter is Google's own; on that corpus the ICU4X
+//! dictionary segmenter matches 86 of 137 texts and lindera (IPADIC, CC-CEDICT, ko-dic) 96 for
+//! seven times the binary size, so neither is worth a dependency. Not followed yet: SCORE with
 //! `enhance_query => true`; SNIPPET widths of scripts Arial doesn't cover (Georgian, Armenian,
 //! Indic, Thai) and of texts with no letters or digits.
 

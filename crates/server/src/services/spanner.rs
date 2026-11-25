@@ -520,8 +520,13 @@ fn project(
 /// `prod_messages` words key errors as production Spanner does.
 fn mutation(cat: &Catalog, m: &pb::Mutation, prod_messages: bool) -> Result<Mutation, Status> {
     use pb::mutation::Operation as Op;
-    let write =
-        |kind, w: &pb::mutation::Write| Mutation::write(cat, kind, &w.table, &w.columns, &w.values);
+    let write = |kind, w: &pb::mutation::Write| {
+        Mutation::write(cat, kind, &w.table, &w.columns, &w.values).map_err(|e| match prod_messages
+        {
+            true => convert::prod_write_error(cat, w, e),
+            false => e,
+        })
+    };
     match &m.operation {
         Some(Op::Insert(w)) => write(WriteKind::Insert, w),
         Some(Op::Update(w)) => write(WriteKind::Update, w),

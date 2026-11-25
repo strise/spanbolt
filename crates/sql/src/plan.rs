@@ -1324,6 +1324,13 @@ impl<'c> Planner<'c> {
         }
         match rel {
             Relation::Table(tid) => {
+                let cols = &self.cat.storage.table(tid).columns;
+                if idx.iter().any(|&i| {
+                    cols.get(i)
+                        .is_some_and(|c| crate::types::is_bundle_type(&c.ty))
+                }) {
+                    return Err(unimplemented("Reading a PROTO or ENUM column in SQL"));
+                }
                 let op = self.base_table(tid, t, &base.hint_list, &layout, &idx, outer, conj)?;
                 Ok(Planned { op, layout })
             }
@@ -1746,6 +1753,16 @@ impl<'c> Planner<'c> {
         let Some(Relation::Table(tid)) = self.cat.relation(full).cloned() else {
             return Err(unimplemented(format!("DML on {full}")));
         };
+        if self
+            .cat
+            .storage
+            .table(tid)
+            .columns
+            .iter()
+            .any(|c| crate::types::is_bundle_type(&c.ty))
+        {
+            return Err(unimplemented("DML on a table with PROTO or ENUM columns"));
+        }
         let n = self.cat.storage.table(tid).columns.len();
         let mut layout: Vec<i64> = (0..n).map(|c| -1_000_000 - c as i64).collect();
         for (c, &i) in base.column_list.iter().zip(&ts.column_index_list) {

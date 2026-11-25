@@ -647,3 +647,104 @@ fn prod_messages_follow_production_spanner() {
     let next = apply(&st, &[]).unwrap_or_else(|e| panic!("{e}"));
     assert!(next.prod_messages);
 }
+
+/// Package `m`: message `Info { optional Genre genre = 1; }` and enum `Genre { A = 0; B = 2; }`.
+fn music_descriptors() -> Arc<Vec<u8>> {
+    use prost::Message;
+    use prost_types::{
+        DescriptorProto, EnumDescriptorProto, EnumValueDescriptorProto, FieldDescriptorProto,
+        FileDescriptorProto, FileDescriptorSet,
+    };
+    let value = |name: &str, n| EnumValueDescriptorProto {
+        name: Some(name.into()),
+        number: Some(n),
+        ..Default::default()
+    };
+    let set = FileDescriptorSet {
+        file: vec![FileDescriptorProto {
+            name: Some("m.proto".into()),
+            package: Some("m".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Info".into()),
+                field: vec![FieldDescriptorProto {
+                    name: Some("genre".into()),
+                    number: Some(1),
+                    type_name: Some(".m.Genre".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            enum_type: vec![EnumDescriptorProto {
+                name: Some("Genre".into()),
+                value: vec![value("A", 0), value("B", 2)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+    };
+    Arc::new(set.encode_to_vec())
+}
+
+fn proto_state() -> DbState {
+    let mut schema = spanbolt_ddl::Schema::default();
+    for sql in [
+        "CREATE PROTO BUNDLE (m.Info, m.Genre)",
+        "CREATE TABLE V (K INT64 NOT NULL, P m.Info, E m.Genre, AE ARRAY<m.Genre>) PRIMARY KEY (K)",
+    ] {
+        let mut stmt = spanbolt_ddl::parse_statement(sql).unwrap_or_else(|e| panic!("{e}"));
+        if let spanbolt_ddl::Statement::CreateProtoBundle { descriptors, .. } = &mut stmt {
+            *descriptors = Some(music_descriptors());
+        }
+        schema.apply(&stmt).unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+    DbState::new(schema).unwrap_or_else(|e| panic!("{e}"))
+}
+
+#[test]
+fn enum_writes_need_a_defined_number() {
+    let st = proto_state();
+    let cols = ["K", "E", "AE"].map(String::from);
+    let write = |e: &str, ae: &str| {
+        let ae = prost_types::Value {
+            kind: Some(Kind::ListValue(row(vec![s(ae)]))),
+        };
+        Mutation::write(
+            &st.catalog,
+            WriteKind::Insert,
+            "V",
+            &cols,
+            &[row(vec![s("1"), s(e), ae])],
+        )
+    };
+    assert!(write("2", "0").is_ok());
+    for (e, ae) in [("1", "0"), ("2", "1")] {
+        let err = write(e, ae).expect_err("undefined enum number");
+        assert_eq!(err.code, Code::InvalidArgument);
+        assert_eq!(err.message, "Request contains an invalid argument.");
+    }
+    // Out of int32 range: not an enum number at all.
+    let err = write("4294967296", "0").expect_err("out of range");
+    assert_eq!(err.code, Code::FailedPrecondition);
+}
+
+#[test]
+fn snapshot_keeps_the_proto_bundle() {
+    let st = proto_state();
+    let img = snapshot::InstanceImage {
+        name: "projects/p/instances/i".into(),
+        databases: vec![snapshot::DatabaseImage {
+            name: "db".into(),
+            commit_ts: Timestamp { secs: 1, nanos: 0 },
+            state: Arc::new(st.clone()),
+        }],
+        ..Default::default()
+    };
+    let mut buf = Vec::new();
+    snapshot::write_to(&mut buf, std::slice::from_ref(&img)).unwrap_or_else(|e| panic!("{e}"));
+    let loaded = snapshot::read_from(&buf[..]).unwrap_or_else(|e| panic!("{e}"));
+    let schema = &loaded[0].databases[0].state.schema;
+    assert_eq!(schema.proto_bundle, st.schema.proto_bundle);
+    assert_eq!(schema.to_ddl(), st.schema.to_ddl());
+    let bundle = schema.proto_bundle.as_ref().expect("bundle");
+    assert_eq!(&bundle.enum_numbers["m.Genre"][..], [0, 2]);
+}

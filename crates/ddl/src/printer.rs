@@ -3,7 +3,9 @@
 use crate::parser::{join_idents, quote_ident, quote_path, quote_string};
 use crate::schema::*;
 
-pub(crate) fn type_sql(ty: &ColumnType) -> String {
+/// A column type; production prints proto and enum names as they are, the emulator quotes them.
+pub(crate) fn type_sql_in(ty: &ColumnType, production: bool) -> String {
+    let type_sql = |t: &ColumnType| type_sql_in(t, production);
     match ty {
         ColumnType::Bool => "BOOL".into(),
         ColumnType::Int64 => "INT64".into(),
@@ -18,7 +20,8 @@ pub(crate) fn type_sql(ty: &ColumnType) -> String {
         ColumnType::Interval => "INTERVAL".into(),
         ColumnType::Uuid => "UUID".into(),
         ColumnType::TokenList => "TOKENLIST".into(),
-        ColumnType::Proto(name) => name.clone(),
+        ColumnType::Proto(name) | ColumnType::Enum(name) if production => name.clone(),
+        ColumnType::Proto(name) | ColumnType::Enum(name) => format!("`{name}`"),
         ColumnType::Array(t) => format!("ARRAY<{}>", type_sql(t)),
         ColumnType::Struct(fields) => {
             let f: Vec<String> = fields
@@ -49,10 +52,14 @@ fn key_sql(parts: &[KeyPart]) -> String {
 }
 
 pub(crate) fn column_sql(c: &Column) -> String {
+    column_sql_in(c, false)
+}
+
+fn column_sql_in(c: &Column, production: bool) -> String {
     let mut s = format!(
         "{} {}",
         crate::parser::quote_ident(&c.name),
-        type_sql(&c.ty)
+        type_sql_in(&c.ty, production)
     );
     if let Some(n) = c.vector_length {
         s.push_str(&format!("(vector_length=>{n})"));
@@ -202,13 +209,14 @@ pub(crate) fn table_sql(t: &Table) -> String {
     table_sql_ordered(t, &fks, false)
 }
 
-/// `CREATE TABLE` with the foreign keys `fks`; with `checks_by_name`, the CHECK constraints in
-/// name order (case-insensitive, generated names included) as production's GetDatabaseDdl lists
-/// them, rather than in the order they were added, as the emulator does.
-fn table_sql_ordered(t: &Table, fks: &[&ForeignKey], checks_by_name: bool) -> String {
+/// `CREATE TABLE` with the foreign keys `fks`. With `production`, as production's
+/// GetDatabaseDdl prints it: the CHECK constraints in name order (case-insensitive, generated
+/// names included) rather than in the order they were added, and proto and enum types unquoted.
+fn table_sql_ordered(t: &Table, fks: &[&ForeignKey], production: bool) -> String {
+    let checks_by_name = production;
     let mut s = format!("CREATE TABLE {} (\n", quote_path(&t.name));
     for c in &t.columns {
-        s.push_str(&format!("  {},\n", column_sql(c)));
+        s.push_str(&format!("  {},\n", column_sql_in(c, production)));
     }
     for fk in fks {
         s.push_str(&format!("  {},\n", fk_sql(fk)));
@@ -340,6 +348,16 @@ fn sequence_sql_ordered(seq: &Sequence, production: bool) -> String {
     s
 }
 
+/// `CREATE PROTO BUNDLE`, one type per line in name order, as both oracles print it.
+pub(crate) fn proto_bundle_sql(b: &ProtoBundle) -> String {
+    let mut s = "CREATE PROTO BUNDLE (\n".to_string();
+    for t in b.types.keys() {
+        s.push_str(&format!("  {t},\n"));
+    }
+    s.push(')');
+    s
+}
+
 pub(crate) fn view_sql(v: &View) -> String {
     format!(
         "CREATE VIEW {} SQL SECURITY {} AS {}",
@@ -422,6 +440,9 @@ impl Schema {
     /// streams and CHECK constraints in production's form, else in creation order and the
     /// emulator's form.
     fn objects_ddl(&self, out: &mut Vec<String>, access: bool, production: bool) {
+        if let Some(bundle) = &self.proto_bundle {
+            out.push(proto_bundle_sql(bundle));
+        }
         let ordered = |kind: ObjectKind| -> Vec<&str> {
             if production {
                 self.production_order(kind)
@@ -853,6 +874,23 @@ fn alter_table_sql(table: &str, action: &AlterTable) -> String {
 /// Canonical text of one statement. `CREATE` statements print exactly as in `Schema::to_ddl`.
 pub fn print_statement(stmt: &Statement) -> String {
     match stmt {
+        Statement::CreateProtoBundle { types, .. } => {
+            format!("CREATE PROTO BUNDLE ({})", types.join(", "))
+        }
+        Statement::AlterProtoBundle { change, .. } => {
+            let mut s = "ALTER PROTO BUNDLE".to_string();
+            for (verb, types) in [
+                ("INSERT", &change.insert),
+                ("UPDATE", &change.update),
+                ("DELETE", &change.delete),
+            ] {
+                if !types.is_empty() {
+                    s.push_str(&format!(" {verb} ({})", types.join(", ")));
+                }
+            }
+            s
+        }
+        Statement::DropProtoBundle => "DROP PROTO BUNDLE".into(),
         Statement::CreateSchema {
             name,
             if_not_exists: ine,

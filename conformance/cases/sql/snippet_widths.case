@@ -1,0 +1,662 @@
+# SNIPPET's max_snippet_width over characters above U+00FF, five (or ten) of one character per
+# text. Cloud Spanner counts Arial's advance widths, 12 to the em rounded half down, and 9 for
+# Latin, Greek and Cyrillic letters Arial lacks. spanbolt follows it (`snippet_char_width` in
+# crates/sql/src/search/eval.rs, table from scripts/snippet_widths.py).
+tags: sql search
+schema:
+  CREATE TABLE W (
+    Id INT64 NOT NULL,
+    Body STRING(MAX),
+    Body_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Body)) HIDDEN,
+  ) PRIMARY KEY (Id);
+  CREATE SEARCH INDEX WSearch ON W(Body_Tokens)
+
+case width_cyr_a
+query:
+  SELECT
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u0430\u0430\u0430\u0430\u0430", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ааааа\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_cyr_sh
+query:
+  SELECT
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u0448\u0448\u0448\u0448\u0448", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"шшшшш\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_cyr_y
+query:
+  SELECT
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u044b\u044b\u044b\u044b\u044b", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ыыыыы\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_greek_a
+query:
+  SELECT
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u03b1\u03b1\u03b1\u03b1\u03b1", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ααααα\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_greek_l
+query:
+  SELECT
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u03bb\u03bb\u03bb\u03bb\u03bb", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"λλλλλ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_arab
+query:
+  SELECT
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u0628\u0628\u0628\u0628\u0628", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ببببب\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_hebr
+query:
+  SELECT
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u05e9\u05e9\u05e9\u05e9\u05e9", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ששששש\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_cyr_A
+query:
+  SELECT
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u0410\u0410\u0410\u0410\u0410", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ААААА\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_greek_O
+query:
+  SELECT
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u03a9\u03a9\u03a9\u03a9\u03a9", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΩΩΩΩΩ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_latin_ext
+query:
+  SELECT
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("\u0142\u0142\u0142\u0142\u0142", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"łłłłł\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_digit
+query:
+  SELECT
+    SNIPPET("55555", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("55555", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("55555", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("55555", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("55555", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("55555", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("55555", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("55555", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("55555", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("55555", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("55555", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("55555", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("55555", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"55555\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_n_known_x
+query:
+  SELECT
+    SNIPPET("xxxxx", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("xxxxx", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"xxxxx\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case width_n_known_m
+query:
+  SELECT
+    SNIPPET("mmmmm", "zz", max_snippet_width=>1) AS c0,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>2) AS c1,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>3) AS c2,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>4) AS c3,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>5) AS c4,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>6) AS c5,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>9) AS c8,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>11) AS c10,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>12) AS c11,
+    SNIPPET("mmmmm", "zz", max_snippet_width=>13) AS c12
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"mmmmm\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case arial_0
+query:
+  SELECT
+    SNIPPET("\u0106\u0106\u0106\u0106\u0106", "zz", max_snippet_width=>8) AS c0,
+    SNIPPET("\u0106\u0106\u0106\u0106\u0106", "zz", max_snippet_width=>9) AS c1,
+    SNIPPET("\u0118\u0118\u0118\u0118\u0118", "zz", max_snippet_width=>7) AS c2,
+    SNIPPET("\u0118\u0118\u0118\u0118\u0118", "zz", max_snippet_width=>8) AS c3,
+    SNIPPET("\u013b\u013b\u013b\u013b\u013b", "zz", max_snippet_width=>6) AS c4,
+    SNIPPET("\u013b\u013b\u013b\u013b\u013b", "zz", max_snippet_width=>7) AS c5,
+    SNIPPET("\u013e\u013e\u013e\u013e\u013e", "zz", max_snippet_width=>2) AS c6,
+    SNIPPET("\u013e\u013e\u013e\u013e\u013e", "zz", max_snippet_width=>3) AS c7,
+    SNIPPET("\u014b\u014b\u014b\u014b\u014b", "zz", max_snippet_width=>6) AS c8,
+    SNIPPET("\u014b\u014b\u014b\u014b\u014b", "zz", max_snippet_width=>7) AS c9,
+    SNIPPET("\u014f\u014f\u014f\u014f\u014f", "zz", max_snippet_width=>6) AS c10,
+    SNIPPET("\u014f\u014f\u014f\u014f\u014f", "zz", max_snippet_width=>7) AS c11,
+    SNIPPET("\u0193\u0193\u0193\u0193\u0193", "zz", max_snippet_width=>8) AS c12,
+    SNIPPET("\u0193\u0193\u0193\u0193\u0193", "zz", max_snippet_width=>9) AS c13,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u01d9\u01d9\u01d9\u01d9\u01d9", "zz", max_snippet_width=>8) AS c16,
+    SNIPPET("\u01d9\u01d9\u01d9\u01d9\u01d9", "zz", max_snippet_width=>9) AS c17,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>7) AS c18,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>8) AS c19,
+    SNIPPET("\u0226\u0226\u0226\u0226\u0226", "zz", max_snippet_width=>7) AS c20,
+    SNIPPET("\u0226\u0226\u0226\u0226\u0226", "zz", max_snippet_width=>8) AS c21,
+    SNIPPET("\u023b\u023b\u023b\u023b\u023b", "zz", max_snippet_width=>8) AS c22,
+    SNIPPET("\u023b\u023b\u023b\u023b\u023b", "zz", max_snippet_width=>9) AS c23
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ĆĆĆĆĆ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ĘĘĘĘĘ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ĻĻĻĻĻ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ľľľľľ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ŋŋŋŋŋ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ŏŏŏŏŏ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƓƓƓƓƓ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǙǙǙǙǙ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȻȻȻȻȻ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case arial_1
+query:
+  SELECT
+    SNIPPET("\u03ab\u03ab\u03ab\u03ab\u03ab", "zz", max_snippet_width=>7) AS c0,
+    SNIPPET("\u03ab\u03ab\u03ab\u03ab\u03ab", "zz", max_snippet_width=>8) AS c1,
+    SNIPPET("\u03bf\u03bf\u03bf\u03bf\u03bf", "zz", max_snippet_width=>6) AS c2,
+    SNIPPET("\u03bf\u03bf\u03bf\u03bf\u03bf", "zz", max_snippet_width=>7) AS c3,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>6) AS c4,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>7) AS c5,
+    SNIPPET("\u0420\u0420\u0420\u0420\u0420", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u0420\u0420\u0420\u0420\u0420", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u0426\u0426\u0426\u0426\u0426", "zz", max_snippet_width=>8) AS c8,
+    SNIPPET("\u0426\u0426\u0426\u0426\u0426", "zz", max_snippet_width=>9) AS c9,
+    SNIPPET("\u0432\u0432\u0432\u0432\u0432", "zz", max_snippet_width=>5) AS c10,
+    SNIPPET("\u0432\u0432\u0432\u0432\u0432", "zz", max_snippet_width=>6) AS c11,
+    SNIPPET("\u0438\u0438\u0438\u0438\u0438", "zz", max_snippet_width=>6) AS c12,
+    SNIPPET("\u0438\u0438\u0438\u0438\u0438", "zz", max_snippet_width=>7) AS c13,
+    SNIPPET("\u0446\u0446\u0446\u0446\u0446", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u0446\u0446\u0446\u0446\u0446", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u0455\u0455\u0455\u0455\u0455", "zz", max_snippet_width=>5) AS c16,
+    SNIPPET("\u0455\u0455\u0455\u0455\u0455", "zz", max_snippet_width=>6) AS c17,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>6) AS c18,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>7) AS c19,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>6) AS c20,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>7) AS c21,
+    SNIPPET("\u046c\u046c\u046c\u046c\u046c", "zz", max_snippet_width=>12) AS c22,
+    SNIPPET("\u046c\u046c\u046c\u046c\u046c", "zz", max_snippet_width=>13) AS c23
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѬѬѬѬѬ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѬѬѬѬѬ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ΫΫΫΫΫ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"οοοοο\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"РРРРР\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЦЦЦЦЦ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ввввв\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"иииии\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ццццц\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѕѕѕѕѕ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѬѬѬѬѬ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѬѬѬѬѬ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case arial_2
+query:
+  SELECT
+    SNIPPET("\u0478\u0478\u0478\u0478\u0478", "zz", max_snippet_width=>16) AS c0,
+    SNIPPET("\u0478\u0478\u0478\u0478\u0478", "zz", max_snippet_width=>17) AS c1,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>5) AS c2,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>6) AS c3,
+    SNIPPET("\u04c9\u04c9\u04c9\u04c9\u04c9", "zz", max_snippet_width=>8) AS c4,
+    SNIPPET("\u04c9\u04c9\u04c9\u04c9\u04c9", "zz", max_snippet_width=>9) AS c5,
+    SNIPPET("\u04ce\u04ce\u04ce\u04ce\u04ce", "zz", max_snippet_width=>7) AS c6,
+    SNIPPET("\u04ce\u04ce\u04ce\u04ce\u04ce", "zz", max_snippet_width=>8) AS c7,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>5) AS c8,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>6) AS c9,
+    SNIPPET("\u04ec\u04ec\u04ec\u04ec\u04ec", "zz", max_snippet_width=>8) AS c10,
+    SNIPPET("\u04ec\u04ec\u04ec\u04ec\u04ec", "zz", max_snippet_width=>9) AS c11,
+    SNIPPET("\u05d6\u05d6\u05d6\u05d6\u05d6", "zz", max_snippet_width=>4) AS c12,
+    SNIPPET("\u05d6\u05d6\u05d6\u05d6\u05d6", "zz", max_snippet_width=>5) AS c13,
+    SNIPPET("\u062f\u062f\u062f\u062f\u062f", "zz", max_snippet_width=>3) AS c14,
+    SNIPPET("\u062f\u062f\u062f\u062f\u062f", "zz", max_snippet_width=>4) AS c15,
+    SNIPPET("\u0649\u0649\u0649\u0649\u0649", "zz", max_snippet_width=>7) AS c16,
+    SNIPPET("\u0649\u0649\u0649\u0649\u0649", "zz", max_snippet_width=>8) AS c17,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>6) AS c18,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>7) AS c19,
+    SNIPPET("\u1e34\u1e34\u1e34\u1e34\u1e34", "zz", max_snippet_width=>7) AS c20,
+    SNIPPET("\u1e34\u1e34\u1e34\u1e34\u1e34", "zz", max_snippet_width=>8) AS c21,
+    SNIPPET("\u1e39\u1e39\u1e39\u1e39\u1e39", "zz", max_snippet_width=>2) AS c22,
+    SNIPPET("\u1e39\u1e39\u1e39\u1e39\u1e39", "zz", max_snippet_width=>3) AS c23
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѸѸѸѸѸ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѸѸѸѸѸ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѸѸѸѸѸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѸѸѸѸѸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӉӉӉӉӉ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӬӬӬӬӬ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"זזזזז\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ددددد\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ىىىىى\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}"]
+
+case arial_3
+query:
+  SELECT
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>9) AS c0,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>10) AS c1,
+    SNIPPET("\u1e4b\u1e4b\u1e4b\u1e4b\u1e4b", "zz", max_snippet_width=>6) AS c2,
+    SNIPPET("\u1e4b\u1e4b\u1e4b\u1e4b\u1e4b", "zz", max_snippet_width=>7) AS c3,
+    SNIPPET("\u1e56\u1e56\u1e56\u1e56\u1e56", "zz", max_snippet_width=>7) AS c4,
+    SNIPPET("\u1e56\u1e56\u1e56\u1e56\u1e56", "zz", max_snippet_width=>8) AS c5,
+    SNIPPET("\u1e69\u1e69\u1e69\u1e69\u1e69", "zz", max_snippet_width=>5) AS c6,
+    SNIPPET("\u1e69\u1e69\u1e69\u1e69\u1e69", "zz", max_snippet_width=>6) AS c7,
+    SNIPPET("\u1e72\u1e72\u1e72\u1e72\u1e72", "zz", max_snippet_width=>8) AS c8,
+    SNIPPET("\u1e72\u1e72\u1e72\u1e72\u1e72", "zz", max_snippet_width=>9) AS c9,
+    SNIPPET("\u1ea8\u1ea8\u1ea8\u1ea8\u1ea8", "zz", max_snippet_width=>7) AS c10,
+    SNIPPET("\u1ea8\u1ea8\u1ea8\u1ea8\u1ea8", "zz", max_snippet_width=>8) AS c11,
+    SNIPPET("\u1ead\u1ead\u1ead\u1ead\u1ead", "zz", max_snippet_width=>6) AS c12,
+    SNIPPET("\u1ead\u1ead\u1ead\u1ead\u1ead", "zz", max_snippet_width=>7) AS c13,
+    SNIPPET("\u1eb5\u1eb5\u1eb5\u1eb5\u1eb5", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u1eb5\u1eb5\u1eb5\u1eb5\u1eb5", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u1ec3\u1ec3\u1ec3\u1ec3\u1ec3", "zz", max_snippet_width=>6) AS c16,
+    SNIPPET("\u1ec3\u1ec3\u1ec3\u1ec3\u1ec3", "zz", max_snippet_width=>7) AS c17,
+    SNIPPET("\u1ed6\u1ed6\u1ed6\u1ed6\u1ed6", "zz", max_snippet_width=>8) AS c18,
+    SNIPPET("\u1ed6\u1ed6\u1ed6\u1ed6\u1ed6", "zz", max_snippet_width=>9) AS c19,
+    SNIPPET("\u1ef9\u1ef9\u1ef9\u1ef9\u1ef9", "zz", max_snippet_width=>5) AS c20,
+    SNIPPET("\u1ef9\u1ef9\u1ef9\u1ef9\u1ef9", "zz", max_snippet_width=>6) AS c21
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṲṲṲṲṲ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ẨẨẨẨẨ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ậậậậậ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ẵẵẵẵẵ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ểểểểể\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ỖỖỖỖỖ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ỹỹỹỹỹ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case ties
+query:
+  SELECT
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>6) AS c0,
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>8) AS c1,
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>10) AS c2,
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>12) AS c3,
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>14) AS c4,
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>16) AS c5,
+    SNIPPET("\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165\u0165", "zz", max_snippet_width=>18) AS c6,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>6) AS c7,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>8) AS c8,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>10) AS c9,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>12) AS c10,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>14) AS c11,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>16) AS c12,
+    SNIPPET("\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a\u044a", "zz", max_snippet_width=>18) AS c13
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ťťťťťťťťťť\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ťťťťťťťťťť\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ťťťťťťťťťť\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ťťťťťťťťťť\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ťťťťťťťťťť\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ťťťťťťťťťť\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ъъъъъъъъъъ\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ъъъъъъъъъъ\",\"source_begin\":1,\"source_end\":11}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ъъъъъъъъъъ\",\"source_begin\":1,\"source_end\":11}]}"]
+
+case exact_0
+query:
+  SELECT
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>3) AS c0,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>4) AS c1,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>5) AS c2,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>6) AS c3,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>7) AS c4,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>8) AS c5,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>9) AS c6,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>10) AS c7,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>11) AS c8,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>12) AS c9,
+    SNIPPET("\u045d\u045d\u045d\u045d\u045d", "zz", max_snippet_width=>13) AS c10,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>3) AS c11,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>4) AS c12,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>5) AS c13,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>8) AS c16,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>9) AS c17,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>10) AS c18,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>11) AS c19,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>12) AS c20,
+    SNIPPET("\u019e\u019e\u019e\u019e\u019e", "zz", max_snippet_width=>13) AS c21,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>3) AS c22,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>4) AS c23,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>5) AS c24,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>6) AS c25,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>7) AS c26,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>8) AS c27,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>9) AS c28,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>10) AS c29,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>11) AS c30,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>12) AS c31,
+    SNIPPET("\u0204\u0204\u0204\u0204\u0204", "zz", max_snippet_width=>13) AS c32
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѝѝѝѝѝ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ƞƞƞƞƞ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ȄȄȄȄȄ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case exact_3
+query:
+  SELECT
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>3) AS c0,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>4) AS c1,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>5) AS c2,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>6) AS c3,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>7) AS c4,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>8) AS c5,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>9) AS c6,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>10) AS c7,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>11) AS c8,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>12) AS c9,
+    SNIPPET("\u03f8\u03f8\u03f8\u03f8\u03f8", "zz", max_snippet_width=>13) AS c10,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>3) AS c11,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>4) AS c12,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>5) AS c13,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>8) AS c16,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>9) AS c17,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>10) AS c18,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>11) AS c19,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>12) AS c20,
+    SNIPPET("\u0461\u0461\u0461\u0461\u0461", "zz", max_snippet_width=>13) AS c21,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>3) AS c22,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>4) AS c23,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>5) AS c24,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>6) AS c25,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>7) AS c26,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>8) AS c27,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>9) AS c28,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>10) AS c29,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>11) AS c30,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>12) AS c31,
+    SNIPPET("\u04a1\u04a1\u04a1\u04a1\u04a1", "zz", max_snippet_width=>13) AS c32
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ϸϸϸϸϸ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѡѡѡѡѡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ҡҡҡҡҡ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case exact_6
+query:
+  SELECT
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>3) AS c0,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>4) AS c1,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>5) AS c2,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>6) AS c3,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>7) AS c4,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>8) AS c5,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>9) AS c6,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>10) AS c7,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>11) AS c8,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>12) AS c9,
+    SNIPPET("\u04df\u04df\u04df\u04df\u04df", "zz", max_snippet_width=>13) AS c10,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>3) AS c11,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>4) AS c12,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>5) AS c13,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>8) AS c16,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>9) AS c17,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>10) AS c18,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>11) AS c19,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>12) AS c20,
+    SNIPPET("\u1e01\u1e01\u1e01\u1e01\u1e01", "zz", max_snippet_width=>13) AS c21,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>3) AS c22,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>4) AS c23,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>5) AS c24,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>6) AS c25,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>7) AS c26,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>8) AS c27,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>9) AS c28,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>10) AS c29,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>11) AS c30,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>12) AS c31,
+    SNIPPET("\u1e40\u1e40\u1e40\u1e40\u1e40", "zz", max_snippet_width=>13) AS c32
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ӟӟӟӟӟ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ḁḁḁḁḁ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ḁḁḁḁḁ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ḁḁḁḁḁ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ḁḁḁḁḁ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ḁḁḁḁḁ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ṀṀṀṀṀ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case exact_9
+query:
+  SELECT
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>3) AS c0,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>4) AS c1,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>5) AS c2,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>6) AS c3,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>7) AS c4,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>8) AS c5,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>9) AS c6,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>10) AS c7,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>11) AS c8,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>12) AS c9,
+    SNIPPET("\u0400\u0400\u0400\u0400\u0400", "zz", max_snippet_width=>13) AS c10,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>3) AS c11,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>4) AS c12,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>5) AS c13,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>6) AS c14,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>7) AS c15,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>8) AS c16,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>9) AS c17,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>10) AS c18,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>11) AS c19,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>12) AS c20,
+    SNIPPET("\u040d\u040d\u040d\u040d\u040d", "zz", max_snippet_width=>13) AS c21,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>3) AS c22,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>4) AS c23,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>5) AS c24,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>6) AS c25,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>7) AS c26,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>8) AS c27,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>9) AS c28,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>10) AS c29,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>11) AS c30,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>12) AS c31,
+    SNIPPET("\u0450\u0450\u0450\u0450\u0450", "zz", max_snippet_width=>13) AS c32
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON, c11 JSON, c12 JSON, c13 JSON, c14 JSON, c15 JSON, c16 JSON, c17 JSON, c18 JSON, c19 JSON, c20 JSON, c21 JSON, c22 JSON, c23 JSON, c24 JSON, c25 JSON, c26 JSON, c27 JSON, c28 JSON, c29 JSON, c30 JSON, c31 JSON, c32 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЀЀЀЀЀ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ЍЍЍЍЍ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ѐѐѐѐѐ\",\"source_begin\":1,\"source_end\":6}]}"]
+
+case exact_18
+query:
+  SELECT
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>3) AS c0,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>4) AS c1,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>5) AS c2,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>6) AS c3,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>7) AS c4,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>8) AS c5,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>9) AS c6,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>10) AS c7,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>11) AS c8,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>12) AS c9,
+    SNIPPET("\u01c5\u01c5\u01c5\u01c5\u01c5", "zz", max_snippet_width=>13) AS c10
+expect:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON
+  ["{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\"}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\"}]}"]
+expect@spanner:
+  columns: c0 JSON, c1 JSON, c2 JSON, c3 JSON, c4 JSON, c5 JSON, c6 JSON, c7 JSON, c8 JSON, c9 JSON, c10 JSON
+  ["{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\",\"source_begin\":1,\"source_end\":6}]}","{\"snippets\":[{\"highlights\":[],\"snippet\":\"ǅǅǅǅǅ\",\"source_begin\":1,\"source_end\":6}]}"]

@@ -150,7 +150,24 @@ fn inv(msg: String) -> DdlError {
 }
 
 /// Base type name as the emulator prints it in errors (`STRING`, `ARRAY`, ...).
-fn base_type(ty: &ColumnType) -> &'static str {
+/// Proto and enum types print their full name.
+fn base_type(ty: &ColumnType) -> std::borrow::Cow<'static, str> {
+    let name = match ty {
+        ColumnType::Proto(n) | ColumnType::Enum(n) => return n.clone().into(),
+        _ => base_type_name(ty),
+    };
+    name.into()
+}
+
+/// An array's element type, else `ty`.
+fn base_elem(ty: &ColumnType) -> &ColumnType {
+    match ty {
+        ColumnType::Array(e) => base_elem(e),
+        t => t,
+    }
+}
+
+fn base_type_name(ty: &ColumnType) -> &'static str {
     match ty {
         ColumnType::Bool => "BOOL",
         ColumnType::Int64 => "INT64",
@@ -168,6 +185,7 @@ fn base_type(ty: &ColumnType) -> &'static str {
         ColumnType::Array(_) => "ARRAY",
         ColumnType::Struct(_) => "STRUCT",
         ColumnType::Proto(_) => "PROTO",
+        ColumnType::Enum(_) => "ENUM",
     }
 }
 
@@ -977,6 +995,10 @@ impl Schema {
                         base_type(&c.ty)
                     )));
                 }
+                // Cloud Spanner's error has no message; the emulator accepts the key.
+                Some(c) if !compat && matches!(c.ty, ColumnType::Proto(_)) => {
+                    return Err(inv(String::new()));
+                }
                 Some(c) if c.on_update.is_some() => {
                     return Err(inv(format!(
                         "Column {}.{} with ON UPDATE cannot be a part of or the whole primary key.",
@@ -1285,6 +1307,19 @@ impl Schema {
                     return Err(rdp_break(&old.name, &tname));
                 }
                 if !type_change_ok(&old.ty, &column.ty) {
+                    let is_proto = |t: &ColumnType| {
+                        matches!(base_elem(t), ColumnType::Proto(_) | ColumnType::Enum(_))
+                    };
+                    // Recorded from Cloud Spanner for PROTO and ENUM columns only.
+                    if !compat && (is_proto(&old.ty) || is_proto(&column.ty)) {
+                        return Err(inv(format!(
+                            "Cannot change type of column {}.{} from {} to {}.",
+                            t.name,
+                            old.name,
+                            base_type_name(&old.ty),
+                            base_type_name(&column.ty)
+                        )));
+                    }
                     return Err(inv(format!(
                         "Cannot change type of column `{}` from `{}` to `{}`",
                         old.name,
@@ -1791,6 +1826,11 @@ impl Schema {
                     "Cannot reference {} {} in the creation of index {n}.",
                     base_type(&c.ty),
                     c.name
+                )));
+            }
+            if !compat && matches!(c.ty, ColumnType::Proto(_)) {
+                return Err(pre(format!(
+                    "Index {n} is defined on a column of unsupported type PROTO."
                 )));
             }
         }
@@ -2481,7 +2521,12 @@ impl Schema {
 
     fn apply_inner(&mut self, stmt: &Statement, compat: bool) -> R<()> {
         self.check_locality_refs(stmt, compat)?;
+        let resolved = self.resolve_proto_columns(stmt, compat)?;
+        let stmt = resolved.as_ref().unwrap_or(stmt);
         match stmt {
+            Statement::CreateProtoBundle { .. }
+            | Statement::AlterProtoBundle { .. }
+            | Statement::DropProtoBundle => self.proto_bundle_stmt(stmt, compat)?,
             Statement::CreateSchema {
                 name,
                 if_not_exists,
@@ -2839,6 +2884,8 @@ fn type_change_ok(old: &ColumnType, new: &ColumnType) -> bool {
     use ColumnType::*;
     match (old, new) {
         (String(_) | Bytes(_), String(_) | Bytes(_)) => true,
+        (Proto(_) | Bytes(_), Proto(_) | Bytes(_)) => true,
+        (Enum(_) | Int64, Enum(_) | Int64) => true,
         (Array(a), Array(b)) => type_change_ok(a, b),
         (a, b) => a == b,
     }

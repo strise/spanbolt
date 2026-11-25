@@ -3567,3 +3567,138 @@ expect@spanner:
   ["451",6.861912727355957]
   ["452",8.739990234375]
   ["453",11.812663078308105]
+
+# Enhanced SCORE (#160): does the per-term part follow document frequency (corpus statistics) or
+# Google's query expansion? The same term at a higher df, then made-up terms (no synonyms or
+# spellings to expand to) at the same and at a different df.
+case score_enhance_query_df_same_term
+tags: oracle6
+insert S cols=Id,Body:
+  [201, "delta filler"]
+  [202, "delta filler"]
+  [203, "delta filler"]
+  [204, "delta filler"]
+  [205, "delta filler"]
+  [206, "delta filler"]
+  [207, "delta filler"]
+  [208, "delta filler"]
+  [209, "delta filler"]
+  [210, "delta filler"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'delta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'delta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["10",1.0]
+  ["11",1.0]
+  ["201",1.0]
+  ["202",1.0]
+  ["203",1.0]
+  ["204",1.0]
+  ["205",1.0]
+  ["206",1.0]
+  ["207",1.0]
+  ["208",1.0]
+  ["209",1.0]
+  ["210",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["10",0.6314595937728882]
+  ["11",0.6314595937728882]
+  ["201",0.6314595937728882]
+  ["202",0.6314595937728882]
+  ["203",0.6314595937728882]
+  ["204",0.6314595937728882]
+  ["205",0.6314595937728882]
+  ["206",0.6314595937728882]
+  ["207",0.6314595937728882]
+  ["208",0.6314595937728882]
+  ["209",0.6314595937728882]
+  ["210",0.6314595937728882]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'filler', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'filler', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["201",1.0]
+  ["202",1.0]
+  ["203",1.0]
+  ["204",1.0]
+  ["205",1.0]
+  ["206",1.0]
+  ["207",1.0]
+  ["208",1.0]
+  ["209",1.0]
+  ["210",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["201",0.6754488945007324]
+  ["202",0.6754488945007324]
+  ["203",0.6754488945007324]
+  ["204",0.6754488945007324]
+  ["205",0.6754488945007324]
+  ["206",0.6754488945007324]
+  ["207",0.6754488945007324]
+  ["208",0.6754488945007324]
+  ["209",0.6754488945007324]
+  ["210",0.6754488945007324]
+
+case score_enhance_query_df_made_up_terms
+tags: oracle6
+insert S cols=Id,Body:
+  [301, "qzxv"]
+  [302, "qzxv filler"]
+  [303, "wplk"]
+  [304, "wplk filler"]
+  [305, "vrmq"]
+  [306, "vrmq filler"]
+  [307, "vrmq"]
+  [308, "vrmq filler"]
+  [309, "vrmq"]
+  [310, "vrmq filler"]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'qzxv', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'qzxv', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["301",1.0]
+  ["302",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["301",1.2588917016983032]
+  ["302",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'wplk', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'wplk', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["303",1.0]
+  ["304",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["303",1.4324687719345093]
+  ["304",1.4324687719345093]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'vrmq', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'vrmq', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["305",1.0]
+  ["306",1.0]
+  ["307",1.0]
+  ["308",1.0]
+  ["309",1.0]
+  ["310",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["305",1.2588917016983032]
+  ["306",1.2588917016983032]
+  ["307",1.2588917016983032]
+  ["308",1.2588917016983032]
+  ["309",1.2588917016983032]
+  ["310",1.2588917016983032]
+query:
+  SELECT Id, SCORE(Body_Tokens, 'delta', enhance_query => true) AS s FROM S WHERE SEARCH(Body_Tokens, 'delta', enhance_query => true) ORDER BY Id
+expect:
+  columns: Id INT64, s FLOAT64
+  ["10",1.0]
+  ["11",1.0]
+expect@spanner:
+  columns: Id INT64, s FLOAT64
+  ["10",0.6314595937728882]
+  ["11",0.6314595937728882]

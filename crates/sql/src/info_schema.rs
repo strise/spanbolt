@@ -51,6 +51,16 @@ pub fn ddl_type(t: &ColumnType) -> String {
     }
 }
 
+/// [`ddl_type`] of a user column: the emulator spells a PROTO or ENUM type as its backticked
+/// name.
+fn column_type(t: &ColumnType, compat: bool) -> String {
+    match t {
+        ColumnType::Proto(n) | ColumnType::Enum(n) if compat => format!("`{n}`"),
+        ColumnType::Array(e) if compat => format!("ARRAY<{}>", column_type(e, compat)),
+        other => ddl_type(other),
+    }
+}
+
 fn delete_rule(o: &OnDelete) -> &'static str {
     match o {
         OnDelete::Cascade => "CASCADE",
@@ -311,7 +321,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                     };
                     let identity =
                         matches!(c.generated, Some(spanbolt_ddl::Generated::Identity { .. }));
-                    let mut ty = ddl_type(&c.ty);
+                    let mut ty = column_type(&c.ty, compat);
                     if let Some(n) = c.vector_length {
                         ty.push_str(&format!("(vector_length=>{n})"));
                     }
@@ -469,7 +479,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         [sch, tname, split(&ix.name).1, "INDEX", &c.name],
                         Some((pos + 1, order)),
                         !c.not_null && !ix.null_filtered,
-                        &ddl_type(&c.ty),
+                        &column_type(&c.ty, compat),
                     ));
                 }
             }
@@ -483,7 +493,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         [sch, name, "PRIMARY_KEY", "PRIMARY_KEY", &c.name],
                         Some((pos + 1, &k.order)),
                         !c.not_null,
-                        &ddl_type(&c.ty),
+                        &column_type(&c.ty, compat),
                     ));
                 }
             }
@@ -508,7 +518,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         [sch, tname, iname, "INDEX", &c.name],
                         Some((pos + 1, &k.order)),
                         !c.not_null && !ix.null_filtered && !in_filter(&c.name),
-                        &ddl_type(&c.ty),
+                        &column_type(&c.ty, compat),
                     ));
                 }
                 for st in &ix.storing {
@@ -517,7 +527,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         [sch, tname, iname, "INDEX", &c.name],
                         None,
                         !c.not_null && !in_filter(&c.name),
-                        &ddl_type(&c.ty),
+                        &column_type(&c.ty, compat),
                     ));
                 }
             }
@@ -545,7 +555,7 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         [sch, tname, iname, "SEARCH", &c.name],
                         Some((pos + 1, order.unwrap_or(&asc))),
                         !c.not_null,
-                        &ddl_type(&c.ty),
+                        &column_type(&c.ty, compat),
                     );
                     if order.is_none() {
                         r[7] = Value::Null;
@@ -558,29 +568,45 @@ fn layout_rows(cat: &SqlCatalog, table: &str) -> Result<Vec<Row>> {
                         [sch, tname, iname, "SEARCH", &c.name],
                         None,
                         !c.not_null,
-                        &ddl_type(&c.ty),
+                        &column_type(&c.ty, compat),
                     ));
                 }
             }
         }
         "SCHEMATA" => {
+            // PROTO_BUNDLE: the emulator returns the descriptors as the request sent them, on
+            // every schema; production its own rebuilt set, on the user's schemas.
+            let bundle = |production: bool| {
+                let b = schema.proto_bundle.as_ref()?;
+                let bytes = if production {
+                    spanbolt_ddl::protos::production_set(&b.descriptors, &b.types)?
+                } else {
+                    b.descriptors.to_vec()
+                };
+                Some(Value::Bytes(bytes.into()))
+            };
             if compat {
+                let bundle = bundle(false).unwrap_or(Value::Null);
                 let mut names: Vec<&str> = vec!["", "INFORMATION_SCHEMA", "SPANNER_SYS"];
                 names.extend(schema.schemas.values().map(String::as_str));
                 for n in names {
-                    out.push(vec![s(""), s(n), Value::Int64(0), s("")]);
+                    out.push(vec![s(""), s(n), Value::Int64(0), s(""), bundle.clone()]);
                 }
             } else {
                 // Production's EFFECTIVE_TIMESTAMP is the commit time of the latest schema
                 // change, the same for the default schema and every named one; 0 before the
                 // first UpdateDatabaseDdl.
                 let effective = Value::Int64(schema.ddl_timestamp.unwrap_or(0));
-                out.push(vec![s(""), s(""), effective.clone(), s("spanner_admin")]);
+                let bundle = bundle(true).unwrap_or(Value::Null);
+                let row = |n: &str, effective: Value, owner: &str, bundle: Value| {
+                    vec![s(""), s(n), effective, s(owner), bundle]
+                };
+                out.push(row("", effective.clone(), "spanner_admin", bundle.clone()));
                 for n in ["INFORMATION_SCHEMA", "SPANNER_SYS"] {
-                    out.push(vec![s(""), s(n), Value::Null, s("spanner_system")]);
+                    out.push(row(n, Value::Null, "spanner_system", Value::Null));
                 }
                 for n in schema.schemas.values() {
-                    out.push(vec![s(""), s(n), effective.clone(), s("spanner_admin")]);
+                    out.push(row(n, effective.clone(), "spanner_admin", bundle.clone()));
                 }
             }
         }

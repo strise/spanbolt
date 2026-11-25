@@ -90,7 +90,7 @@ fn yyyymmdd(secs: i64) -> String {
     let y = yoe + era * 400 + i64::from(m <= 2);
     format!("{y:04}{m:02}{d:02}")
 }
-const MAX_MSG: usize = 256 << 20;
+pub(crate) const MAX_MSG: usize = 256 << 20;
 
 type TemplateCell = Arc<OnceCell<Result<String, SetupError>>>;
 
@@ -324,7 +324,11 @@ impl Target {
         format!("{prefix}{}x{n}", self.run_id)
     }
 
-    async fn create_db(&self, schema: &[String]) -> Result<String, Status> {
+    async fn create_db(
+        &self,
+        schema: &[String],
+        descriptors: Option<&[u8]>,
+    ) -> Result<String, Status> {
         let id = self.next_db_id('c');
         let name = format!("{}/databases/{id}", self.instance);
         // Logged before the request: a create that times out on our side may still finish.
@@ -335,6 +339,7 @@ impl Target {
                 parent: self.instance.clone(),
                 create_statement: format!("CREATE DATABASE `{id}`"),
                 extra_statements: schema.to_vec(),
+                proto_descriptors: descriptors.map(<[u8]>::to_vec).unwrap_or_default(),
                 ..Default::default()
             })
             .await;
@@ -416,7 +421,7 @@ impl Target {
 
     async fn build_db(&self, case: &Case) -> Result<String, SetupError> {
         let db = self
-            .create_db(&case.schema)
+            .create_db(&case.schema, case.descriptors.as_deref().map(Vec::as_slice))
             .await
             .map_err(|s| SetupError::status("CreateDatabase", &s))?;
         let res = self.run_prelude(case, &db).await;
@@ -841,7 +846,7 @@ impl<'a> Ctx<'a> {
                 let (session, sel, seqno) = self.read_selector(step)?;
                 let req = self.sql_request(step, session, sel, seqno)?;
                 Self::wait(step).await?;
-                Ok(self.t.spanner().execute_sql(req).await.map(|r| {
+                Ok(crate::deep::execute_sql(self.t.chan(), req).await.map(|r| {
                     let rs = r.into_inner();
                     self.save_read_ts(step, &rs);
                     obs_of(&rs, true)
@@ -998,6 +1003,7 @@ impl<'a> Ctx<'a> {
                         .into_iter()
                         .map(|s| s.replace(DB_ID, &id))
                         .collect(),
+                    proto_descriptors: step.descriptors.as_deref().cloned().unwrap_or_default(),
                     ..Default::default()
                 };
                 let res = match self.t.db_admin().update_database_ddl(req).await {
@@ -1396,10 +1402,7 @@ impl<'a> Ctx<'a> {
             txn.seqno += 1;
             let (session, id, seqno) = (txn.session.clone(), txn.id.clone(), txn.seqno);
             let req = self.sql_request(step, session, Selector::Id(id), seqno)?;
-            return Ok(self
-                .t
-                .spanner()
-                .execute_sql(req)
+            return Ok(crate::deep::execute_sql(self.t.chan(), req)
                 .await
                 .map(|r| obs_of(&r.into_inner(), false)));
         }
@@ -1409,7 +1412,7 @@ impl<'a> Ctx<'a> {
             Err(s) => return Ok(Err(s)),
         };
         let req = self.sql_request(step, session.clone(), Selector::Id(id.clone()), 1)?;
-        let obs = match self.t.spanner().execute_sql(req).await {
+        let obs = match crate::deep::execute_sql(self.t.chan(), req).await {
             Ok(r) => obs_of(&r.into_inner(), false),
             Err(s) => {
                 self.rollback_id(&session, id).await;

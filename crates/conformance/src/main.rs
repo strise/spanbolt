@@ -128,6 +128,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        .thread_stack_size(spanbolt_conformance::deep::STACK)
         .build()
     {
         Ok(r) => r,

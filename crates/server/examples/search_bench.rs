@@ -1,5 +1,5 @@
-//! SEARCH latency over gRPC (tonic client) against an in-process server, 10k rows, with and
-//! without a search index:
+//! SEARCH and SNIPPET latency over gRPC (tonic client) against an in-process server, 10k rows
+//! with a search index (Spanner rejects SEARCH without one, and so does spanbolt by default):
 //! `source scripts/googlesql-env.sh && cargo run --release -p spanbolt-server --features googlesql --example search_bench`
 
 use std::collections::HashMap;
@@ -101,7 +101,7 @@ async fn main() -> Result<(), BoxErr> {
         })
         .await?;
     let table = "CREATE TABLE Entities (Id INT64 NOT NULL, Name STRING(MAX), Country STRING(2), Name_Tokens TOKENLIST AS (TOKENIZE_FULLTEXT(Name)) HIDDEN, Name_Ngrams TOKENLIST AS (TOKENIZE_NGRAMS(Name, ngram_size_max => 3, ngram_size_min => 3)) HIDDEN) PRIMARY KEY (Id)";
-    for (db, indexed) in [("plain", false), ("indexed", true)] {
+    for (db, indexed) in [("indexed", true)] {
         let mut extra = vec![table.to_string()];
         if indexed {
             extra.push(
@@ -193,6 +193,12 @@ async fn main() -> Result<(), BoxErr> {
                 "SELECT COUNT(*) AS c FROM Entities WHERE SEARCH(Name_Tokens, @q) AND Country = 'SE'",
                 "shipping",
                 1,
+            ),
+            (
+                "SNIPPET of 100 rows",
+                "SELECT SNIPPET(Name, @q) AS s FROM Entities WHERE SEARCH(Name_Tokens, @q)",
+                "kari fjordli",
+                100,
             ),
             (
                 "SEARCH_NGRAMS 40%",

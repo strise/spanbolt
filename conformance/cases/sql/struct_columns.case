@@ -95,6 +95,9 @@ query:
 expect:
   error: UNIMPLEMENTED
   message: Unsupported query shape: A struct value cannot be returned as a column value. Rewrite the query to flatten the struct fields in the result.
+expect@spanner:
+  error: UNIMPLEMENTED
+  message: Unsupported query shape: Top level queries may not specify value tables. 'SELECT AS STRUCT' and 'SELECT AS VALUE' are only supported in subqueries, not at the top level.
 
 case struct_order_by_hidden
 query:

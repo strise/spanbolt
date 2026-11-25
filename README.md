@@ -62,10 +62,26 @@ suite and the conformance cases exercise.
 - Not supported: `APPROX_*` distance functions with `options`, backups, IAM policies, the
   emulator's own command-line flags (see below for what to use instead), change stream reads (`READ_<stream>`), sequence values
   (`GET_NEXT_SEQUENCE_VALUE`; sequences themselves are stored), `ListDatabaseRoles`, and these
-  DDL statements: proto bundles, queues, placements, user-defined functions, vector indexes and
-  expression index keys.
+  DDL statements: queues, placements, user-defined functions, vector indexes and expression
+  index keys.
+- Proto bundles (`CREATE/ALTER/DROP PROTO BUNDLE`) and PROTO and ENUM columns work through DDL,
+  mutations, the Read API and `INFORMATION_SCHEMA`. SQL that reads a PROTO or ENUM column, or DML
+  on its table, returns `UNIMPLEMENTED` for now (#127).
 - Locality groups are validated and stored (DDL, `INFORMATION_SCHEMA.LOCALITY_GROUP_OPTIONS`) but
   don't change where or how data is stored.
+- Unnamed CHECK and FOREIGN KEY constraints get the emulator's generated names in both modes.
+  Cloud Spanner's names end in a different hash that we couldn't reproduce, so errors and
+  `INFORMATION_SCHEMA` that show those names differ from production (#146).
+- Deeply nested queries fail with `RESOURCE_EXHAUSTED` ("Out of stack space ..."), as Cloud
+  Spanner's do, but at fixed depths where Spanner's and the emulator's depend on their stack:
+  types nested more than 1200 STRUCT and ARRAY levels (2000 with `--emulator-compat`; Spanner stops
+  between 1100 and 1300, the emulator answers about 5000), and expressions more than 500 levels
+  (Spanner stops a chain of STRUCT field accesses between 400 and 500, the emulator answers 5000)
+  (#160, #162).
+- `SCORE` with `enhance_query => true` scores like plain `SCORE`. Cloud Spanner's enhanced score
+  comes from Google's query expansion model: two made-up words in the same number of rows score
+  differently, and a word scores the same whatever its document frequency, so it can't be computed
+  from the data (#160).
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the
   client libraries already handle, but the timing differs.
 - Tested on macOS (arm64) and in the linux/arm64 image. CI smoke-tests the linux/amd64 image; the

@@ -11,6 +11,7 @@ pub(crate) fn map_error(e: googlesql_sys::AnalyzeError) -> Error {
     let code = match e.code {
         5 => Code::NotFound,
         6 => Code::AlreadyExists,
+        8 => Code::ResourceExhausted,
         9 => Code::FailedPrecondition,
         11 => Code::OutOfRange,
         12 => Code::Unimplemented,
@@ -50,8 +51,17 @@ pub fn statement(cat: &SqlCatalog, sql: &str, params: &str) -> Result<AnyResolve
     googlesql_sys::with_stack_for(sql.len(), || {
         crate::limits::check(&bytes, cat.emulator_compat)
     })?;
-    googlesql_sys::decode_statement(&bytes).map_err(|e| Error::internal(e.message))
+    let types = if cat.emulator_compat {
+        googlesql_sys::deep::MAX.types
+    } else {
+        SPANNER_TYPE_LEVELS
+    };
+    googlesql_sys::decode_statement_within(&bytes, types).map_err(map_error)
 }
+
+/// Cloud Spanner's analyser answers `CAST(NULL AS STRUCT<f STRUCT<...>>)` 1100 levels deep and runs
+/// out of stack before 1300 (`struct_depth.case`); the emulator's goes on to about 5000.
+const SPANNER_TYPE_LEVELS: u32 = 1200;
 
 /// Production names PROTO_BUNDLE's type `proto2.FileDescriptorSet` in errors too
 /// (`No matching signature for function LENGTH ... Argument types: proto2.FileDescriptorSet`).
@@ -110,6 +120,16 @@ fn has_location(message: &str) -> bool {
 fn unsupported(cat: &SqlCatalog, e: Error) -> Error {
     if e.code != Code::InvalidArgument {
         return e;
+    }
+    // The analyser doesn't know the proto bundle's types yet (its columns are placeholders).
+    if cat
+        .schema
+        .proto_bundle
+        .as_ref()
+        .is_some_and(|b| !b.types.is_empty())
+        && !e.message.starts_with("Syntax error: ")
+    {
+        return crate::types::unimplemented("SQL over PROTO and ENUM types");
     }
     // Sequences are stored, but their counters aren't modelled.
     if let Some(rest) = e.message.strip_prefix("Function not found: ") {

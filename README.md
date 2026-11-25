@@ -72,6 +72,9 @@ suite and the conformance cases exercise.
 - Unnamed CHECK and FOREIGN KEY constraints get the emulator's generated names in both modes.
   Cloud Spanner's names end in a different hash that we couldn't reproduce, so errors and
   `INFORMATION_SCHEMA` that show those names differ from production (#146).
+- A query whose types nest more than 2000 STRUCT and ARRAY levels deep fails with
+  `RESOURCE_EXHAUSTED` ("Out of stack space ..."). The emulator answers about 5000 before its
+  analyser runs out of stack (#160).
 - Real Spanner takes locks where spanbolt aborts and lets the client retry. Both are outcomes the
   client libraries already handle, but the timing differs.
 - Tested on macOS (arm64) and in the linux/arm64 image. CI smoke-tests the linux/amd64 image; the

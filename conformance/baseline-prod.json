@@ -346,8 +346,8 @@
     },
     "search": {
       "error": 0,
-      "fail": 23,
-      "pass": 520,
+      "fail": 20,
+      "pass": 523,
       "skipped": 1,
       "total": 555,
       "unimplemented": 11
@@ -362,8 +362,8 @@
     },
     "sql": {
       "error": 0,
-      "fail": 36,
-      "pass": 4175,
+      "fail": 33,
+      "pass": 4178,
       "skipped": 3,
       "total": 4238,
       "unimplemented": 24
@@ -39104,9 +39104,9 @@
       ]
     },
     {
-      "detail": "line 536:\n  message:\n    - All elements to TOKENLIST_CONCAT must be produced by the same kind of tokenization function. [at 1:51]\n    + SEARCH is not supported in this query. Possible reasons are: There is no appropriate search index to use, or the function is used in unsupported query shapes. You can get more details on why a specific search index cannot be used by adding @{force_index} hint to the query.",
+      "detail": null,
       "name": "sql/search_functions/tokenlist_concat_mixed_error",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
@@ -39131,9 +39131,9 @@
       ]
     },
     {
-      "detail": "line 567:\n  message:\n    - Invalid use of TOKENIZE_NGRAMS: ngram_size_min cannot be greater than ngram_size_max. [at 1:22]\n    + Invalid use of TOKENIZE_NGRAMS: ngram_size_min cannot be greater than ngram_size_max.",
+      "detail": null,
       "name": "sql/search_functions/tokenize_ngrams_bad_sizes",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
@@ -39167,9 +39167,9 @@
       ]
     },
     {
-      "detail": "line 606:\n  message:\n    - TOKENIZE_NUMBER: min must be less than max, got: 10 and 1 [at 1:8]\n    + TOKENIZE_NUMBER: min must be less than max, got: 10 and 1",
+      "detail": null,
       "name": "sql/search_functions/tokenize_number_min_max",
-      "status": "fail",
+      "status": "pass",
       "tags": [
         "sql",
         "search"
@@ -47237,11 +47237,11 @@
       ]
     }
   ],
-  "target": "127.0.0.1:26160",
+  "target": "127.0.0.1:26260",
   "totals": {
     "error": 0,
-    "fail": 37,
-    "pass": 5058,
+    "fail": 34,
+    "pass": 5061,
     "skipped": 9,
     "total": 5138,
     "unimplemented": 34

@@ -35,7 +35,8 @@
 //! analyser declares it in default mode only.
 //!
 //! Not followed: CJK word segmentation (`日本語` is `日本, 語` in prod, recorded in
-//! `search_tokenizer_cjk.case`). Prod's segmenter is Google's own; on that corpus the ICU4X
+//! `search_tokenizer_cjk.case`; it is also the one row `search_tokenizer_more.case`'s `tokens`
+//! fails on in default mode). Prod's segmenter is Google's own; on that corpus the ICU4X
 //! dictionary segmenter matches 86 of 137 texts and lindera (IPADIC, CC-CEDICT, ko-dic) 96 for
 //! seven times the binary size, so neither is worth a dependency. Not followed yet: SCORE with
 //! `enhance_query => true`; SNIPPET widths of scripts Arial doesn't cover (Georgian, Armenian,

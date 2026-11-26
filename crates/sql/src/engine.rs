@@ -434,7 +434,7 @@ impl Engine {
 
     fn plan(&self, cat: &SqlCatalog, sql: &str, params_json: &str) -> Result<Prepared> {
         let stmt = crate::analyze::statement(cat, sql, params_json)?;
-        let mut planner = Planner::new(cat, sql, self.opts);
+        let mut planner = Planner::new(cat, self.opts);
         match stmt.node {
             Some(StmtNode::ResolvedQueryStmtNode(q)) => {
                 let hints = q

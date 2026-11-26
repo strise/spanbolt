@@ -193,8 +193,6 @@ fn analytic_scan_error(a: &ResolvedAnalyticScanProto) -> Error {
 
 pub struct Planner<'c> {
     pub cat: &'c SqlCatalog,
-    /// The statement's text, to place errors raised as Spanner's analyser would (`[at 1:8]`).
-    pub sql: &'c str,
     pub params: HashMap<String, usize>,
     pub param_types: Vec<Param>,
     pub opts: Options,
@@ -406,11 +404,6 @@ fn node_name<T: std::fmt::Debug>(n: &T) -> String {
 
 pub fn expr_type(e: &AnyResolvedExprProto) -> Option<&TypeProto> {
     expr_base(e).and_then(|b| b.r#type.as_ref())
-}
-
-/// Byte offset of a node in the statement's text, if the analyser recorded it.
-fn location(n: Option<&ResolvedNodeProto>) -> Option<usize> {
-    usize::try_from(n?.parse_location_range.as_ref()?.start?).ok()
 }
 
 /// An expression's `ResolvedExprProto` fields (type, parse location).
@@ -928,10 +921,9 @@ struct ScanCtx<'e> {
 }
 
 impl<'c> Planner<'c> {
-    pub fn new(cat: &'c SqlCatalog, sql: &'c str, opts: Options) -> Self {
+    pub fn new(cat: &'c SqlCatalog, opts: Options) -> Self {
         Planner {
             cat,
-            sql,
             params: HashMap::new(),
             param_types: Vec::new(),
             opts,
@@ -2502,10 +2494,11 @@ impl<'c> Planner<'c> {
         Ok(())
     }
 
-    /// Errors Cloud Spanner's analyser raises about a tokenizer call's arguments, with its
-    /// position (not in `--emulator-compat`, where the functions raise them when they run):
-    /// literal options of TOKENIZE_NUMBER and TOKENIZE_NGRAMS (`search::analysis_error`), and
-    /// TOKENLIST_CONCAT over TOKENIZE_FULLTEXT and TOKENIZE_SUBSTRING columns together.
+    /// Errors Cloud Spanner raises about a tokenizer call's arguments before it checks where
+    /// SEARCH is used (not in `--emulator-compat`, where the functions raise them when they
+    /// run): literal options of TOKENIZE_NUMBER and TOKENIZE_NGRAMS (`search::analysis_error`),
+    /// and TOKENLIST_CONCAT over TOKENIZE_FULLTEXT and TOKENIZE_SUBSTRING columns together.
+    /// Spanner stopped giving these a position (`[at 1:8]`) in the 2026-W48 recording.
     fn analysis_error(&self, name: &str, b: &ResolvedFunctionCallBaseProto) -> Result<()> {
         if self.opts.emulator_compat {
             return Ok(());
@@ -2519,8 +2512,7 @@ impl<'c> Planner<'c> {
                     .map(type_of)
                     .collect::<Result<Vec<_>>>()?;
                 if let Some(e) = crate::search::analysis_error(name, &args, &types) {
-                    let at = b.parent.as_ref().and_then(|p| location(p.parent.as_ref()));
-                    return Err(crate::analyze::located(e, self.sql, at));
+                    return Err(e);
                 }
             }
             "tokenlist_concat" => {
@@ -2541,11 +2533,9 @@ impl<'c> Planner<'c> {
                     })
                     .collect();
                 if kinds.len() > 1 {
-                    let e = Error::invalid_argument(
+                    return Err(Error::invalid_argument(
                         "All elements to TOKENLIST_CONCAT must be produced by the same kind of tokenization function.",
-                    );
-                    let at = expr_base(list).and_then(|p| location(p.parent.as_ref()));
-                    return Err(crate::analyze::located(e, self.sql, at));
+                    ));
                 }
             }
             _ => {}

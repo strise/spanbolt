@@ -94,7 +94,7 @@ suite and the conformance cases exercise.
 ### Docker
 
 ```sh
-docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2
+docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.3
 export SPANNER_EMULATOR_HOST=localhost:9010
 ```
 
@@ -106,13 +106,13 @@ With Testcontainers, mark the image as a substitute for the emulator (`SpannerEm
 checks the name):
 
 ```java
-var image = DockerImageName.parse("ghcr.io/strise/spanbolt:0.2")
+var image = DockerImageName.parse("ghcr.io/strise/spanbolt:0.3")
     .asCompatibleSubstituteFor("gcr.io/cloud-spanner-emulator/emulator");
 var spanner = new SpannerEmulatorContainer(image);
 ```
 
 Suites that take the image name from a property instead can tag it under the emulator's name:
-`docker tag ghcr.io/strise/spanbolt:0.2 gcr.io/cloud-spanner-emulator/emulator:spanbolt`.
+`docker tag ghcr.io/strise/spanbolt:0.3 gcr.io/cloud-spanner-emulator/emulator:spanbolt`.
 
 `docs/docker.md` covers multi-arch builds, a prebuilt GoogleSQL layer and pre-seeded images.
 
@@ -148,7 +148,7 @@ service or CI job can connect without creating them first:
 
 ```sh
 docker run --rm -p 9010:9010 -e SPANBOLT_DATABASES=projects/test/instances/test/databases/app \
-  ghcr.io/strise/spanbolt:0.2
+  ghcr.io/strise/spanbolt:0.3
 ```
 
 ## Coming from the emulator

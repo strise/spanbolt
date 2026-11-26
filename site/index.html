@@ -54,7 +54,7 @@
     {"@type": "Question", "name": "Why is the Cloud Spanner emulator slow?",
      "acceptedAnswer": {"@type": "Answer", "text": "The official emulator is built for correctness. It rebuilds its catalog for every statement, scans whole tables where Spanner would use a key or an index, and runs one read-write transaction per database at a time. spanbolt keeps Google's GoogleSQL analyser and replaces the storage, planner and transaction layers."}},
     {"@type": "Question", "name": "How do I use spanbolt with Testcontainers?",
-     "acceptedAnswer": {"@type": "Answer", "text": "Use the image ghcr.io/strise/spanbolt with SpannerEmulatorContainer and mark it as a substitute for the emulator: DockerImageName.parse(\"ghcr.io/strise/spanbolt:0.2\").asCompatibleSubstituteFor(\"gcr.io/cloud-spanner-emulator/emulator\"). spanbolt prints the startup line Testcontainers waits for."}},
+     "acceptedAnswer": {"@type": "Answer", "text": "Use the image ghcr.io/strise/spanbolt with SpannerEmulatorContainer and mark it as a substitute for the emulator: DockerImageName.parse(\"ghcr.io/strise/spanbolt:0.3\").asCompatibleSubstituteFor(\"gcr.io/cloud-spanner-emulator/emulator\"). spanbolt prints the startup line Testcontainers waits for."}},
     {"@type": "Question", "name": "Does spanbolt work with JDBC, Liquibase and Apache Beam?",
      "acceptedAnswer": {"@type": "Answer", "text": "Yes. It is tested with the Java and Python client libraries, the Spanner JDBC driver, Liquibase, Beam's SpannerIO and Testcontainers' SpannerEmulatorContainer. A large application's full test suite using all of these passes on it."}},
     {"@type": "Question", "name": "Can I reset or clone a Spanner emulator database between tests?",
@@ -230,8 +230,8 @@ footer { padding: 28px 32px 40px; font: 400 13px/1.7 "IBM Plex Mono", monospace;
   GoogleSQL analyser, so names, types and errors resolve the way Spanner resolves them. The storage, planner and
   transactions are new, and much faster.</p>
   <div class="run reveal d3">
-    <button type="button" data-copy="docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2&#10;export SPANNER_EMULATOR_HOST=localhost:9010">Copy</button>
-<pre><span class="p">$ </span>docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2
+    <button type="button" data-copy="docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.3&#10;export SPANNER_EMULATOR_HOST=localhost:9010">Copy</button>
+<pre><span class="p">$ </span>docker run --rm -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.3
 <span class="c">spanbolt: Cloud Spanner emulator running. gRPC on 0.0.0.0:9010, REST on 0.0.0.0:9020</span>
 <span class="p">$ </span>export SPANNER_EMULATOR_HOST=localhost:9010</pre>
   </div>
@@ -298,11 +298,11 @@ footer { padding: 28px 32px 40px; font: 400 13px/1.7 "IBM Plex Mono", monospace;
   <div class="two">
     <div>
       <h4>Testcontainers (Java)</h4>
-<pre class="block">var image = DockerImageName.parse("ghcr.io/strise/spanbolt:0.2")
+<pre class="block">var image = DockerImageName.parse("ghcr.io/strise/spanbolt:0.3")
     .asCompatibleSubstituteFor("gcr.io/cloud-spanner-emulator/emulator");
 var spanner = new SpannerEmulatorContainer(image);</pre>
       <h4>Any client library</h4>
-<pre class="block">docker run -d -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.2
+<pre class="block">docker run -d -p 9010:9010 -p 9020:9020 ghcr.io/strise/spanbolt:0.3
 export SPANNER_EMULATOR_HOST=localhost:9010
 <span class="c"># Java, Go, Python, Node, JDBC, Liquibase, Beam: unchanged</span></pre>
       <h4>Cargo (macOS arm64, Linux)</h4>

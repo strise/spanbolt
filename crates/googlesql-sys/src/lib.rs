@@ -541,8 +541,12 @@ pub mod deep {
     /// The most decoded at all. Spanner's limits stop a query at 75 nested calls, 25 nested
     /// subqueries and 15 nested STRUCT parameters well before `nodes`, but not a chain of field
     /// accesses (`(STRUCT(STRUCT(1 AS f) AS f)).f.f`): Spanner answers 400 of them and runs out of
-    /// stack before 500, the emulator answers 5000. Deeper than `nodes`, a statement fails the way
-    /// both do when they run out of stack. A type has no limit of its own in the emulator
+    /// stack before 500, the emulator answers 5000 (and stops before 6000). Deeper than `nodes`, a
+    /// statement fails the way both do when they run out of stack. `--emulator-compat` keeps the
+    /// same `nodes`: every node of the serialized AST carries its whole type, so N nested STRUCT
+    /// constructors serialize N²/2 levels of type. Without the limit, 1000 constructors under 1000
+    /// field accesses took 1.5 GB to analyse and decode, 5000 over 4 GB (#172). A type has no limit
+    /// of its own in the emulator
     /// (`CAST(NULL AS STRUCT<f STRUCT<...>>)` answers 5000 levels, until its analyser runs out of
     /// stack; Spanner about 1200), but the engine converts and drops types recursively, on 2 MiB
     /// handler threads: about 6500 nested STRUCT and ARRAY types overflow one.

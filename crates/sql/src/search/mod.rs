@@ -90,11 +90,19 @@ fn prod_tokenize_number(m: &str) -> String {
     if let Some(rest) = m.strip_prefix("TOKENIZE_NUMBER: algorithm 'floatingpoint'") {
         return format!("algorithm 'floatingpoint'{rest}");
     }
+    // The bounds errors (`min must be less than max, got: 10 and 1`).
+    if let Some(rest) = m.strip_prefix("TOKENIZE_NUMBER: ")
+        && ["min ", "max ", "granularity "]
+            .iter()
+            .any(|p| rest.starts_with(p))
+    {
+        return rest.to_string();
+    }
     m.to_string()
 }
 
-/// The error Cloud Spanner raises while analysing a tokenizer call whose options are literals,
-/// placed at the call and before any check of where SEARCH is used: TOKENIZE_NUMBER's INT64
+/// The error Cloud Spanner raises about a tokenizer call whose options are literals, before any
+/// check of where SEARCH is used (no position since the 2026-W48 recording): TOKENIZE_NUMBER's INT64
 /// bounds and TOKENIZE_NGRAMS's `ngram_size_min` above `ngram_size_max`
 /// (`search_functions.case`). Spanner checks the other options when the function runs, without a
 /// position, so those stay in the functions. `args` holds each argument's value if it is a
@@ -138,7 +146,9 @@ pub fn analysis_error(
             if !all || !tree {
                 return None;
             }
-            tokens::int_bounds(&a).err()
+            tokens::int_bounds(&a)
+                .err()
+                .map(|e| prod_message(false, e, prod_tokenize_number))
         }
         "tokenize_ngrams" => {
             let a = options(2)?;
@@ -223,7 +233,7 @@ mod tests {
         let bounds = [none.clone(), null.clone(), null.clone(), int(10), int(1)];
         assert_eq!(
             number(&bounds).as_deref(),
-            Some("TOKENIZE_NUMBER: min must be less than max, got: 10 and 1")
+            Some("min must be less than max, got: 10 and 1")
         );
         // A bound that isn't a literal, or options Spanner rejects first, wait for the call.
         assert_eq!(

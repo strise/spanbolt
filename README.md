@@ -78,8 +78,11 @@ suite and the conformance cases exercise.
   Spanner's do, but at fixed depths where Spanner's and the emulator's depend on their stack:
   types nested more than 1200 STRUCT and ARRAY levels (2000 with `--emulator-compat`; Spanner stops
   between 1100 and 1300, the emulator answers about 5000), and expressions more than 500 levels
-  (Spanner stops a chain of STRUCT field accesses between 400 and 500, the emulator answers 5000)
-  (#160, #162).
+  (Spanner stops a chain of STRUCT field accesses between 400 and 500) (#160, #162).
+  `--emulator-compat` keeps the 500 too, where the emulator answers 5000 STRUCT constructors under
+  5000 field accesses and stops before 6000. GoogleSQL's serialized AST, which spanbolt decodes,
+  repeats each node's whole type, so N nested constructors make N²/2 levels of type: 1000 of them
+  took 1.5 GB to analyse, 5000 over 4 GB (#172).
 - `SCORE` with `enhance_query => true` scores like plain `SCORE`. Cloud Spanner's enhanced score
   comes from Google's query expansion model: two made-up words in the same number of rows score
   differently, and a word scores the same whatever its document frequency, so it can't be computed

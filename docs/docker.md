@@ -208,16 +208,23 @@ computed and held NULL. Newer versions compute them on write
 saved with: loading an old one gives NULL in those columns, and in any index on
 them, until the row is written again. The same goes for a STORED generated column or a TOKENLIST
 column whose expression reads a non-stored generated column, or a generated column declared after
-it. Other STORED and TOKENLIST columns are fine.
+it.
+
+TOKENLIST columns are stored as well. Since 0.3.0 the full-text tokenizers match production
+([#102](https://github.com/strise/spanbolt/issues/102),
+[#138](https://github.com/strise/spanbolt/issues/138)), but a snapshot from 0.2.1 or earlier keeps
+the tokens it was saved with. `SEARCH` over those rows can miss matches until the rows are
+written again. This affects every table with a TOKENLIST column, not only those with non-stored
+generated columns.
 
 To fix an old snapshot, do one of these:
 
-- Re-create it: run the migrations and the seeding against the new version and save a new
-  snapshot.
+- Re-create it (the safest way): run the migrations and the seeding against 0.3.0 or later and
+  save a new snapshot, as in the seeded image build above.
 - Rewrite it: load it into the new version, update every row of each table with a non-stored
-  generated column, and save it again. Any update recomputes all of a row's generated columns
-  and their index entries, so setting a column to itself is enough (as Partitioned DML, or in a
-  read-write transaction):
+  generated column or a TOKENLIST column, and save it again. Any update recomputes all of a
+  row's generated columns and their index entries, so setting a column to itself is enough (as
+  Partitioned DML, or in a read-write transaction):
 
   ```sql
   UPDATE T SET S = S WHERE TRUE

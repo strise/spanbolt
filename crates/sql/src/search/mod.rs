@@ -92,6 +92,66 @@ fn prod_tokenize_number(m: &str) -> String {
     m.to_string()
 }
 
+/// The error Cloud Spanner raises while analysing a tokenizer call whose options are literals,
+/// placed at the call and before any check of where SEARCH is used: TOKENIZE_NUMBER's INT64
+/// bounds and TOKENIZE_NGRAMS's `ngram_size_min` above `ngram_size_max`
+/// (`search_functions.case`). Spanner checks the other options when the function runs, without a
+/// position, so those stay in the functions. `args` holds each argument's value if it is a
+/// literal, `types` their types.
+pub fn analysis_error(
+    name: &str,
+    args: &[Option<spanbolt_storage::Value>],
+    types: &[Type],
+) -> Option<spanbolt_storage::Error> {
+    use spanbolt_storage::Value;
+    // Literal arguments, NULL for the value and for absent options; None if an option is not
+    // a literal.
+    let options = |n: usize| -> Option<Vec<Value>> {
+        let mut out = vec![Value::Null];
+        for i in 1..=n {
+            out.push(match args.get(i) {
+                None => Value::Null,
+                Some(v) => v.clone()?,
+            });
+        }
+        Some(out)
+    };
+    match name {
+        "tokenize_number" => {
+            let float = |t: &Type| match t {
+                Type::Float64 => true,
+                Type::Array(e) => matches!(**e, Type::Float64),
+                _ => false,
+            };
+            if types.iter().any(float) {
+                return None;
+            }
+            let a = options(5)?;
+            // Spanner rejects these comparison types and algorithms before the bounds.
+            let all = tokens::str_arg(&a, 1).is_none_or(|c| c.eq_ignore_ascii_case("all"));
+            let tree = tokens::str_arg(&a, 2).is_none_or(|al| {
+                ["auto", "logtree", "prefixtree"]
+                    .iter()
+                    .any(|x| x.eq_ignore_ascii_case(al))
+            });
+            if !all || !tree {
+                return None;
+            }
+            tokens::int_bounds(&a).err()
+        }
+        "tokenize_ngrams" => {
+            let a = options(2)?;
+            let (max, min) = (tokens::int_arg(&a, 1, 4), tokens::int_arg(&a, 2, 1));
+            (min > 0 && max > 0 && min > max).then(|| {
+                spanbolt_storage::Error::invalid_argument(
+                    "Invalid use of TOKENIZE_NGRAMS: ngram_size_min cannot be greater than ngram_size_max.",
+                )
+            })
+        }
+        _ => None,
+    }
+}
+
 pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
     let float = |t: Option<&Type>| match t {
         Some(Type::Float64) => true,
@@ -143,4 +203,61 @@ pub fn lookup(sig: &Sig) -> Option<ScalarFn> {
         }
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spanbolt_storage::Value;
+
+    #[test]
+    fn analysis_errors_need_literal_options() {
+        let int = |v| Some(Value::Int64(v));
+        let s = |v: &str| Some(Value::String(v.into()));
+        let ints = vec![Type::Int64; 6];
+        let number = |args: &[Option<Value>]| {
+            analysis_error("tokenize_number", args, &ints[..args.len()]).map(|e| e.message)
+        };
+        let (none, null) = (None, Some(Value::Null));
+        let bounds = [none.clone(), null.clone(), null.clone(), int(10), int(1)];
+        assert_eq!(
+            number(&bounds).as_deref(),
+            Some("TOKENIZE_NUMBER: min must be less than max, got: 10 and 1")
+        );
+        // A bound that isn't a literal, or options Spanner rejects first, wait for the call.
+        assert_eq!(
+            number(&[
+                none.clone(),
+                null.clone(),
+                null.clone(),
+                none.clone(),
+                int(1)
+            ]),
+            None
+        );
+        assert_eq!(
+            number(&[none.clone(), s("range"), null.clone(), int(10), int(1)]),
+            None
+        );
+        assert_eq!(
+            number(&[none.clone(), null.clone(), s("magic"), int(10), int(1)]),
+            None
+        );
+        let floats = [
+            Type::Float64,
+            Type::Int64,
+            Type::Int64,
+            Type::Int64,
+            Type::Int64,
+        ];
+        assert!(analysis_error("tokenize_number", &bounds, &floats).is_none());
+
+        let ngrams = |max, min| {
+            analysis_error("tokenize_ngrams", &[None, int(max), int(min)], &ints[..3])
+                .map(|e| e.message)
+        };
+        assert!(ngrams(2, 3).is_some_and(|m| m.starts_with("Invalid use of TOKENIZE_NGRAMS: ")));
+        assert_eq!(ngrams(13, 1), None);
+        assert_eq!(ngrams(3, 2), None);
+    }
 }

@@ -255,6 +255,10 @@ absl::StatusOr<SharedBase*> BaseFor(const json& features) {
       googlesql::ERROR_MESSAGE_ONE_LINE);
   options.set_allow_undeclared_parameters(false);
   options.set_prune_unused_columns(true);
+  // Every resolved node carries its byte range in the query, so Rust can
+  // place the errors Spanner raises during analysis (`[at 1:8]`).
+  options.set_parse_location_record_type(
+      googlesql::PARSE_LOCATION_RECORD_FULL_NODE_SCOPE);
   // Built-ins arrive as calls, not as GoogleSQL's SQL bodies (DOT_PRODUCT,
   // ARRAY_FIRST, ARRAY_FILTER, ...): Rust evaluates them with Spanner's errors.
   options.enable_rewrite(googlesql::REWRITE_BUILTIN_FUNCTION_INLINER, false);

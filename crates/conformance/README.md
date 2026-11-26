@@ -38,7 +38,10 @@ cargo run --release -p spanbolt-conformance -- diff-oracles     # offline: where
 ```
 
 `record --oracle spanner` connects to `spanner.googleapis.com` with the application-default
-credentials (`gcloud auth application-default print-access-token`, refreshed every 20 minutes). It
+credentials (`gcloud auth application-default print-access-token`, refreshed every 20 minutes).
+`SPANBOLT_ORACLE_CREDENTIALS=gcloud` uses the gcloud CLI login instead (`gcloud auth
+print-access-token`), so with `CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT` set a run acts as a service
+account on the engineer's everyday login rather than needing an application-default login of its own. It
 never creates instances: each case gets a database `spanbolt-oracle-<mmdd><run>-<n>` in the given
 instance, dropped when the case ends (also when its schema or prelude fails). `<run>` is four
 base-36 characters from the clock and the process id, so recorders running at the same time in other

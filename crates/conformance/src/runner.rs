@@ -62,14 +62,29 @@ pub struct SpannerOracle {
     pub db_log: std::path::PathBuf,
 }
 
+/// The gcloud arguments that print an access token: the application-default credentials, or with
+/// `SPANBOLT_ORACLE_CREDENTIALS=gcloud` the gcloud CLI login (which also honours
+/// `CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT`).
+fn token_args(credentials: Option<&str>) -> Result<&'static [&'static str], String> {
+    match credentials {
+        None | Some("") | Some("adc") => Ok(&["auth", "application-default", "print-access-token"]),
+        Some("gcloud") => Ok(&["auth", "print-access-token"]),
+        Some(other) => Err(format!(
+            "SPANBOLT_ORACLE_CREDENTIALS={other}: expected `adc` or `gcloud`"
+        )),
+    }
+}
+
 fn access_token() -> Result<String, String> {
+    let args = token_args(std::env::var("SPANBOLT_ORACLE_CREDENTIALS").ok().as_deref())?;
     let out = std::process::Command::new("gcloud")
-        .args(["auth", "application-default", "print-access-token"])
+        .args(args)
         .output()
         .map_err(|e| format!("gcloud: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "gcloud auth application-default print-access-token: {}",
+            "gcloud {}: {}",
+            args.join(" "),
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
@@ -177,7 +192,7 @@ impl Target {
         Ok(t)
     }
 
-    /// Connects to real Cloud Spanner with the local application-default credentials. Never
+    /// Connects to real Cloud Spanner with local gcloud credentials (`access_token`). Never
     /// creates instances and never touches databases outside `spanbolt-oracle-<mmdd><run>-<n>`.
     pub async fn connect_spanner(oracle: SpannerOracle) -> Result<Self, String> {
         let token = Arc::new(std::sync::RwLock::new(access_token()?));
@@ -1580,6 +1595,19 @@ pub fn key_set(body: &[String]) -> Result<pb::KeySet, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oracle_token_source() {
+        let adc: &[&str] = &["auth", "application-default", "print-access-token"];
+        assert_eq!(token_args(None).unwrap(), adc);
+        assert_eq!(token_args(Some("")).unwrap(), adc);
+        assert_eq!(token_args(Some("adc")).unwrap(), adc);
+        assert_eq!(
+            token_args(Some("gcloud")).unwrap(),
+            &["auth", "print-access-token"]
+        );
+        assert!(token_args(Some("key.json")).is_err());
+    }
 
     #[test]
     fn key_sets() {

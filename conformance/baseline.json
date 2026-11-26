@@ -7552,7 +7552,7 @@
       ]
     },
     {
-      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T23:20:18.480277Z\"]",
+      "detail": "line 259:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-26T09:16:31.366933Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_on_update",
       "status": "fail",
       "tags": [
@@ -7762,7 +7762,7 @@
       ]
     },
     {
-      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-25T23:20:18.485766Z\"]",
+      "detail": "line 558:\n  rows (unordered): expected 1, got 1\n    - [\"1\",\"9999-12-31T23:59:59.999999Z\"]\n    + [\"1\",\"2026-11-26T09:16:31.372527Z\"]",
       "name": "sql/commit_timestamp_columns/add_column_default_pending",
       "status": "fail",
       "tags": [
@@ -7782,7 +7782,7 @@
       ]
     },
     {
-      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T23:20:18.487103Z\"]",
+      "detail": "line 12:\n  status: expected FAILED_PRECONDITION, got OK\nline 19:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-26T09:16:31.373862Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert",
       "status": "fail",
       "tags": [
@@ -7791,7 +7791,7 @@
       ]
     },
     {
-      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-25T23:20:18.487219Z\"]",
+      "detail": "line 28:\n  status: expected FAILED_PRECONDITION, got OK\nline 35:\n  rows (unordered): expected 0, got 1\n    + [\"m\",\"2026-11-26T09:16:31.373894Z\"]",
       "name": "sql/commit_timestamp_generated_key/mutation_insert_or_update",
       "status": "fail",
       "tags": [
@@ -47237,7 +47237,7 @@
       ]
     }
   ],
-  "target": "127.0.0.1:26160",
+  "target": "127.0.0.1:26260",
   "totals": {
     "error": 0,
     "fail": 27,

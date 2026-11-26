@@ -193,6 +193,8 @@ fn analytic_scan_error(a: &ResolvedAnalyticScanProto) -> Error {
 
 pub struct Planner<'c> {
     pub cat: &'c SqlCatalog,
+    /// The statement's text, to place errors raised as Spanner's analyser would (`[at 1:8]`).
+    pub sql: &'c str,
     pub params: HashMap<String, usize>,
     pub param_types: Vec<Param>,
     pub opts: Options,
@@ -403,6 +405,16 @@ fn node_name<T: std::fmt::Debug>(n: &T) -> String {
 }
 
 pub fn expr_type(e: &AnyResolvedExprProto) -> Option<&TypeProto> {
+    expr_base(e).and_then(|b| b.r#type.as_ref())
+}
+
+/// Byte offset of a node in the statement's text, if the analyser recorded it.
+fn location(n: Option<&ResolvedNodeProto>) -> Option<usize> {
+    usize::try_from(n?.parse_location_range.as_ref()?.start?).ok()
+}
+
+/// An expression's `ResolvedExprProto` fields (type, parse location).
+fn expr_base(e: &AnyResolvedExprProto) -> Option<&ResolvedExprProto> {
     let base: Option<&ResolvedExprProto> = match e.node.as_ref()? {
         E::ResolvedLiteralNode(x) => x.parent.as_ref(),
         E::ResolvedParameterNode(x) => x.parent.as_ref(),
@@ -429,7 +441,7 @@ pub fn expr_type(e: &AnyResolvedExprProto) -> Option<&TypeProto> {
         E::ResolvedGraphGetElementPropertyNode(x) => x.parent.as_ref(),
         _ => None,
     };
-    base.and_then(|b| b.r#type.as_ref())
+    base
 }
 
 pub fn type_of(e: &AnyResolvedExprProto) -> Result<Type> {
@@ -916,9 +928,10 @@ struct ScanCtx<'e> {
 }
 
 impl<'c> Planner<'c> {
-    pub fn new(cat: &'c SqlCatalog, opts: Options) -> Self {
+    pub fn new(cat: &'c SqlCatalog, sql: &'c str, opts: Options) -> Self {
         Planner {
             cat,
+            sql,
             params: HashMap::new(),
             param_types: Vec::new(),
             opts,
@@ -2473,6 +2486,10 @@ impl<'c> Planner<'c> {
         if calls.is_empty() {
             return Ok(());
         }
+        // The analyser's errors in the TOKENLIST arguments come before the index is chosen.
+        for (_, arg) in &calls {
+            self.analysis_errors_in(arg)?;
+        }
         let (fixed, not_null) = fixed_columns(conj);
         let mut refs = Vec::new();
         for (name, arg) in calls {
@@ -2483,6 +2500,91 @@ impl<'c> Planner<'c> {
             }
         }
         Ok(())
+    }
+
+    /// Errors Cloud Spanner's analyser raises about a tokenizer call's arguments, with its
+    /// position (not in `--emulator-compat`, where the functions raise them when they run):
+    /// literal options of TOKENIZE_NUMBER and TOKENIZE_NGRAMS (`search::analysis_error`), and
+    /// TOKENLIST_CONCAT over TOKENIZE_FULLTEXT and TOKENIZE_SUBSTRING columns together.
+    fn analysis_error(&self, name: &str, b: &ResolvedFunctionCallBaseProto) -> Result<()> {
+        if self.opts.emulator_compat {
+            return Ok(());
+        }
+        match name {
+            "tokenize_number" | "tokenize_ngrams" => {
+                let args: Vec<_> = b.argument_list.iter().map(literal_of).collect();
+                let types = b
+                    .argument_list
+                    .iter()
+                    .map(type_of)
+                    .collect::<Result<Vec<_>>>()?;
+                if let Some(e) = crate::search::analysis_error(name, &args, &types) {
+                    let at = b.parent.as_ref().and_then(|p| location(p.parent.as_ref()));
+                    return Err(crate::analyze::located(e, self.sql, at));
+                }
+            }
+            "tokenlist_concat" => {
+                let Some(list) = b.argument_list.first() else {
+                    return Ok(());
+                };
+                let Some(items) = call_base(list).filter(|l| fn_name(l) == "$make_array") else {
+                    return Ok(());
+                };
+                let kinds: std::collections::BTreeSet<&str> = items
+                    .argument_list
+                    .iter()
+                    .filter_map(|a| {
+                        let t = self.tokenizer_of(a)?;
+                        ["TOKENIZE_FULLTEXT", "TOKENIZE_SUBSTRING"]
+                            .into_iter()
+                            .find(|k| t.starts_with(k))
+                    })
+                    .collect();
+                if kinds.len() > 1 {
+                    let e = Error::invalid_argument(
+                        "All elements to TOKENLIST_CONCAT must be produced by the same kind of tokenization function.",
+                    );
+                    let at = expr_base(list).and_then(|p| location(p.parent.as_ref()));
+                    return Err(crate::analyze::located(e, self.sql, at));
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// [`Self::analysis_error`] for every call in `e`.
+    fn analysis_errors_in(&self, e: &AnyResolvedExprProto) -> Result<()> {
+        if let Some(b) = call_base(e) {
+            self.analysis_error(fn_name(b), b)?;
+            for a in &b.argument_list {
+                self.analysis_errors_in(a)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The upper-cased generating expression of a TOKENLIST table column (`TOKENIZE_FULLTEXT(...)`).
+    fn tokenizer_of(&self, arg: &AnyResolvedExprProto) -> Option<String> {
+        let (table, column) = tokenlist_column(Some(arg))?;
+        let tm = self
+            .cat
+            .schema
+            .tables
+            .iter()
+            .find(|(t, _)| t.eq_ignore_ascii_case(&table))?
+            .1;
+        match &tm
+            .columns
+            .iter()
+            .find(|c| c.name.eq_ignore_ascii_case(&column))?
+            .generated
+        {
+            Some(spanbolt_ddl::Generated::Expr { expr, .. }) => {
+                Some(expr.trim_start().to_ascii_uppercase())
+            }
+            _ => None,
+        }
     }
 
     fn check_search_column(
@@ -2616,6 +2718,7 @@ impl<'c> Planner<'c> {
         self.hint_rules.check(Node::FunctionCall, &b.hint_list)?;
         crate::validate::function(full_fn_name(b))?;
         let name = fn_name(b).to_string();
+        self.analysis_error(&name, b)?;
         if crate::search::is_search_function(&name) && self.search.function.is_none() {
             self.search.function = Some(name.clone());
         }

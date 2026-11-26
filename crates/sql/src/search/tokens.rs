@@ -1091,19 +1091,7 @@ pub fn tokenize_number(args: &[Value], float_bounds: bool, float_value: bool) ->
                 (fmt_double(min), fmt_double(max), fmt_double(g)),
             )?;
         } else {
-            let (min, max, g) = (
-                int_arg(args, 3, i64::MIN),
-                int_arg(args, 4, i64::MAX),
-                int_arg(args, 5, 1),
-            );
-            validate_bounds(
-                true,
-                true,
-                min >= max,
-                g <= 0,
-                (min as f64) + (g as f64) > max as f64,
-                (min.to_string(), max.to_string(), g.to_string()),
-            )?;
+            int_bounds(args)?;
         }
     }
     Ok(with_value(
@@ -1151,6 +1139,23 @@ fn number_value(args: &[Value], float: bool) -> Option<Vec<u8>> {
         _ => out.push(b'U'),
     }
     Some(out)
+}
+
+/// TOKENIZE_NUMBER's `min`, `max` and `granularity` over INT64 values (`args` positional).
+pub fn int_bounds(args: &[Value]) -> Result<()> {
+    let (min, max, g) = (
+        int_arg(args, 3, i64::MIN),
+        int_arg(args, 4, i64::MAX),
+        int_arg(args, 5, 1),
+    );
+    validate_bounds(
+        true,
+        true,
+        min >= max,
+        g <= 0,
+        (min as f64) + (g as f64) > max as f64,
+        (min.to_string(), max.to_string(), g.to_string()),
+    )
 }
 
 fn validate_bounds(

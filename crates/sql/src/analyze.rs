@@ -99,6 +99,33 @@ fn prod_analyzer_error(mut e: Error) -> Error {
     e
 }
 
+/// Appends the analyser's position of byte `offset` in `sql` to `e`'s message, as GoogleSQL
+/// words it: ` [at LINE:COLUMN]`, both 1-based, lines broken at `\n`, `\r\n` or `\r`, columns
+/// counted in characters with tabs expanded to the next multiple of 8. Unchanged without an
+/// offset (a node the analyser recorded no location for).
+pub(crate) fn located(mut e: Error, sql: &str, offset: Option<usize>) -> Error {
+    let Some(offset) = offset.filter(|o| *o <= sql.len() && sql.is_char_boundary(*o)) else {
+        return e;
+    };
+    let (mut line, mut col) = (1, 1);
+    let mut chars = sql[..offset].chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' | '\n' => {
+                if c == '\r' && chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                line += 1;
+                col = 1;
+            }
+            '\t' => col += 8 - (col - 1) % 8,
+            _ => col += 1,
+        }
+    }
+    e.message = format!("{} [at {line}:{col}]", e.message);
+    e
+}
+
 /// True if the message carries the analyser's error location, `[at LINE:COLUMN]`.
 fn has_location(message: &str) -> bool {
     message.match_indices("[at ").any(|(i, _)| {
@@ -175,6 +202,20 @@ mod tests {
         assert_eq!(
             e.message,
             "Syntax error: Expected \\\";\\\" or end of input but got \\\"\\\\\\\" [at 1:10]"
+        );
+    }
+
+    #[test]
+    fn located_counts_lines_characters_and_tabs() {
+        let at = |sql: &str, o| located(Error::invalid_argument("m"), sql, Some(o)).message;
+        assert_eq!(at("SELECT F()", 7), "m [at 1:8]");
+        assert_eq!(at("SELECT\n  F()", 9), "m [at 2:3]");
+        assert_eq!(at("SELECT\r\nF()", 8), "m [at 2:1]");
+        assert_eq!(at("SELECT 'é', F()", 13), "m [at 1:13]");
+        assert_eq!(at("\tF()", 1), "m [at 1:9]");
+        assert_eq!(
+            located(Error::invalid_argument("m"), "x", None).message,
+            "m"
         );
     }
 
